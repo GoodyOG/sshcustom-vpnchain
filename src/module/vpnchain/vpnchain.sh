@@ -230,29 +230,36 @@ start_openvpn() {
     return 1
   fi
 
-  # Set up routing: all traffic goes through OpenVPN's tun0
+  # Set up routing using UID-based fwmark
+  # Only route app traffic (UID >= 10000) through tun0
+  # Root/system (UID 0 = SSHCustom, OpenVPN) stays on original route
   sleep 1
 
-  # Get the VPN gateway and local IP
   VPN_LOCAL_IP="$(ip -4 addr show tun0 2>/dev/null | grep -oE 'inet [0-9.]+' | awk '{print $2}')"
-  VPN_GW="$(ip -4 route show dev tun0 2>/dev/null | grep -oE 'via [0-9.]+' | head -1 | awk '{print $2}')"
 
-  # Use policy routing to force all traffic through tun0
-  # Table 200 is our VPN routing table
+  # Step 1: Create routing table 200 with default via tun0
   ip route flush table 200 2>/dev/null
   ip route add default dev tun0 table 200 2>/dev/null
-  # Exclude localhost and the SOCKS proxy (SSH tunnel must stay on original route)
-  ip rule del table 200 2>/dev/null
-  ip rule add not from all to 127.0.0.0/8 table 200 priority 100 2>/dev/null
 
-  # Also add the standard split routes as fallback
-  ip route add 0.0.0.0/1 dev tun0 2>/dev/null
-  ip route add 128.0.0.0/1 dev tun0 2>/dev/null
+  # Step 2: Policy rule — packets with fwmark 0x1 use table 200
+  ip rule del fwmark 0x1 table 200 2>/dev/null
+  ip rule add fwmark 0x1 table 200 priority 100 2>/dev/null
 
-  # Set up iptables NAT so traffic going out tun0 gets masqueraded
+  # Step 3: iptables mangle — mark OUTPUT packets from apps (UID >= 10000)
+  # This does NOT touch root (UID 0) traffic, so SSHCustom stays unaffected
+  iptables -t mangle -D OUTPUT -m owner --uid-owner 10000-99999 -j MARK --set-mark 0x1 2>/dev/null
+  iptables -t mangle -A OUTPUT -m owner --uid-owner 10000-99999 -j MARK --set-mark 0x1 2>/dev/null
+
+  # Step 4: NAT masquerade for traffic going out tun0
+  iptables -t nat -D POSTROUTING -o tun0 -j MASQUERADE 2>/dev/null
   iptables -t nat -A POSTROUTING -o tun0 -j MASQUERADE 2>/dev/null
 
-  log "routing configured: VPN_LOCAL_IP=$VPN_LOCAL_IP VPN_GW=$VPN_GW"
+  # Step 5: Also use Windscribe's DNS (pushed as 10.255.255.1)
+  # Mark DNS packets from apps so they also go through tun0
+  iptables -t mangle -D OUTPUT -p udp --dport 53 -m owner --uid-owner 10000-99999 -j MARK --set-mark 0x1 2>/dev/null
+  iptables -t mangle -A OUTPUT -p udp --dport 53 -m owner --uid-owner 10000-99999 -j MARK --set-mark 0x1 2>/dev/null
+
+  log "routing configured: UID-based fwmark, apps->tun0, root->original route, VPN_IP=$VPN_LOCAL_IP"
 
   log "openvpn connected via $LOCATION (remote=$REMOTE_HOST:$REMOTE_PORT)"
   return 0
@@ -330,12 +337,15 @@ do_start() {
 do_stop() {
   log "=== VPN Chain STOP ==="
 
-  # Remove routes first
-  ip route del 0.0.0.0/1 dev tun0 2>/dev/null
-  ip route del 128.0.0.0/1 dev tun0 2>/dev/null
-  ip rule del table 200 2>/dev/null
-  ip route flush table 200 2>/dev/null
+  # Remove iptables rules (mangle marks + NAT)
+  iptables -t mangle -D OUTPUT -m owner --uid-owner 10000-99999 -j MARK --set-mark 0x1 2>/dev/null
+  iptables -t mangle -D OUTPUT -p udp --dport 53 -m owner --uid-owner 10000-99999 -j MARK --set-mark 0x1 2>/dev/null
   iptables -t nat -D POSTROUTING -o tun0 -j MASQUERADE 2>/dev/null
+
+  # Remove policy routing
+  ip rule del fwmark 0x1 table 200 2>/dev/null
+  ip route flush table 200 2>/dev/null
+
   cleanup_routes
 
   # Kill OpenVPN
@@ -393,8 +403,12 @@ do_switch() {
   fi
 
   # Only kill OpenVPN, keep tun2socks running
-  ip route del 0.0.0.0/1 dev tun0 2>/dev/null
-  ip route del 128.0.0.0/1 dev tun0 2>/dev/null
+  # Clean up routing rules (will be re-added by start_openvpn)
+  iptables -t mangle -D OUTPUT -m owner --uid-owner 10000-99999 -j MARK --set-mark 0x1 2>/dev/null
+  iptables -t mangle -D OUTPUT -p udp --dport 53 -m owner --uid-owner 10000-99999 -j MARK --set-mark 0x1 2>/dev/null
+  iptables -t nat -D POSTROUTING -o tun0 -j MASQUERADE 2>/dev/null
+  ip rule del fwmark 0x1 table 200 2>/dev/null
+  ip route flush table 200 2>/dev/null
   kill_pid_file "$OPENVPN_PID" "openvpn"
   killall openvpn 2>/dev/null
   ip link set tun0 down 2>/dev/null
