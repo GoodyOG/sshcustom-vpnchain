@@ -167,6 +167,10 @@ start_openvpn() {
   # Ensure openvpn.log exists so --log-append doesn't fail
   touch "$RUN_DIR/openvpn.log"
 
+  # Android has no /tmp — create it and use our run dir as tmp-dir
+  # This overrides any tmp-dir directive in the .ovpn file
+  mkdir -p /tmp
+
   nohup "$OPENVPN_BIN" \
     --config "$OVPN_FILE" \
     --auth-user-pass "$AUTH_FILE" \
@@ -174,6 +178,7 @@ start_openvpn() {
     --dev-type tun \
     --route-noexec \
     --script-security 0 \
+    --tmp-dir "$RUN_DIR" \
     --log-append "$RUN_DIR/openvpn.log" \
     --writepid "$OPENVPN_PID" \
     --connect-retry 5 \
