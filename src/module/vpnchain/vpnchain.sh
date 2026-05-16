@@ -65,7 +65,13 @@ EOF
 }
 
 get_vpn_ip() {
-  # Try to get the IP assigned to tun0 (OpenVPN's interface)
+  # Return the Windscribe exit IP (the server we connected to)
+  # This is the public-facing IP, not the internal tun0 address
+  if [ -f "$RUN_DIR/current.ovpn" ]; then
+    IP="$(grep -E '^remote ' "$RUN_DIR/current.ovpn" 2>/dev/null | head -1 | awk '{print $2}')"
+    [ -n "$IP" ] && echo "$IP" && return 0
+  fi
+  # Fallback to tun0 interface IP
   IP="$(ip -4 addr show tun0 2>/dev/null | grep -oE 'inet [0-9.]+' | awk '{print $2}')"
   [ -n "$IP" ] && echo "$IP" && return 0
   echo ""

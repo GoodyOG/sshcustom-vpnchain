@@ -1,56 +1,60 @@
 # SSHCustom-VPNChain
 
-Personal Magisk/KSU module: SSH tunnel + Windscribe VPN chain routing for rooted Android.
+Magisk/KernelSU module that provides SSH tunneling with an optional VPN Chain feature (OpenVPN through SSH).
 
-[![Build](https://github.com/GoodyOG/sshcustom-vpnchain/actions/workflows/build.yml/badge.svg)](https://github.com/GoodyOG/sshcustom-vpnchain/actions/workflows/build.yml)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/GoodyOG/sshcustom-vpnchain?sort=semver)](https://github.com/GoodyOG/sshcustom-vpnchain/releases/latest)
+## Features
 
-## What this does
+- **SSH Tunnel** — SOCKS5 proxy + transparent TCP proxy via SSH with payload injection
+- **VPN Chain** — Route app traffic through Windscribe OpenVPN, tunneled inside the SSH connection
+- **WebUI** — Control everything from your browser at `http://127.0.0.1:9190`
+- **Per-app routing** — Only apps go through VPN; SSH tunnel stays untouched on mobile data
 
-Based on [SSHCustom-Magisk](https://github.com/GoodyOG/SSHCustom-Magisk) v2.2.1 with an added **VPN Chain** feature:
+## VPN Chain
+
+Chains OpenVPN (Windscribe) through the SSH tunnel:
 
 ```
-Apps → OpenVPN tun0 (Windscribe IP) → tun2socks tun1 (SOCKS5) → SSH tunnel → Windscribe server → Internet
+Apps → tun0 (OpenVPN) → SOCKS5 (SSH tunnel) → VPS → Windscribe server → Internet
 ```
 
-- SSH tunnel provides zero-data connectivity (payload injection)
-- VPN Chain routes Windscribe OpenVPN through the SSH tunnel's SOCKS5 proxy
-- Switch Windscribe locations on the fly (~5-8s)
-- No VpnService needed — TUN interfaces created directly as root
+SSHCustom stays connected as the transport layer. VPN Chain is a toggle — turn it on when you need a different exit IP, turn it off to go back to normal SSH tunnel.
 
-## Features (inherited from SSHCustom-Magisk)
+### Usage
 
-- SSH connection pool (4 parallel sessions)
-- SOCKS5 proxy + transparent TCP via iptables
-- Pluggable transport (direct, HTTP proxy, TLS/SNI, payload injection)
-- Hotspot tethering
-- WebUI dashboard at `http://127.0.0.1:9190/`
-- Autostart on boot
-
-## VPN Chain usage
-
-1. Flash the module ZIP, reboot
-2. Start SSHCustom tunnel as normal
-3. Place `.ovpn` files (TCP 443) in `/data/adb/sshcustom/vpnchain/configs/`
-4. Open WebUI → VPN Chain tab → select location → Start
-
-Or from shell:
 ```sh
+# Start VPN with a location
 vpnchain start turkey
-vpnchain switch germany
+
+# Stop and return to normal SSH
 vpnchain stop
+
+# Switch location without full restart
+vpnchain switch netherlands
+
+# Check status
 vpnchain status
+
+# List available locations
+vpnchain locations
 ```
 
-## Build
+### Setup
 
-Requires Go 1.23+ and Python 3:
+1. Drop `.ovpn` TCP configs into `/data/adb/sshcustom/vpnchain/configs/`
+2. Name them by location: `turkey.ovpn`, `netherlands.ovpn`, etc.
+3. Auth credentials go in `/data/adb/sshcustom/vpnchain/auth.txt`
 
-```bash
-./build.sh
-```
+## Install
 
-## License
+Flash the ZIP via Magisk or KernelSU module manager. Reboot.
 
-[Apache License 2.0](LICENSE)
+## Architecture
+
+- `sshcustomd` — Go daemon handling SSH connections, SOCKS5, transparent proxy, WebUI
+- `openvpn` — Static arm64 binary (OpenVPN 2.6.12, musl, OpenSSL 3.3.2)
+- `tun2socks` — Backup routing tool (not used in current VPN Chain flow)
+- `vpnchain.sh` — Shell script orchestrating OpenVPN + iptables routing
+
+## Target
+
+ARM64 Android devices only.
