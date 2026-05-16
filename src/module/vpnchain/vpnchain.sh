@@ -250,11 +250,19 @@ start_openvpn() {
   iptables -t mangle -D OUTPUT -m owner --uid-owner 10000-99999 -j MARK --set-mark 0x1 2>/dev/null
   iptables -t mangle -A OUTPUT -m owner --uid-owner 10000-99999 -j MARK --set-mark 0x1 2>/dev/null
 
-  # Step 4: NAT masquerade for traffic going out tun0
+  # Step 4: Bypass SSHCustom's transparent proxy for app traffic
+  # SSHCustom uses nat OUTPUT REDIRECT to port 10810 to intercept all TCP.
+  # We insert a rule at the TOP of nat OUTPUT that says:
+  # "If packet is from an app (UID 10000-99999), RETURN (don't redirect)"
+  # This lets the packet fall through to our fwmark routing instead.
+  iptables -t nat -D OUTPUT -m owner --uid-owner 10000-99999 -j RETURN 2>/dev/null
+  iptables -t nat -I OUTPUT 1 -m owner --uid-owner 10000-99999 -j RETURN 2>/dev/null
+
+  # Step 5: NAT masquerade for traffic going out tun0
   iptables -t nat -D POSTROUTING -o tun0 -j MASQUERADE 2>/dev/null
   iptables -t nat -A POSTROUTING -o tun0 -j MASQUERADE 2>/dev/null
 
-  # Step 5: Also use Windscribe's DNS (pushed as 10.255.255.1)
+  # Step 6: Also use Windscribe's DNS (pushed as 10.255.255.1)
   # Mark DNS packets from apps so they also go through tun0
   iptables -t mangle -D OUTPUT -p udp --dport 53 -m owner --uid-owner 10000-99999 -j MARK --set-mark 0x1 2>/dev/null
   iptables -t mangle -A OUTPUT -p udp --dport 53 -m owner --uid-owner 10000-99999 -j MARK --set-mark 0x1 2>/dev/null
@@ -337,9 +345,10 @@ do_start() {
 do_stop() {
   log "=== VPN Chain STOP ==="
 
-  # Remove iptables rules (mangle marks + NAT)
+  # Remove iptables rules (mangle marks + NAT + proxy bypass)
   iptables -t mangle -D OUTPUT -m owner --uid-owner 10000-99999 -j MARK --set-mark 0x1 2>/dev/null
   iptables -t mangle -D OUTPUT -p udp --dport 53 -m owner --uid-owner 10000-99999 -j MARK --set-mark 0x1 2>/dev/null
+  iptables -t nat -D OUTPUT -m owner --uid-owner 10000-99999 -j RETURN 2>/dev/null
   iptables -t nat -D POSTROUTING -o tun0 -j MASQUERADE 2>/dev/null
 
   # Remove policy routing
@@ -406,6 +415,7 @@ do_switch() {
   # Clean up routing rules (will be re-added by start_openvpn)
   iptables -t mangle -D OUTPUT -m owner --uid-owner 10000-99999 -j MARK --set-mark 0x1 2>/dev/null
   iptables -t mangle -D OUTPUT -p udp --dport 53 -m owner --uid-owner 10000-99999 -j MARK --set-mark 0x1 2>/dev/null
+  iptables -t nat -D OUTPUT -m owner --uid-owner 10000-99999 -j RETURN 2>/dev/null
   iptables -t nat -D POSTROUTING -o tun0 -j MASQUERADE 2>/dev/null
   ip rule del fwmark 0x1 table 200 2>/dev/null
   ip route flush table 200 2>/dev/null
