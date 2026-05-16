@@ -135,8 +135,6 @@ start_openvpn() {
 
   log "starting openvpn with config $LOCATION"
 
-  # OpenVPN must route through tun2socks (tun1), not directly
-  # We tell OpenVPN to use tun1 as its route gateway for reaching the VPN server
   # Extract remote server from .ovpn
   REMOTE_HOST="$(grep -E '^remote ' "$OVPN_FILE" | head -1 | awk '{print $2}')"
   REMOTE_PORT="$(grep -E '^remote ' "$OVPN_FILE" | head -1 | awk '{print $3}')"
@@ -146,33 +144,42 @@ start_openvpn() {
     return 1
   fi
 
-  # Resolve remote host to IP (DNS may not work without the tunnel)
-  # Route the VPN server IP through tun2socks
-  REMOTE_IP="$(getent hosts "$REMOTE_HOST" 2>/dev/null | awk '{print $1}' | head -1)"
+  # Resolve hostname to IP NOW (before tun2socks messes with routing/DNS)
+  # Use the RESOLVED_IP that was set in do_start() before tun2socks started
+  REMOTE_IP="${RESOLVED_REMOTE_IP:-}"
   if [ -z "$REMOTE_IP" ]; then
-    # Try nslookup as fallback
+    # Fallback: try resolving now (may fail if tun2socks is already up)
+    REMOTE_IP="$(getent hosts "$REMOTE_HOST" 2>/dev/null | awk '{print $1}' | head -1)"
+  fi
+  if [ -z "$REMOTE_IP" ]; then
     REMOTE_IP="$(nslookup "$REMOTE_HOST" 2>/dev/null | grep -A2 'Name:' | grep 'Address' | awk '{print $2}' | head -1)"
   fi
   if [ -z "$REMOTE_IP" ]; then
-    # Last resort: use the hostname directly (OpenVPN will resolve it through tun1)
-    REMOTE_IP="$REMOTE_HOST"
+    log "ERROR: cannot resolve $REMOTE_HOST to IP"
+    echo "error: cannot resolve VPN server hostname: $REMOTE_HOST"
+    return 1
   fi
+
+  log "resolved $REMOTE_HOST -> $REMOTE_IP"
 
   # Add route: VPN server goes through tun2socks
   ip route add "$REMOTE_IP/32" dev "$TUN2SOCKS_TUN" 2>/dev/null
 
-  # Set library path so dynamically-linked openvpn can find Android system libs
+  # Set library path (fallback for non-static builds)
   export LD_LIBRARY_PATH="/system/lib64:/system/vendor/lib64:/system/apex/com.android.runtime/lib64:${LD_LIBRARY_PATH:-}"
 
   # Ensure openvpn.log exists so --log-append doesn't fail
   touch "$RUN_DIR/openvpn.log"
 
   # Android has no /tmp — create it and use our run dir as tmp-dir
-  # This overrides any tmp-dir directive in the .ovpn file
   mkdir -p /tmp
 
+  # Write a patched config that forces the resolved IP (bypasses DNS inside OpenVPN)
+  PATCHED_OVPN="$RUN_DIR/current.ovpn"
+  sed "s|^remote ${REMOTE_HOST} |remote ${REMOTE_IP} |g" "$OVPN_FILE" > "$PATCHED_OVPN"
+
   nohup "$OPENVPN_BIN" \
-    --config "$OVPN_FILE" \
+    --config "$PATCHED_OVPN" \
     --auth-user-pass "$AUTH_FILE" \
     --dev tun0 \
     --dev-type tun \
@@ -261,6 +268,27 @@ do_start() {
 
   log "=== VPN Chain START: location=$LOCATION ==="
 
+  # Resolve the VPN server hostname NOW, before tun2socks changes routing/DNS
+  OVPN_FILE="$CONFIGS_DIR/${LOCATION}.ovpn"
+  REMOTE_HOST="$(grep -E '^remote ' "$OVPN_FILE" | head -1 | awk '{print $2}')"
+  if [ -n "$REMOTE_HOST" ]; then
+    RESOLVED_REMOTE_IP="$(getent hosts "$REMOTE_HOST" 2>/dev/null | awk '{print $1}' | head -1)"
+    if [ -z "$RESOLVED_REMOTE_IP" ]; then
+      RESOLVED_REMOTE_IP="$(nslookup "$REMOTE_HOST" 2>/dev/null | grep -A2 'Name:' | grep 'Address' | awk '{print $2}' | head -1)"
+    fi
+    if [ -z "$RESOLVED_REMOTE_IP" ]; then
+      # Try ping -based resolution
+      RESOLVED_REMOTE_IP="$(ping -c1 -W2 "$REMOTE_HOST" 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+    fi
+    if [ -z "$RESOLVED_REMOTE_IP" ]; then
+      echo "error: cannot resolve VPN server: $REMOTE_HOST (check DNS/internet)"
+      write_state "false" "" ""
+      return 1
+    fi
+    log "pre-resolved $REMOTE_HOST -> $RESOLVED_REMOTE_IP"
+    export RESOLVED_REMOTE_IP
+  fi
+
   # Step 1: Start tun2socks
   if ! start_tun2socks; then
     echo "error: tun2socks failed to start"
@@ -328,6 +356,23 @@ do_switch() {
   fi
 
   log "=== VPN Chain SWITCH to $LOCATION ==="
+
+  # Resolve VPN server hostname before switching (DNS may break during switch)
+  OVPN_FILE="$CONFIGS_DIR/${LOCATION}.ovpn"
+  REMOTE_HOST="$(grep -E '^remote ' "$OVPN_FILE" | head -1 | awk '{print $2}')"
+  if [ -n "$REMOTE_HOST" ]; then
+    RESOLVED_REMOTE_IP="$(getent hosts "$REMOTE_HOST" 2>/dev/null | awk '{print $1}' | head -1)"
+    if [ -z "$RESOLVED_REMOTE_IP" ]; then
+      RESOLVED_REMOTE_IP="$(nslookup "$REMOTE_HOST" 2>/dev/null | grep -A2 'Name:' | grep 'Address' | awk '{print $2}' | head -1)"
+    fi
+    if [ -z "$RESOLVED_REMOTE_IP" ]; then
+      RESOLVED_REMOTE_IP="$(ping -c1 -W2 "$REMOTE_HOST" 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+    fi
+    if [ -n "$RESOLVED_REMOTE_IP" ]; then
+      log "pre-resolved $REMOTE_HOST -> $RESOLVED_REMOTE_IP"
+      export RESOLVED_REMOTE_IP
+    fi
+  fi
 
   # Only kill OpenVPN, keep tun2socks running
   ip route del 0.0.0.0/1 dev tun0 2>/dev/null
