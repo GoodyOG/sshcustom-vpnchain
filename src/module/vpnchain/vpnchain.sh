@@ -231,16 +231,28 @@ start_openvpn() {
   fi
 
   # Set up routing: all traffic goes through OpenVPN's tun0
-  # Get the IP OpenVPN assigned
-  sleep 2
-  VPN_GW="$(ip -4 route show dev tun0 2>/dev/null | grep -oE 'via [0-9.]+' | head -1 | awk '{print $2}')"
-  if [ -z "$VPN_GW" ]; then
-    VPN_GW="$(ip -4 addr show tun0 2>/dev/null | grep -oE 'peer [0-9.]+' | awk '{print $2}')"
-  fi
+  sleep 1
 
-  # Add default routes through OpenVPN tunnel
+  # Get the VPN gateway and local IP
+  VPN_LOCAL_IP="$(ip -4 addr show tun0 2>/dev/null | grep -oE 'inet [0-9.]+' | awk '{print $2}')"
+  VPN_GW="$(ip -4 route show dev tun0 2>/dev/null | grep -oE 'via [0-9.]+' | head -1 | awk '{print $2}')"
+
+  # Use policy routing to force all traffic through tun0
+  # Table 200 is our VPN routing table
+  ip route flush table 200 2>/dev/null
+  ip route add default dev tun0 table 200 2>/dev/null
+  # Exclude localhost and the SOCKS proxy (SSH tunnel must stay on original route)
+  ip rule del table 200 2>/dev/null
+  ip rule add not from all to 127.0.0.0/8 table 200 priority 100 2>/dev/null
+
+  # Also add the standard split routes as fallback
   ip route add 0.0.0.0/1 dev tun0 2>/dev/null
   ip route add 128.0.0.0/1 dev tun0 2>/dev/null
+
+  # Set up iptables NAT so traffic going out tun0 gets masqueraded
+  iptables -t nat -A POSTROUTING -o tun0 -j MASQUERADE 2>/dev/null
+
+  log "routing configured: VPN_LOCAL_IP=$VPN_LOCAL_IP VPN_GW=$VPN_GW"
 
   log "openvpn connected via $LOCATION (remote=$REMOTE_HOST:$REMOTE_PORT)"
   return 0
@@ -321,6 +333,9 @@ do_stop() {
   # Remove routes first
   ip route del 0.0.0.0/1 dev tun0 2>/dev/null
   ip route del 128.0.0.0/1 dev tun0 2>/dev/null
+  ip rule del table 200 2>/dev/null
+  ip route flush table 200 2>/dev/null
+  iptables -t nat -D POSTROUTING -o tun0 -j MASQUERADE 2>/dev/null
   cleanup_routes
 
   # Kill OpenVPN
