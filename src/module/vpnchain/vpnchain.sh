@@ -161,6 +161,12 @@ start_openvpn() {
   # Add route: VPN server goes through tun2socks
   ip route add "$REMOTE_IP/32" dev "$TUN2SOCKS_TUN" 2>/dev/null
 
+  # Set library path so dynamically-linked openvpn can find Android system libs
+  export LD_LIBRARY_PATH="/system/lib64:/system/vendor/lib64:/system/apex/com.android.runtime/lib64:${LD_LIBRARY_PATH:-}"
+
+  # Ensure openvpn.log exists so --log-append doesn't fail
+  touch "$RUN_DIR/openvpn.log"
+
   nohup "$OPENVPN_BIN" \
     --config "$OVPN_FILE" \
     --auth-user-pass "$AUTH_FILE" \
@@ -174,7 +180,7 @@ start_openvpn() {
     --connect-timeout 30 \
     --resolv-retry 3 \
     --verb 3 \
-    >> "$LOG_FILE" 2>&1 &
+    > "$RUN_DIR/openvpn_stdout.log" 2>&1 &
   OVPN_PID="$!"
 
   # Wait for OpenVPN to write its PID and create tun0
@@ -187,8 +193,17 @@ start_openvpn() {
   for i in $(seq 1 30); do
     ip link show tun0 >/dev/null 2>&1 && break
     if ! pid_alive "$OVPN_PID"; then
-      log "ERROR: openvpn exited prematurely"
-      echo "error: openvpn exited. check $RUN_DIR/openvpn.log"
+      log "ERROR: openvpn exited prematurely (exit within ${i}s)"
+      # Capture whatever output openvpn produced for debugging
+      if [ -s "$RUN_DIR/openvpn.log" ]; then
+        log "--- openvpn.log tail ---"
+        tail -20 "$RUN_DIR/openvpn.log" >> "$LOG_FILE"
+      fi
+      if [ -s "$RUN_DIR/openvpn_stdout.log" ]; then
+        log "--- openvpn stdout/stderr ---"
+        tail -20 "$RUN_DIR/openvpn_stdout.log" >> "$LOG_FILE"
+      fi
+      echo "error: openvpn exited. check $RUN_DIR/openvpn.log and $RUN_DIR/openvpn_stdout.log"
       return 1
     fi
     sleep 1
