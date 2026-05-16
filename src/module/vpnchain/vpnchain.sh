@@ -162,9 +162,6 @@ start_openvpn() {
 
   log "resolved $REMOTE_HOST -> $REMOTE_IP"
 
-  # Add route: VPN server goes through tun2socks
-  ip route add "$REMOTE_IP/32" dev "$TUN2SOCKS_TUN" 2>/dev/null
-
   # Set library path (fallback for non-static builds)
   export LD_LIBRARY_PATH="/system/lib64:/system/vendor/lib64:/system/apex/com.android.runtime/lib64:${LD_LIBRARY_PATH:-}"
 
@@ -175,12 +172,18 @@ start_openvpn() {
   mkdir -p /tmp
 
   # Write a patched config that forces the resolved IP (bypasses DNS inside OpenVPN)
+  # Also remove any tmp-dir directive from the .ovpn since we pass our own
   PATCHED_OVPN="$RUN_DIR/current.ovpn"
-  sed "s|^remote ${REMOTE_HOST} |remote ${REMOTE_IP} |g" "$OVPN_FILE" > "$PATCHED_OVPN"
+  sed -e "s|^remote ${REMOTE_HOST} |remote ${REMOTE_IP} |g" \
+      -e '/^tmp-dir/d' \
+      "$OVPN_FILE" > "$PATCHED_OVPN"
 
+  # Use OpenVPN's native SOCKS5 proxy support to route through SSH tunnel
+  # This is more reliable than routing through tun2socks TUN device
   nohup "$OPENVPN_BIN" \
     --config "$PATCHED_OVPN" \
     --auth-user-pass "$AUTH_FILE" \
+    --socks-proxy 127.0.0.1 1080 \
     --dev tun0 \
     --dev-type tun \
     --route-noexec \
