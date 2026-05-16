@@ -17,7 +17,7 @@ mkdir -p "$RUN_DIR"
 
 IPT="iptables"
 IP6T="ip6tables"
-# Every chain SSHCustom-Magisk has ever installed in any version. Keeping
+# Every chain SSHCustom-VPNChain has ever installed in any version. Keeping
 # legacy names here means a user upgrading from a pre-v2 build still gets
 # their orphaned chains removed even if those chains are no longer created.
 CHAINS="SSHC_OUTPUT SSHC_PREROUTING SSHC_PROXY SSHC_DNS SSHC_HOTSPOT SSHC_HOTSPOT_DNS"

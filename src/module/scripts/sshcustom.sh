@@ -21,9 +21,9 @@ log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$CONTROL_LOG"; }
 set_desc() {
   [ -f "$MODULE_PROP" ] || return 0
   case "$1" in
-    running) sed -i 's/^description=.*/description=[ 🟢 ] SSHCustom-Magisk - running/' "$MODULE_PROP" 2>/dev/null ;;
-    paused) sed -i 's/^description=.*/description=[ 🟡 ] SSHCustom-Magisk - paused, waiting for network/' "$MODULE_PROP" 2>/dev/null ;;
-    *) sed -i 's/^description=.*/description=[ 🔴 ] SSHCustom-Magisk - stopped/' "$MODULE_PROP" 2>/dev/null ;;
+    running) sed -i 's/^description=.*/description=[ 🟢 ] SSHCustom-VPNChain - running/' "$MODULE_PROP" 2>/dev/null ;;
+    paused) sed -i 's/^description=.*/description=[ 🟡 ] SSHCustom-VPNChain - paused, waiting for network/' "$MODULE_PROP" 2>/dev/null ;;
+    *) sed -i 's/^description=.*/description=[ 🔴 ] SSHCustom-VPNChain - stopped/' "$MODULE_PROP" 2>/dev/null ;;
   esac
 }
 

@@ -91,9 +91,9 @@ start_tun2socks() {
 
   # Start tun2socks
   nohup "$TUN2SOCKS_BIN" \
-    -device "$TUN2SOCKS_TUN" \
-    -proxy "socks5://$SOCKS5_ADDR" \
-    -loglevel warning \
+    --device "$TUN2SOCKS_TUN" \
+    --proxy "socks5://$SOCKS5_ADDR" \
+    --loglevel warning \
     >> "$LOG_FILE" 2>&1 &
   echo "$!" > "$TUN2SOCKS_PID"
 

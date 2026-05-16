@@ -1,6 +1,6 @@
 {
   "module": {
-    "name": "SSHCustom-Magisk",
+    "name": "SSHCustom-VPNChain",
     "work_dir": "/data/adb/sshcustom",
     "log_dir": "/data/adb/sshcustom/run",
     "manual_start": true

@@ -58,7 +58,7 @@ def package(module_dir: Path, output: Path) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Package SSHCustom-Magisk flashable module zip")
+    parser = argparse.ArgumentParser(description="Package SSHCustom-VPNChain flashable module zip")
     parser.add_argument("module_dir", type=Path)
     parser.add_argument("output", type=Path)
     args = parser.parse_args()

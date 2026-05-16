@@ -7,7 +7,7 @@ mkdir -p "$RUN_DIR"
 exec 2>&1
 {
   echo "========================================"
-  echo "        SSHCustom-Magisk Action"
+  echo "        SSHCustom-VPNChain Action"
   echo "========================================"
   if [ ! -x "$CONTROL" ]; then
     echo "Control script missing: $CONTROL"

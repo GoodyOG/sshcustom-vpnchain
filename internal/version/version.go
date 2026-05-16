@@ -1,4 +1,4 @@
-// Package version exposes the SSHCustom-Magisk version string baked into the
+// Package version exposes the SSHCustom-VPNChain version string baked into the
 // daemon binary at build time. The value comes from the repository-root VERSION
 // file via -ldflags="-X github.com/GoodyOG/SSHCustom_Magisk/internal/version.Version=$(cat VERSION)".
 //

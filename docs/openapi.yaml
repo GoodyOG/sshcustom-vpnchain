@@ -1,4 +1,4 @@
-# SSHCustom-Magisk REST + SSE API
+# SSHCustom-VPNChain REST + SSE API
 #
 # This file documents the only API surface the v2 daemon exposes. The legacy
 # pre-v2 /api/{status,profiles,profile/*,control,config,health,logs/*}
@@ -15,7 +15,7 @@
 
 openapi: 3.1.0
 info:
-  title: SSHCustom-Magisk Daemon API
+  title: SSHCustom-VPNChain Daemon API
   version: v1
   description: |
     Local control API for the SSHCustom Magisk/KernelSU module daemon.

@@ -1159,11 +1159,11 @@ func run(args []string) {
 		var desc string
 		switch status {
 		case "running":
-			desc = "description=[ \U0001F7E2 ] SSHCustom-Magisk - running"
+			desc = "description=[ \U0001F7E2 ] SSHCustom-VPNChain - running"
 		case "standby":
-			desc = "description=[ \U0001F7E1 ] SSHCustom-Magisk - standby"
+			desc = "description=[ \U0001F7E1 ] SSHCustom-VPNChain - standby"
 		default:
-			desc = "description=[ \U0001F534 ] SSHCustom-Magisk - disconnected"
+			desc = "description=[ \U0001F534 ] SSHCustom-VPNChain - disconnected"
 		}
 		data, err := os.ReadFile(modulePropPath)
 		if err != nil {
@@ -3924,7 +3924,7 @@ func fetchHTTPViaLocalSOCKS(ctx context.Context, cfg Config, host string, port i
 	if err := readSOCKS5ConnectReply(c); err != nil {
 		return nil, err
 	}
-	httpReq := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: SSHCustom-Magisk/%s\r\nAccept: application/json\r\nConnection: close\r\n\r\n", path, host, Version)
+	httpReq := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: SSHCustom-VPNChain/%s\r\nAccept: application/json\r\nConnection: close\r\n\r\n", path, host, Version)
 	if _, err := c.Write([]byte(httpReq)); err != nil {
 		return nil, err
 	}

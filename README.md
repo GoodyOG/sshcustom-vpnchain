@@ -1,47 +1,49 @@
-# SSHCustom-Magisk
+# SSHCustom-VPNChain
 
-Magisk / KernelSU module that routes Android TCP traffic through an SSH tunnel with transparent proxying.
+Personal Magisk/KSU module: SSH tunnel + Windscribe VPN chain routing for rooted Android.
 
-[![Build](https://github.com/GoodyOG/SSHCustom-Magisk/actions/workflows/build.yml/badge.svg)](https://github.com/GoodyOG/SSHCustom-Magisk/actions/workflows/build.yml)
+[![Build](https://github.com/GoodyOG/sshcustom-vpnchain/actions/workflows/build.yml/badge.svg)](https://github.com/GoodyOG/sshcustom-vpnchain/actions/workflows/build.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/GoodyOG/SSHCustom-Magisk?sort=semver)](https://github.com/GoodyOG/SSHCustom-Magisk/releases/latest)
+[![Release](https://img.shields.io/github/v/release/GoodyOG/sshcustom-vpnchain?sort=semver)](https://github.com/GoodyOG/sshcustom-vpnchain/releases/latest)
 
-## Screenshots
+## What this does
 
-<p align="center">
-  <img src="docs/screenshot_home.png" width="22%" alt="Home">
-  <img src="docs/screenshot_runtime.png" width="22%" alt="Runtime">
-  <img src="docs/screenshot_profiles.png" width="22%" alt="Profiles">
-  <img src="docs/screenshot_settings.png" width="22%" alt="Settings">
-</p>
+Based on [SSHCustom-Magisk](https://github.com/GoodyOG/SSHCustom-Magisk) v2.2.1 with an added **VPN Chain** feature:
 
-## Features
+```
+Apps → OpenVPN tun0 (Windscribe IP) → tun2socks tun1 (SOCKS5) → SSH tunnel → Windscribe server → Internet
+```
 
-- **SSH connection pool** — 4 parallel SSH sessions for faster throughput and resilience
-- **SOCKS5 proxy** + transparent TCP listener with iptables redirect
-- **Pluggable transport** — direct SSH, HTTP proxy, TLS/SNI, payload injection
-- **Hotspot tethering** — shares the tunnel with connected clients
-- **Local dashboard** at `http://127.0.0.1:9190/` with real-time updates
-- **Autostart on boot** with connectivity-aware delay
-- **Real-time status** via Server-Sent Events + polling
+- SSH tunnel provides zero-data connectivity (payload injection)
+- VPN Chain routes Windscribe OpenVPN through the SSH tunnel's SOCKS5 proxy
+- Switch Windscribe locations on the fly (~5-8s)
+- No VpnService needed — TUN interfaces created directly as root
 
-Runs on rooted Android (Magisk or KernelSU), `arm64-v8a` and `armeabi-v7a`.
+## Features (inherited from SSHCustom-Magisk)
 
-## Install
+- SSH connection pool (4 parallel sessions)
+- SOCKS5 proxy + transparent TCP via iptables
+- Pluggable transport (direct, HTTP proxy, TLS/SNI, payload injection)
+- Hotspot tethering
+- WebUI dashboard at `http://127.0.0.1:9190/`
+- Autostart on boot
 
-1. Download `SSHCustom-Magisk-vX.Y.Z.zip` from [Releases](https://github.com/GoodyOG/SSHCustom-Magisk/releases/latest).
-2. Flash the ZIP via Magisk/KernelSU, reboot.
-3. The daemon starts automatically — the WebUI is always accessible after boot.
-4. Open the WebUI, configure a profile, and tap **Start Tunnel** to connect.
+## VPN Chain usage
 
-**Accessing the WebUI:**
+1. Flash the module ZIP, reboot
+2. Start SSHCustom tunnel as normal
+3. Place `.ovpn` files (TCP 443) in `/data/adb/sshcustom/vpnchain/configs/`
+4. Open WebUI → VPN Chain tab → select location → Start
 
-- **KernelSU / KSU-Next** — open the module WebUI directly from the manager.
-- **WebUI-X Portable** — install [WebUI-X Portable](https://github.com/MMRLApp/WebUI-X-Portable) (also available on [Google Play](https://play.google.com/store/apps/details?id=com.dergoogler.mmrl.wx)). SSHCustom-Magisk appears in its module list with full edge-to-edge support. You can also **add a home screen shortcut** for instant access from the app's module list.
-- **Magisk** — install [KsuWebUI Standalone](https://github.com/KOWX712/KsuWebUIStandalone/releases), grant it root access, then open SSHCustom's WebUI from within it.
-- **Browser** — navigate to `http://127.0.0.1:9190/` on the device.
+Or from shell:
+```sh
+vpnchain start turkey
+vpnchain switch germany
+vpnchain stop
+vpnchain status
+```
 
-## Build from source
+## Build
 
 Requires Go 1.23+ and Python 3:
 
@@ -49,17 +51,6 @@ Requires Go 1.23+ and Python 3:
 ./build.sh
 ```
 
-Output: `dist/SSHCustom-Magisk-v*.zip`
-
-## API
-
-REST + SSE on `127.0.0.1:9190`. Full spec in [`docs/openapi.yaml`](docs/openapi.yaml).
-
-## Versioning
-
-Single source of truth in [`VERSION`](VERSION). Bump it and push a `v*` tag — CI handles the rest.
-
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE).
-
+[Apache License 2.0](LICENSE)

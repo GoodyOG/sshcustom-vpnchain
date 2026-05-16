@@ -1,4 +1,4 @@
-// Package webui serves the SSHCustom-Magisk dashboard.
+// Package webui serves the SSHCustom-VPNChain dashboard.
 //
 // The HTML lives in two places:
 //
