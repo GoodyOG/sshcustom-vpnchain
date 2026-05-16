@@ -1,4 +1,4 @@
-name: Build SSHCustom
+name: Build SSHCustom-VPNChain
 
 on:
   push:
@@ -22,21 +22,30 @@ jobs:
           go-version: "1.23.2"
           cache: true
 
+      - name: Install cross-compilation tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-aarch64-linux-gnu
+
       - name: Read VERSION
         id: ver
         run: echo "version=$(cat VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
 
       - name: Build flashable module
-        run: ./build.sh
+        env:
+          OPENVPN_STATIC_URL: ""
+        run: |
+          chmod +x build.sh
+          ./build.sh
 
       - name: Upload module artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: SSHCustom-Magisk-v${{ steps.ver.outputs.version }}
+          name: SSHCustom-VPNChain-v${{ steps.ver.outputs.version }}
           path: |
-            dist/SSHCustom-Magisk-v${{ steps.ver.outputs.version }}.zip
+            dist/SSHCustom-VPNChain-v${{ steps.ver.outputs.version }}.zip
             src/module/bin/arm64/sshcustomd
-            src/module/bin/arm/sshcustomd
+            src/module/vpnchain/bin/tun2socks
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -55,12 +64,12 @@ jobs:
       - name: Download module ZIP
         uses: actions/download-artifact@v4
         with:
-          name: SSHCustom-Magisk-v${{ steps.ver.outputs.version }}
+          name: SSHCustom-VPNChain-v${{ steps.ver.outputs.version }}
           path: out/module
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            out/module/dist/SSHCustom-Magisk-v${{ steps.ver.outputs.version }}.zip
+            out/module/dist/SSHCustom-VPNChain-v${{ steps.ver.outputs.version }}.zip
           generate_release_notes: true

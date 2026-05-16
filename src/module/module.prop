@@ -1,7 +1,7 @@
 id=sshcustom
-name=SSHCustom-Magisk
-version=v2.2.0
-versionCode=20200
+name=SSHCustom-VPNChain
+version=v3.0.0
+versionCode=30000
 author=GoodyOG
-updateJson=https://raw.githubusercontent.com/GoodyOG/SSHCustom-Magisk/main/src/module/update.json
-description=[ stopped ] SSHCustom-Magisk - SSH-tunnel routing for rooted Android. SOCKS5 + transparent IPv4 TCP, hotspot tethering share, payload injection, smart Android-DNS resolver, circuit-breaker reconnect. Dashboard at http://127.0.0.1:9190
+updateJson=https://raw.githubusercontent.com/GoodyOG/sshcustom-vpnchain/main/src/module/update.json
+description=[ stopped ] SSHCustom-VPNChain - SSH tunnel + Windscribe VPN chain routing for rooted Android. SOCKS5 + transparent IPv4 TCP, hotspot share, payload injection, VPN Chain (tun2socks + OpenVPN). Dashboard at http://127.0.0.1:9190

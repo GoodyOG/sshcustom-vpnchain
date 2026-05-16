@@ -1,22 +1,18 @@
 #!/usr/bin/env bash
 #
-# Reproducible SSHCustom-Magisk build:
+# SSHCustom-VPNChain build:
 #   1. Read the canonical version from the VERSION file at the repo root.
-#      Override with VERSION=x.y.z ./build.sh for local experiments.
-#   2. Sync the canonical webroot/index.html into internal/webui/ so the
-#      go:embed directive picks up exactly what users will see.
+#   2. Sync the canonical webroot/index.html into internal/webui/ for go:embed.
 #   3. Stamp module.prop with the version.
-#   4. Build a host validator and run it against the bundled config to
-#      catch JSON regressions before we ship.
-#   5. Cross-compile the daemon for arm64 and armv7, statically linked.
-#   6. Package the module ZIP with deterministic timestamps and POSIX perms.
+#   4. Build a host validator and run it against the bundled config.
+#   5. Cross-compile the daemon for arm64 (only), statically linked.
+#   6. Cross-compile tun2socks for arm64.
+#   7. Download or build static openvpn for arm64.
+#   8. Package the module ZIP.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
-# Single source of truth for the version. The VERSION file flows from here
-# into module.prop, the daemon binary (via -ldflags), and the release zip
-# filename. There is exactly one place to edit when bumping a release.
 if [ -z "${VERSION:-}" ]; then
   if [ ! -f "$ROOT/VERSION" ]; then
     echo "VERSION file missing at repo root" >&2
@@ -24,45 +20,40 @@ if [ -z "${VERSION:-}" ]; then
   fi
   VERSION="$(cat "$ROOT/VERSION" | tr -d '[:space:]')"
 fi
-echo "==> Building SSHCustom-Magisk v${VERSION}"
+echo "==> Building SSHCustom-VPNChain v${VERSION}"
 
 DIST="$ROOT/dist"
 MODULE="$ROOT/src/module"
 ARM64_BIN="$MODULE/bin/arm64/sshcustomd"
-ARMV7_BIN="$MODULE/bin/arm/sshcustomd"
 HOST_BIN="$DIST/sshcustomd-host"
-ZIP_OUT="$DIST/SSHCustom-Magisk-v${VERSION}.zip"
+ZIP_OUT="$DIST/SSHCustom-VPNChain-v${VERSION}.zip"
 WEBROOT_SRC="$MODULE/webroot/index.html"
 WEBROOT_EMBED="$ROOT/internal/webui/index.html"
 FAVICON_SRC="$MODULE/webroot/favicon.svg"
 FAVICON_EMBED="$ROOT/internal/webui/favicon.svg"
 LDFLAGS="-s -w -buildid= -X github.com/GoodyOG/SSHCustom_Magisk/internal/version.Version=${VERSION}"
 
-mkdir -p "$DIST" "$(dirname "$ARM64_BIN")" "$(dirname "$ARMV7_BIN")"
+# VPN Chain binary paths
+VPNCHAIN_BIN_DIR="$MODULE/vpnchain/bin"
+TUN2SOCKS_BIN="$VPNCHAIN_BIN_DIR/tun2socks"
+OPENVPN_BIN="$VPNCHAIN_BIN_DIR/openvpn"
+
+mkdir -p "$DIST" "$(dirname "$ARM64_BIN")" "$VPNCHAIN_BIN_DIR"
 export GOFLAGS="${GOFLAGS:--mod=mod}"
 
 echo "==> Go toolchain"
 go version
 
 echo "==> Syncing embedded webroot from $WEBROOT_SRC"
-# go:embed pulls from disk at compile time. Keeping internal/webui/index.html
-# always identical to src/module/webroot/index.html means we have one HTML
-# source of truth — the module package and the binary fallback are the same
-# bytes. Differences would mean the dashboard looks one way during install
-# and another way after a fresh install with no on-disk webroot.
 cp "$WEBROOT_SRC" "$WEBROOT_EMBED"
 cp "$FAVICON_SRC" "$FAVICON_EMBED"
 
 echo "==> Stamping src/module/module.prop with version=${VERSION}"
-# The module.prop file is what Magisk and KernelSU display in their module
-# list. We rewrite the version line in place; everything else is left alone.
 sed -i.bak -E "s|^version=.*|version=v${VERSION}|" "$MODULE/module.prop"
+sed -i.bak -E "s|^versionCode=.*|versionCode=$(echo "$VERSION" | tr -d '.' | sed 's/^//')00|" "$MODULE/module.prop"
 rm -f "$MODULE/module.prop.bak"
 
 echo "==> Running unit tests"
-# Tests are cheap and fence in pure helpers (DNS extraction, mode parsing,
-# slug generation). Run them on every build so a broken test fails fast
-# instead of waiting for CI.
 go test ./... >/dev/null
 
 echo "==> Building host validation binary"
@@ -84,15 +75,82 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
   -o "$ARM64_BIN" \
   ./cmd/sshcustomd/
 
-echo "==> Building Android/Linux ARMv7 daemon"
-GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build \
-  -trimpath \
-  -buildvcs=false \
-  -ldflags="$LDFLAGS" \
-  -o "$ARMV7_BIN" \
-  ./cmd/sshcustomd/
+echo "==> Building tun2socks for ARM64"
+# Clone tun2socks if not already present
+TUN2SOCKS_SRC="$DIST/tun2socks-src"
+if [ ! -d "$TUN2SOCKS_SRC" ]; then
+  git clone --depth 1 https://github.com/xjasonlyu/tun2socks.git "$TUN2SOCKS_SRC"
+fi
+(
+  cd "$TUN2SOCKS_SRC"
+  GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
+    -trimpath \
+    -buildvcs=false \
+    -ldflags="-s -w" \
+    -o "$TUN2SOCKS_BIN" \
+    ./cmd/tun2socks
+)
+echo "   tun2socks built: $(ls -lh "$TUN2SOCKS_BIN" | awk '{print $5}')"
+
+echo "==> Acquiring static OpenVPN for ARM64"
+# Download pre-built static openvpn for arm64 from a known source.
+# If not available, we'll build from source.
+if [ ! -f "$OPENVPN_BIN" ] || [ "${FORCE_REBUILD_OPENVPN:-}" = "1" ]; then
+  OPENVPN_URL="${OPENVPN_STATIC_URL:-}"
+  if [ -n "$OPENVPN_URL" ]; then
+    echo "   Downloading from $OPENVPN_URL"
+    curl -fsSL "$OPENVPN_URL" -o "$OPENVPN_BIN"
+    chmod +x "$OPENVPN_BIN"
+  else
+    echo "   Building OpenVPN from source for ARM64 (static)..."
+    OPENVPN_BUILD="$DIST/openvpn-build"
+    mkdir -p "$OPENVPN_BUILD"
+    (
+      cd "$OPENVPN_BUILD"
+      # Download openvpn source
+      OPENVPN_VER="${OPENVPN_VERSION:-2.6.12}"
+      if [ ! -f "openvpn-${OPENVPN_VER}.tar.gz" ]; then
+        curl -fsSL "https://swupdate.openvpn.org/community/releases/openvpn-${OPENVPN_VER}.tar.gz" -o "openvpn-${OPENVPN_VER}.tar.gz"
+      fi
+      tar xzf "openvpn-${OPENVPN_VER}.tar.gz" 2>/dev/null || true
+      cd "openvpn-${OPENVPN_VER}"
+      
+      # Cross-compile for arm64 with static linking
+      export CC="${CROSS_COMPILE:-aarch64-linux-gnu-}gcc"
+      export CFLAGS="-static -Os"
+      export LDFLAGS="-static"
+      
+      ./configure \
+        --host=aarch64-linux-gnu \
+        --enable-static \
+        --disable-shared \
+        --disable-plugins \
+        --disable-debug \
+        --disable-plugin-auth-pam \
+        --disable-plugin-down-root \
+        --with-crypto-library=openssl \
+        2>/dev/null || true
+      
+      make -j"$(nproc)" 2>/dev/null || true
+      if [ -f src/openvpn/openvpn ]; then
+        cp src/openvpn/openvpn "$OPENVPN_BIN"
+        chmod +x "$OPENVPN_BIN"
+      fi
+    )
+  fi
+fi
+
+if [ -f "$OPENVPN_BIN" ]; then
+  echo "   openvpn binary: $(ls -lh "$OPENVPN_BIN" | awk '{print $5}')"
+else
+  echo "   WARNING: openvpn binary not available. Set OPENVPN_STATIC_URL env to provide one."
+  echo "   The module ZIP will be built without openvpn. Add it manually before flashing."
+fi
 
 echo "==> Packaging Magisk module"
 python3 "$ROOT/scripts/package_module.py" "$MODULE" "$ZIP_OUT"
 
-echo "$ZIP_OUT"
+echo ""
+echo "==> BUILD COMPLETE"
+echo "    $ZIP_OUT"
+echo ""

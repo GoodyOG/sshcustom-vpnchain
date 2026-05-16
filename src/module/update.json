@@ -1,6 +1,6 @@
 {
-  "version": "v2.2.0",
-  "versionCode": 20200,
-  "zipUrl": "https://github.com/GoodyOG/SSHCustom-Magisk/releases/latest/download/SSHCustom-Magisk-v2.2.0.zip",
-  "changelog": "v2.2.0: Always-on daemon — WebUI accessible after boot without starting tunnel. Start/Stop/Restart tunnel from WebUI. Tunnel-based status in module managers (KSU/WebUI-X). Polished Runtime tab. Tunnel Uptime tracking."
+  "version": "v3.0.0",
+  "versionCode": 30000,
+  "zipUrl": "https://github.com/GoodyOG/sshcustom-vpnchain/releases/latest/download/SSHCustom-VPNChain-v3.0.0.zip",
+  "changelog": "v3.0.0: VPN Chain feature — route Windscribe VPN through SSH tunnel using tun2socks + OpenVPN. New VPN tab in WebUI with start/stop/switch controls. ARM64 only build."
 }

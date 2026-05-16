@@ -1005,6 +1005,120 @@ func run(args []string) {
 			writeV1Error(w, http.StatusMethodNotAllowed, errors.New("GET, POST, or PUT required"))
 		}
 	})
+	// --- VPN Chain API endpoints ---
+	// These call vpnchain.sh in a subprocess. The script manages tun2socks
+	// and openvpn lifecycle; the daemon just proxies commands and reads state.
+	vpnchainScript := filepath.Join(*workDir, "vpnchain", "vpnchain.sh")
+	vpnchainRun := func(args ...string) (string, error) {
+		cmd := exec.Command("/system/bin/sh", append([]string{vpnchainScript}, args...)...)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		if err != nil {
+			errMsg := strings.TrimSpace(stderr.String())
+			if errMsg == "" {
+				errMsg = strings.TrimSpace(stdout.String())
+			}
+			if errMsg == "" {
+				errMsg = err.Error()
+			}
+			return "", errors.New(errMsg)
+		}
+		return strings.TrimSpace(stdout.String()), nil
+	}
+	mux.HandleFunc("/api/v1/vpnchain/start", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeV1Error(w, http.StatusMethodNotAllowed, errors.New("POST required"))
+			return
+		}
+		var req struct {
+			Location string `json:"location"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeV1Error(w, http.StatusBadRequest, err)
+			return
+		}
+		if req.Location == "" {
+			writeV1Error(w, http.StatusBadRequest, errors.New("location is required"))
+			return
+		}
+		out, err := vpnchainRun("start", req.Location)
+		if err != nil {
+			writeV1Error(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeV1OK(w, map[string]any{"result": out})
+	})
+	mux.HandleFunc("/api/v1/vpnchain/stop", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeV1Error(w, http.StatusMethodNotAllowed, errors.New("POST required"))
+			return
+		}
+		out, err := vpnchainRun("stop")
+		if err != nil {
+			writeV1Error(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeV1OK(w, map[string]any{"result": out})
+	})
+	mux.HandleFunc("/api/v1/vpnchain/switch", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeV1Error(w, http.StatusMethodNotAllowed, errors.New("POST required"))
+			return
+		}
+		var req struct {
+			Location string `json:"location"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeV1Error(w, http.StatusBadRequest, err)
+			return
+		}
+		if req.Location == "" {
+			writeV1Error(w, http.StatusBadRequest, errors.New("location is required"))
+			return
+		}
+		out, err := vpnchainRun("switch", req.Location)
+		if err != nil {
+			writeV1Error(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeV1OK(w, map[string]any{"result": out})
+	})
+	mux.HandleFunc("/api/v1/vpnchain/status", func(w http.ResponseWriter, r *http.Request) {
+		out, err := vpnchainRun("status")
+		if err != nil {
+			// Return stopped state on error (script not found, etc.)
+			writeV1OK(w, map[string]any{"running": false, "location": "", "ip": ""})
+			return
+		}
+		// Parse JSON output from vpnchain.sh status
+		var status map[string]any
+		if err := json.Unmarshal([]byte(out), &status); err != nil {
+			writeV1OK(w, map[string]any{"running": false, "location": "", "ip": ""})
+			return
+		}
+		writeV1OK(w, status)
+	})
+	mux.HandleFunc("/api/v1/vpnchain/locations", func(w http.ResponseWriter, r *http.Request) {
+		out, err := vpnchainRun("locations")
+		if err != nil {
+			writeV1OK(w, []string{})
+			return
+		}
+		locations := []string{}
+		for _, line := range strings.Split(out, "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				locations = append(locations, line)
+			}
+		}
+		writeV1OK(w, locations)
+	})
+	mux.HandleFunc("/api/v1/vpnchain/log", func(w http.ResponseWriter, r *http.Request) {
+		serveLog(w, filepath.Join(*workDir, "vpnchain", "run", "vpnchain.log"))
+	})
+
 	// Dashboard. webui.Handler prefers <work_dir>/webroot/index.html when
 	// present and falls back to the embedded HTML otherwise. This means a
 	// fresh install always has a working UI even if the file copy step
