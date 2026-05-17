@@ -608,6 +608,8 @@
         <h2 class="section-pill"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> Log</h2>
         <div class="log-actions">
           <button class="md3-tonal" onclick="vcLoadLog()">Refresh Log</button>
+          <button class="md3-tonal" id="vcLogToggleBtn" onclick="vcToggleLog()">Hide</button>
+          <button class="md3-tonal md3-danger" onclick="vcClearLog()">Clear</button>
         </div>
         <pre class="terminal" id="vcLog" style="max-height:30vh">No log yet</pre>
       </section>
@@ -973,7 +975,7 @@
       $('memoryValue').textContent = fmtBytes(s.memory_rss_bytes);
       $('memoryMeta').textContent = 'system memory ' + (s.system_mem_used_percent || 0).toFixed(0) + '% used';
       $('poolValue').textContent = (s.pool_healthy || 0) + '/' + (s.pool_size || 0);
-      $('poolMeta').textContent = 'all healthy' + (s.pool_last_error ? ' / ' + s.pool_last_error : '');
+      $('poolMeta').textContent = (s.pool_healthy === s.pool_size) ? 'all healthy' : 'reconnecting...';
       $('streamsValue').textContent = String(s.pool_streams || 0);
       $('streamsMeta').textContent = 'target ' + (s.pool_max_streams || '--') + ' streams per SSH';
       $('routeValue').textContent = s.interface || '--';
@@ -1352,11 +1354,26 @@
           sel.innerHTML = '<option value="">No configs found</option>';
         } else {
           sel.innerHTML = vcLocations.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join('');
+          // Restore last selected location from localStorage
+          const saved = localStorage.getItem('vcSelectedLocation');
+          if (saved && vcLocations.includes(saved)) {
+            sel.value = saved;
+          } else if (vcState.running && vcState.location && vcLocations.includes(vcState.location)) {
+            sel.value = vcState.location;
+          }
         }
       } catch (e) {
         $('vcLocation').innerHTML = '<option value="">Error loading</option>';
       }
     }
+
+    // Save location selection to localStorage whenever user changes it
+    document.addEventListener('DOMContentLoaded', function() {
+      var sel = document.getElementById('vcLocation');
+      if (sel) sel.addEventListener('change', function() {
+        if (this.value) localStorage.setItem('vcSelectedLocation', this.value);
+      });
+    });
 
     function vcRender() {
       const running = vcState.running;
@@ -1441,6 +1458,25 @@
         $('vcLog').scrollTop = $('vcLog').scrollHeight;
       } catch (e) {
         $('vcLog').textContent = 'Log unavailable: ' + e.message;
+      }
+    }
+
+    let vcLogVisible = true;
+    function vcToggleLog() {
+      vcLogVisible = !vcLogVisible;
+      $('vcLog').hidden = !vcLogVisible;
+      $('vcLogToggleBtn').textContent = vcLogVisible ? 'Hide' : 'Show';
+    }
+
+    async function vcClearLog() {
+      try {
+        await postV1('/vpnchain/log/clear', {}, 6000);
+        toast('VPN log cleared');
+        vcLoadLog();
+      } catch (e) {
+        // Fallback: just clear the display
+        $('vcLog').textContent = 'Log cleared';
+        toast('Log display cleared');
       }
     }
 
