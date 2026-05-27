@@ -242,6 +242,14 @@ type State struct {
 	PoolLastError       string    `json:"pool_last_error"`
 	Note                string    `json:"note"`
 
+	// TPROXY instrumentation. These are atomic counters bumped from the
+	// listener accept loop and per-connection handler. They are reset on
+	// tunnel stop and exposed in Snapshot() so the WebUI can show whether
+	// transparent traffic is actually flowing through the daemon.
+	tproxyAccepted  int64
+	tproxyDelivered int64
+	tproxyErrors    int64
+
 	// SSE broadcast plumbing. Subscribers are kept on a slice guarded by
 	// subsMu; broadcast() notifies all of them with a non-blocking send so a
 	// slow client never stalls a state mutation.
@@ -254,6 +262,33 @@ func (s *State) set(fn func()) {
 	fn()
 	s.mu.Unlock()
 	s.broadcast()
+}
+
+// BumpTProxyAccepted increments the lifetime counter of TPROXY-accepted
+// connections. Returns the new total. Callers can use the return value to
+// gate per-connection logging (e.g. "log the first N").
+func (s *State) BumpTProxyAccepted() int64 {
+	return atomic.AddInt64(&s.tproxyAccepted, 1)
+}
+
+// BumpTProxyDelivered increments the lifetime counter of TPROXY connections
+// that successfully dialed a remote target via the SSH pool.
+func (s *State) BumpTProxyDelivered() int64 {
+	return atomic.AddInt64(&s.tproxyDelivered, 1)
+}
+
+// BumpTProxyError increments the lifetime counter of TPROXY connections that
+// failed to dial via the SSH pool (target unreachable, pool exhausted, etc.)
+func (s *State) BumpTProxyError() int64 {
+	return atomic.AddInt64(&s.tproxyErrors, 1)
+}
+
+// ResetTProxyCounters zeroes the lifetime TPROXY counters. Called on tunnel
+// stop so each tunnel run gets a fresh count.
+func (s *State) ResetTProxyCounters() {
+	atomic.StoreInt64(&s.tproxyAccepted, 0)
+	atomic.StoreInt64(&s.tproxyDelivered, 0)
+	atomic.StoreInt64(&s.tproxyErrors, 0)
 }
 
 // Subscribe registers a listener that is notified whenever state changes. The
@@ -349,6 +384,9 @@ func (s *State) Snapshot() map[string]any {
 		"transparent_addr":        s.TransparentAddr,
 		"transparent_running":     s.TransparentRunning,
 		"transparent_applied":     s.TransparentApplied,
+		"tproxy_accepted":         atomic.LoadInt64(&s.tproxyAccepted),
+		"tproxy_delivered":        atomic.LoadInt64(&s.tproxyDelivered),
+		"tproxy_errors":           atomic.LoadInt64(&s.tproxyErrors),
 		"hotspot_running":         s.HotspotRunning,
 		"cpu_percent":             s.CPUPercent,
 		"memory_rss_bytes":        s.MemoryRSSBytes,
@@ -1293,6 +1331,7 @@ func run(args []string) {
 			state.PoolReconnecting = 0
 			state.PoolStreams = 0
 		})
+		state.ResetTProxyCounters()
 		updateModuleProp("disconnected")
 		log.Printf("tunnel stopped")
 	}
@@ -2953,6 +2992,10 @@ func startTransparentIfEnabled(ctx context.Context, cfg Config, pool *SSHPool, s
 				return
 			}
 			tuneTCPConn(c, cfg, false)
+			n := st.BumpTProxyAccepted()
+			if n <= 10 {
+				log.Printf("tproxy accept #%d from=%s target=%s", n, c.RemoteAddr(), c.LocalAddr())
+			}
 			go handleTPROXYConn(ctx, c, pool, cfg, st)
 		}
 	}()
@@ -3071,10 +3114,15 @@ func handleTPROXYConn(ctx context.Context, c net.Conn, pool *SSHPool, cfg Config
 	}
 	remote, err := pool.Dial(ctx, "tcp", target)
 	if err != nil {
+		st.BumpTProxyError()
 		logTunnelOpenError("tproxy ssh direct-tcpip", target, err)
 		return
 	}
 	defer remote.Close()
+	delivered := st.BumpTProxyDelivered()
+	if delivered <= 10 {
+		log.Printf("tproxy delivered #%d target=%s", delivered, target)
+	}
 	bufSize := cfg.Performance.BufferSize
 	if bufSize <= 0 {
 		bufSize = 256 * 1024

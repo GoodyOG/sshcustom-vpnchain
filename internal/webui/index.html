@@ -520,6 +520,11 @@
             <span class="supporting-text" id="streamsMeta">no active streams</span>
           </div>
           <div class="card info-card info-card--data">
+            <p class="info-label">TPROXY</p>
+            <p class="info-value" id="tproxyValue">--</p>
+            <span class="supporting-text" id="tproxyMeta">lifetime accepts (since tunnel start)</span>
+          </div>
+          <div class="card info-card info-card--data">
             <p class="info-label">CPU</p>
             <p class="info-value" id="cpuValue">--</p>
             <span class="supporting-text">daemon process</span>
@@ -1033,6 +1038,17 @@
       $('poolMeta').textContent = (s.pool_healthy === s.pool_size) ? 'all healthy' : 'reconnecting...';
       $('streamsValue').textContent = String(s.pool_streams || 0);
       $('streamsMeta').textContent = 'target ' + (s.pool_max_streams || '--') + ' streams per SSH';
+      // TPROXY lifetime counters: confirms transparent traffic is reaching the daemon.
+      const tpAcc = s.tproxy_accepted || 0;
+      const tpDel = s.tproxy_delivered || 0;
+      const tpErr = s.tproxy_errors || 0;
+      const tpEl = $('tproxyValue');
+      const tpMetaEl = $('tproxyMeta');
+      if (tpEl) {
+        tpEl.textContent = String(tpAcc);
+        tpMetaEl.textContent = tpAcc === 0 ? 'no transparent connections yet' :
+          'delivered ' + tpDel + (tpErr ? ' / ' + tpErr + ' err' : '');
+      }
       $('routeValue').textContent = s.interface || '--';
       $('routeMeta').textContent = s.gateway ? 'gateway ' + s.gateway : (s.source_ip || 'gateway unavailable');
       $('resolverValue').textContent = s.resolver_method ? 'android_shell_dns' : (s.dns_mode || '--');

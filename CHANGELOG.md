@@ -4,6 +4,31 @@ All notable changes to SSHCustom-VPNChain are recorded here. Format is loosely
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] — 2026-05-27
+
+### Added — Visibility into TPROXY traffic flow
+
+- **Lifetime TPROXY connection counter.** Three new atomic counters track,
+  per tunnel run, how many connections were accepted on the TPROXY listener
+  (`tproxy_accepted`), how many were successfully dialed via the SSH pool
+  (`tproxy_delivered`), and how many failed (`tproxy_errors`). Exposed via
+  `/api/v1/status` and rendered as a "TPROXY" card on the WebUI Runtime tab,
+  so users can confirm whether transparent traffic is reaching the daemon
+  without enabling `verbose_transparent_logs`.
+- **Unconditional logging for the first 10 connects.** Each tunnel run logs
+  the first 10 accepted TPROXY connections and the first 10 successful
+  deliveries to the Core log, regardless of the verbose flag. After 10, the
+  log goes quiet to avoid spam. All TPROXY errors are still always logged.
+- **Counters reset on tunnel stop.** Each `start tunnel` cycle gets a clean
+  count, so the WebUI value reflects "since last start" rather than process
+  uptime.
+
+### Internal
+
+- No iptables, leak-protection, or routing logic changes. This release is
+  purely additive instrumentation to debug the v1.3.2 "connected but no
+  traffic" reports.
+
 ## [1.3.1] — 2026-05-27
 
 ### Fixed — IPv6 TPROXY removed (critical)
