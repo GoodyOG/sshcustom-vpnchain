@@ -40,7 +40,7 @@
     "block_quic": true,
     "flush_conntrack": true,
     "sysctl_hardening": true,
-    "leak_protection_v": 1
+    "leak_protection_v": 2
   },
   "hotspot": {
     "enabled": true,

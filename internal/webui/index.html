@@ -670,8 +670,8 @@
           <div class="list-item">
             <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
             <div class="list-item-content">
-              <div class="toggle-text">TPROXY (IPv4 + IPv6)</div>
-              <span class="supporting-text">Mangle-table TPROXY with dual-stack support. All TCP traffic is transparently proxied through the SSH tunnel. Requires kernel CONFIG_NETFILTER_XT_TARGET_TPROXY.</span>
+              <div class="toggle-text">TPROXY (IPv4)</div>
+              <span class="supporting-text">Mangle-table TPROXY for IPv4 TCP. All TCP traffic is transparently proxied through the SSH tunnel. Requires kernel CONFIG_NETFILTER_XT_TARGET_TPROXY.</span>
             </div>
           </div>
         </div>
@@ -954,7 +954,16 @@
         renderPaths();
         renderAbout();
       } catch (e) {
-        renderOffline();
+        // Only show offline if the fetch itself failed (daemon unreachable).
+        // A JS error inside renderStatus should NOT mark as offline.
+        if (e instanceof TypeError && e.message && e.message.includes('fetch')) {
+          renderOffline();
+        } else if (e.name === 'AbortError' || e.name === 'TimeoutError') {
+          renderOffline();
+        } else if (!statusData) {
+          // First load failed — daemon truly unreachable
+          renderOffline();
+        }
       }
     }
 
@@ -1111,6 +1120,7 @@
       // Leak protection toggles. Default to true if the field is missing
       // so that a daemon running an older config schema (pre-v1.1.0)
       // still shows the secure defaults until the migration completes.
+      const tp = cfg.transparent_proxy || {};
       $('lpIPv6Switch').classList.toggle('on', tp.block_ipv6_leaks !== false);
       $('lpQUICSwitch').classList.toggle('on', tp.block_quic !== false);
       $('lpConntrackSwitch').classList.toggle('on', tp.flush_conntrack !== false);

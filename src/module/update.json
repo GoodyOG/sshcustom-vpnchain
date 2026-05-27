@@ -1,6 +1,6 @@
 {
-  "version": "v1.3.1",
-  "versionCode": 10301,
-  "zipUrl": "https://github.com/GoodyOG/sshcustom-vpnchain/releases/latest/download/SSHCustom-VPNChain-v1.3.1.zip",
-  "changelog": "v1.3.1: Remove IPv6 TPROXY (fixes 'connected but nothing works'), fix duplicate PREROUTING hooks, fix cleanup loop."
+  "version": "v1.3.2",
+  "versionCode": 10302,
+  "zipUrl": "https://github.com/GoodyOG/sshcustom-vpnchain/releases/latest/download/SSHCustom-VPNChain-v1.3.2.zip",
+  "changelog": "v1.3.2: Fix daemon offline status dot bug (WebUI), default all leak protection toggles ON, update TPROXY label to IPv4 only."
 }

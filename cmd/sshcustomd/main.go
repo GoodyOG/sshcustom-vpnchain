@@ -3199,7 +3199,7 @@ func normalizeConfig(cfg *Config) {
 // change. Bumping it forces a one-time re-enable on the next config load,
 // which is how we ship a "more secure default" without overriding a user
 // who deliberately turned a toggle off.
-const currentLeakProtectionV = 1
+const currentLeakProtectionV = 2
 
 func normalizeDNSMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
