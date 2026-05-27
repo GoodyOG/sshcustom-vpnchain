@@ -99,7 +99,11 @@ type Config struct {
 		BlockIPv6Leaks bool `json:"block_ipv6_leaks"`
 		BlockQUIC      bool `json:"block_quic"`
 		FlushConntrack bool `json:"flush_conntrack"`
-		RouteLocalnet  bool `json:"route_localnet"`
+		RouteLocalnet  bool `json:"sysctl_hardening"`
+		// RouteLocalnetLegacy reads the old "route_localnet" JSON key for
+		// backward compatibility with pre-1.2.1 config files. normalizeConfig
+		// migrates it into RouteLocalnet (the new "sysctl_hardening" key).
+		RouteLocalnetLegacy bool `json:"route_localnet,omitempty"`
 		// LeakProtectionV is a schema marker. When the daemon loads a
 		// config with LeakProtectionV < currentLeakProtectionV, it
 		// enables every leak-protection toggle to true and bumps the
@@ -454,7 +458,7 @@ func main() {
 	}
 	if len(os.Args) < 2 {
 		fmt.Println("sshcustomd " + Version)
-		fmt.Println("usage: sshcustomd run -c config.json -p profiles.json -w /data/adb/sshcustom")
+		fmt.Println("usage: sshcustomd run -c config.json -p profiles.json -w /data/adb/sshcustom-vpnchain")
 		os.Exit(2)
 	}
 	switch os.Args[1] {
@@ -531,9 +535,9 @@ func fatal(err error) { fmt.Fprintln(os.Stderr, "error:", err); os.Exit(1) }
 
 func run(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	cfgPath := fs.String("c", "/data/adb/sshcustom/config.json", "config path")
-	profPath := fs.String("p", "/data/adb/sshcustom/profiles.json", "profiles path")
-	workDir := fs.String("w", "/data/adb/sshcustom", "work dir")
+	cfgPath := fs.String("c", "/data/adb/sshcustom-vpnchain/config.json", "config path")
+	profPath := fs.String("p", "/data/adb/sshcustom-vpnchain/profiles.json", "profiles path")
+	workDir := fs.String("w", "/data/adb/sshcustom-vpnchain", "work dir")
 	idleMode := fs.Bool("idle", false, "start in idle mode (WebUI only, no tunnel)")
 	_ = fs.Parse(args)
 
@@ -995,7 +999,7 @@ func run(args []string) {
 			}
 		}
 	})
-	// Autostart marker. service.sh reads /data/adb/sshcustom/run/autostart at
+	// Autostart marker. service.sh reads /data/adb/sshcustom-vpnchain/run/autostart at
 	// boot; the daemon owns the toggle so the WebUI Settings tab can flip it
 	// without users editing files. Body: {"enabled": true|false}.
 	mux.HandleFunc("/api/v1/autostart", func(w http.ResponseWriter, r *http.Request) {
@@ -3183,6 +3187,15 @@ func normalizeConfig(cfg *Config) {
 	if cfg.TransparentProxy.ResolvedMode == "" {
 		cfg.TransparentProxy.ResolvedMode = resolveProxyMode(cfg.TransparentProxy.Mode)
 	}
+	// Migrate legacy "route_localnet" key → "sysctl_hardening" (v1.2.1).
+	// If a pre-1.2.1 config had route_localnet=true but the new
+	// sysctl_hardening field unmarshalled as false (because the key
+	// didn't exist in the JSON), inherit the legacy value.
+	if cfg.TransparentProxy.RouteLocalnetLegacy && !cfg.TransparentProxy.RouteLocalnet {
+		cfg.TransparentProxy.RouteLocalnet = true
+	}
+	// Clear the legacy field so it won't be re-serialized.
+	cfg.TransparentProxy.RouteLocalnetLegacy = false
 }
 
 // currentLeakProtectionV bumps every time the leak-protection defaults
@@ -3911,7 +3924,7 @@ func configSummary(cfg Config) map[string]any {
 			"block_ipv6_leaks":  cfg.TransparentProxy.BlockIPv6Leaks,
 			"block_quic":        cfg.TransparentProxy.BlockQUIC,
 			"flush_conntrack":   cfg.TransparentProxy.FlushConntrack,
-			"route_localnet":    cfg.TransparentProxy.RouteLocalnet,
+			"sysctl_hardening":  cfg.TransparentProxy.RouteLocalnet,
 		},
 	}
 }
@@ -3929,7 +3942,7 @@ func apiCapabilities(cfg Config) []apiv1.Capability {
 		{Name: "block_ipv6_leaks", Enabled: cfg.TransparentProxy.BlockIPv6Leaks, Description: "REJECT outbound IPv6 except daemon (UID 0); apps fall back to IPv4 instead of stalling"},
 		{Name: "block_quic", Enabled: cfg.TransparentProxy.BlockQUIC, Description: "REJECT UDP/443+UDP/80 except daemon; forces Chrome/YouTube TCP fallback"},
 		{Name: "flush_conntrack", Enabled: cfg.TransparentProxy.FlushConntrack, Description: "drop existing flows on rule install/remove so old direct sockets reconnect via tunnel"},
-		{Name: "route_localnet", Enabled: cfg.TransparentProxy.RouteLocalnet, Description: "set route_localnet=1 + rp_filter=loose for reliable OUTPUT REDIRECT"},
+		{Name: "sysctl_hardening", Enabled: cfg.TransparentProxy.RouteLocalnet, Description: "set route_localnet=1 + rp_filter=loose for reliable OUTPUT REDIRECT"},
 		{Name: "per_app_routing", Enabled: false, Description: "planned future feature"},
 	}
 }

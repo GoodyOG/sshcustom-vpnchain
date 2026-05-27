@@ -21,7 +21,7 @@
 // SSHC_OUTPUT also has an early "owner uid 0 RETURN" rule. Without it, the
 // daemon's own outbound connections (the SSH tunnel itself, DNS lookups,
 // etc.) would be redirected through itself and form an infinite loop. Since
-// we run from /data/adb/sshcustom under root (Magisk-postFsData environment),
+// we run from /data/adb/sshcustom-vpnchain under root (Magisk-postFsData environment),
 // matching uid 0 reliably bypasses our own traffic.
 //
 // # Bypass IPs
@@ -400,6 +400,13 @@ func applyTPROXY(cfg Config, prefix string, port int, bypassIPs []string) error 
 
 	// Hook into builtin chains
 	run4("-t", "mangle", "-I", "OUTPUT", "1", "-p", "tcp", "-j", outChain4)
+	// PREROUTING hook is REQUIRED for locally-originated traffic: after OUTPUT
+	// marks the packet with fwmark 0x1, policy routing sends it to loopback,
+	// and the packet re-enters the network stack via PREROUTING. Without this
+	// unconditional hook, marked packets fall through PREROUTING untouched and
+	// never reach the TPROXY target → the listener gets zero connections.
+	// We match on the fwmark so only our already-marked packets enter the chain.
+	run4("-t", "mangle", "-I", "PREROUTING", "1", "-p", "tcp", "-m", "mark", "--mark", tproxyMark, "-j", preChain4)
 	if cfg.Hotspot {
 		ifaces := cfg.HotspotIfaces
 		if len(ifaces) == 0 {
@@ -409,6 +416,8 @@ func applyTPROXY(cfg Config, prefix string, port int, bypassIPs []string) error 
 			if strings.TrimSpace(iface) == "" {
 				continue
 			}
+			// Hotspot traffic (forwarded from tethered clients) won't have
+			// our fwmark, so we match on interface instead.
 			run4("-t", "mangle", "-I", "PREROUTING", "1", "-i", iface, "-p", "tcp", "-j", preChain4)
 		}
 		_ = exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1").Run()
@@ -445,6 +454,9 @@ func applyTPROXY(cfg Config, prefix string, port int, bypassIPs []string) error 
 		"--on-port", portStr, "--on-ip", "::", "--tproxy-mark", tproxyMark)
 
 	run6("-t", "mangle", "-I", "OUTPUT", "1", "-p", "tcp", "-j", outChain6)
+	// Same as IPv4: unconditional PREROUTING hook for locally-originated v6
+	// packets that re-enter via loopback after policy routing.
+	run6("-t", "mangle", "-I", "PREROUTING", "1", "-p", "tcp", "-m", "mark", "--mark", tproxyMark, "-j", preChain6)
 	if cfg.Hotspot {
 		ifaces := cfg.HotspotIfaces
 		if len(ifaces) == 0 {
@@ -524,6 +536,8 @@ func Cleanup(cfg Config) error {
 	for _, ch := range allLegacyMangleChains(prefix) {
 		_ = exec.Command("iptables", "-t", "mangle", "-D", "OUTPUT", "-p", "tcp", "-j", ch).Run()
 		_ = exec.Command("iptables", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-j", ch).Run()
+		// Unconditional fwmark-based PREROUTING hook (v1.2.1+).
+		_ = exec.Command("iptables", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-m", "mark", "--mark", tproxyMark, "-j", ch).Run()
 		for _, iface := range ifaces {
 			if strings.TrimSpace(iface) == "" {
 				continue
@@ -538,6 +552,8 @@ func Cleanup(cfg Config) error {
 	for _, ch := range allLegacyV6MangleChains(prefix) {
 		_ = exec.Command("ip6tables", "-t", "mangle", "-D", "OUTPUT", "-p", "tcp", "-j", ch).Run()
 		_ = exec.Command("ip6tables", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-j", ch).Run()
+		// Unconditional fwmark-based PREROUTING hook (v1.2.1+).
+		_ = exec.Command("ip6tables", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-m", "mark", "--mark", tproxyMark, "-j", ch).Run()
 		for _, iface := range ifaces {
 			if strings.TrimSpace(iface) == "" {
 				continue

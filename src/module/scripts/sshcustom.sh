@@ -1,6 +1,6 @@
 #!/system/bin/sh
 
-WORK_DIR="/data/adb/sshcustom"
+WORK_DIR="/data/adb/sshcustom-vpnchain"
 BIN="$WORK_DIR/bin/sshcustomd"
 CONFIG="$WORK_DIR/config.json"
 PROFILES="$WORK_DIR/profiles.json"

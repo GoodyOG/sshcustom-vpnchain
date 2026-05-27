@@ -8,7 +8,7 @@
 //   - /etc/resolv.conf is empty or missing on most builds.
 //   - [::1]:53 is bound to dnsproxyd, which is a Unix-socket service at
 //     /dev/socket/dnsproxyd whose access is whitelisted by uid. Our Go binary
-//     runs from /data/adb/sshcustom and is not in the whitelist, so connect()
+//     runs from /data/adb/sshcustom-vpnchain and is not in the whitelist, so connect()
 //     to [::1]:53 returns "connection refused".
 //   - Java's InetAddress works because it goes through the proper Android DNS
 //     framework, but we cannot call into Java from a static Go binary.

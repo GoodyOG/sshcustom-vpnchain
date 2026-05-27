@@ -35,7 +35,7 @@ type LeakProtectionSettings struct {
 	BlockIPv6Leaks *bool `json:"block_ipv6_leaks,omitempty"`
 	BlockQUIC      *bool `json:"block_quic,omitempty"`
 	FlushConntrack *bool `json:"flush_conntrack,omitempty"`
-	RouteLocalnet  *bool `json:"route_localnet,omitempty"`
+	RouteLocalnet  *bool `json:"sysctl_hardening,omitempty"`
 }
 
 type ConfigPatchRequest struct {

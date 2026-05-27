@@ -1124,7 +1124,7 @@
       $('lpIPv6Switch').classList.toggle('on', tp.block_ipv6_leaks !== false);
       $('lpQUICSwitch').classList.toggle('on', tp.block_quic !== false);
       $('lpConntrackSwitch').classList.toggle('on', tp.flush_conntrack !== false);
-      $('lpSysctlSwitch').classList.toggle('on', tp.route_localnet !== false);
+      $('lpSysctlSwitch').classList.toggle('on', tp.sysctl_hardening !== false);
     }
     $('dnsMode').addEventListener('change', () => $('customDnsRow').hidden = $('dnsMode').value !== 'custom');
     function toggleHotspot() { $('hotspotSwitch').classList.toggle('on'); }
@@ -1160,7 +1160,7 @@
           block_ipv6_leaks: $('lpIPv6Switch').classList.contains('on'),
           block_quic: $('lpQUICSwitch').classList.contains('on'),
           flush_conntrack: $('lpConntrackSwitch').classList.contains('on'),
-          route_localnet: $('lpSysctlSwitch').classList.contains('on')
+          sysctl_hardening: $('lpSysctlSwitch').classList.contains('on')
         };
         const transparent_proxy = { mode: $('proxyMode').value };
         await postV1('/config', { dns, hotspot: { enabled, tcp: enabled, dns: false }, leak_protection, transparent_proxy, restart: true }, 12000);

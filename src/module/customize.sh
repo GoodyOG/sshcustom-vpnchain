@@ -4,13 +4,29 @@ PROPFILE=false
 POSTFSDATA=false
 LATESTARTSERVICE=true
 
-WORK_DIR="/data/adb/sshcustom"
+WORK_DIR="/data/adb/sshcustom-vpnchain"
 BIN_DIR="$WORK_DIR/bin"
 RUN_DIR="$WORK_DIR/run"
 CONFIG_DIR="$WORK_DIR/config"
 
+# --- Migration from old path (v1.2.0 and earlier used /data/adb/sshcustom) ---
+OLD_WORK_DIR="/data/adb/sshcustom"
+if [ -d "$OLD_WORK_DIR" ] && [ ! -d "$WORK_DIR" ]; then
+  ui_print "Migrating from $OLD_WORK_DIR → $WORK_DIR"
+  # Stop old daemon first
+  [ -x "$OLD_WORK_DIR/sshcustom.sh" ] && "$OLD_WORK_DIR/sshcustom.sh" stop >/dev/null 2>&1
+  killall sshcustomd 2>/dev/null || true
+  # Move everything to new path
+  mv "$OLD_WORK_DIR" "$WORK_DIR"
+  # Update work_dir in config.json if it still points to old path
+  if [ -f "$WORK_DIR/config.json" ]; then
+    sed -i 's|/data/adb/sshcustom"|/data/adb/sshcustom-vpnchain"|g' "$WORK_DIR/config.json"
+    sed -i 's|/data/adb/sshcustom/|/data/adb/sshcustom-vpnchain/|g' "$WORK_DIR/config.json"
+  fi
+fi
+
 ui_print "****************************************"
-ui_print " SSHCustom-VPNChain v3.0.0"
+ui_print " SSHCustom-VPNChain v1.2.1"
 ui_print " SSH Tunnel + Windscribe VPN Chain"
 ui_print "****************************************"
 

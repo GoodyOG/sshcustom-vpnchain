@@ -1,8 +1,51 @@
 # Changelog
 
-All notable changes to SSHCustom_Magisk are recorded here. Format is loosely
+All notable changes to SSHCustom-VPNChain are recorded here. Format is loosely
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.2.1] — 2026-05-27
+
+### Fixed — TPROXY traffic delivery (critical)
+
+- **PREROUTING hook missing for local traffic.** v1.2.0 only installed
+  PREROUTING mangle hooks per-interface (for hotspot). Locally-originated
+  packets marked in OUTPUT and rerouted to loopback via policy routing had
+  nothing to catch them in PREROUTING — they fell through and never reached
+  the TPROXY target. Added unconditional fwmark-matched PREROUTING hooks:
+  ```
+  iptables -t mangle -I PREROUTING 1 -p tcp -m mark --mark 0x1/0x1 -j SSHC_TPROXY_PRE
+  ip6tables -t mangle -I PREROUTING 1 -p tcp -m mark --mark 0x1/0x1 -j SSHC_TPROXY_PRE6
+  ```
+  This is the fix for "tunnel connects but nothing works" in v1.2.0.
+
+### Changed — Working directory
+
+- **Moved from `/data/adb/sshcustom` to `/data/adb/sshcustom-vpnchain`.**
+  Prevents conflict with the public SSHCustom-Magisk module if both are
+  installed. `customize.sh` auto-migrates existing data on upgrade (moves
+  the old directory, patches paths in config.json). `uninstall.sh` cleans
+  both paths.
+
+### Changed — Config key rename
+
+- **`route_localnet` → `sysctl_hardening`** in the `transparent_proxy`
+  JSON block. The toggle controls both `route_localnet=1` AND `rp_filter=2`,
+  so the old name was misleading. Backward compatible: old configs with
+  `"route_localnet": true` are auto-migrated at load time via a legacy
+  JSON field. The WebUI already displayed "Sysctl Hardening" — now the API
+  key matches the UI label.
+
+### Improved — Cleanup
+
+- `Cleanup()` now properly removes fwmark-matched PREROUTING hooks (not
+  just interface-matched ones from hotspot).
+- `net_clean.sh` updated to use new working directory path.
+
+### Documentation
+
+- **README.md** rewritten with full feature documentation: TPROXY mode
+  table, leak protection toggles, file layout, VPN Chain usage.
 
 ## [1.2.0] — 2026-05-27
 

@@ -11,7 +11,7 @@
 # the FORWARD ACCEPT rule that hotspot mode adds. Errors are silenced
 # because every -D against a missing rule is harmless noise.
 
-RUN_DIR="/data/adb/sshcustom/run"
+RUN_DIR="/data/adb/sshcustom-vpnchain/run"
 LOG="$RUN_DIR/net_clean.log"
 mkdir -p "$RUN_DIR"
 
