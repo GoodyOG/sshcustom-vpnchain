@@ -4,6 +4,82 @@ All notable changes to SSHCustom_Magisk are recorded here. Format is loosely
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] — 2026-05-27
+
+### Added — TPROXY Transparent Proxy (Stage 2 Lite)
+
+Upgrades the transparent TCP proxy from nat-table REDIRECT (IPv4 only) to
+mangle-table TPROXY (IPv4 + IPv6), enabling IPv6 TCP tunneling on kernels
+that lack `CONFIG_IP6_NF_NAT` (like the Poco F6 stock kernel).
+
+- **TPROXY mode.** New `transparent_proxy.mode` config field with values:
+  - `auto` (default): probe kernel for TPROXY support at runtime via a
+    test mangle rule insertion. Falls back to REDIRECT if unsupported.
+  - `tproxy`: force mangle-table TPROXY (IPv4 + IPv6 dual-stack).
+  - `redirect`: force legacy nat-table REDIRECT (IPv4 only).
+- **IPv6 TCP tunneling.** When TPROXY is active, `ip6tables -t mangle`
+  chains `SSHC_TPROXY_OUT6` and `SSHC_TPROXY_PRE6` intercept outbound
+  IPv6 TCP and deliver it to the daemon's `IP_TRANSPARENT` socket. Apps
+  that connect over IPv6 now ride the SSH tunnel instead of being
+  REJECT'd (or timing out on the carrier wall).
+- **Dual-stack listener.** The daemon opens a single `AF_INET6` socket
+  with `IPV6_V6ONLY=0` and `IP_TRANSPARENT`/`IPV6_TRANSPARENT` set.
+  Both v4-mapped and native v6 connections arrive on one listener.
+  `conn.LocalAddr()` is the original destination — no `SO_ORIGINAL_DST`
+  syscall needed in TPROXY mode.
+- **Policy routing.** `ip rule add fwmark 0x1/0x1 table 100` +
+  `ip route add local 0.0.0.0/0 dev lo table 100` (and the v6
+  equivalents) route marked packets to the daemon's transparent socket.
+- **IPv6 lockdown integration.** When TPROXY is active, the IPv6
+  lockdown filter chain inserts a RETURN rule for packets carrying
+  our fwmark (`0x1/0x1`) before the catch-all REJECT. This lets
+  TPROXY-intercepted v6 TCP through while still blocking non-TCP v6
+  leaks (QUIC, raw UDP, etc.).
+- **Auto-detection probe.** `iptables.ProbeTPROXY()` creates a
+  temporary mangle chain and inserts a TPROXY rule. If it succeeds, the
+  kernel has `CONFIG_NETFILTER_XT_TARGET_TPROXY`. The chain is always
+  cleaned up regardless of result.
+
+### Added — WebUI
+
+- **Proxy Mode selector** on the Settings tab between "Sharing" and
+  "Leak Protection". Dropdown with Auto / TPROXY / REDIRECT options.
+  Shows the resolved mode (auto-detected result) below the selector.
+
+### Added — API surface
+
+- `transparent_proxy.mode` and `transparent_proxy.resolved_mode` in
+  `/api/v1/status` config block and `/api/v1/diagnostics`.
+- `ConfigPatchRequest.TransparentProxy.Mode` (`*string`) for runtime
+  mode switching via `/api/v1/config` POST.
+- New capabilities: `ipv6_transparent_tcp`, `tproxy_mode`.
+
+### Changed
+
+- `internal/iptables.Config` extended with `Mode` field. `Apply()`
+  dispatches to `applyREDIRECT()` or `applyTPROXY()` based on mode.
+- `internal/iptables.Cleanup()` now removes mangle-table chains
+  (`SSHC_TPROXY_OUT`, `SSHC_TPROXY_PRE`, `SSHC_TPROXY_OUT6`,
+  `SSHC_TPROXY_PRE6`) and policy routes (table 100) in addition to
+  existing nat-table cleanup.
+- `cmd/sshcustomd/main.go`: `startTransparentIfEnabled` opens an
+  `IP_TRANSPARENT` dual-stack listener in TPROXY mode;
+  `handleTPROXYConn` reads `conn.LocalAddr()` as original destination.
+- `src/module/scripts/net_clean.sh` extended with mangle-table and
+  policy-route cleanup.
+- `src/module/config/config.json` ships with `"mode": "auto"`.
+- Removed `"ipv6": false` capability — replaced by `ipv6_transparent_tcp`
+  which reflects actual kernel support.
+
+### HyperOS compatibility note
+
+The fwmark `0x1/0x1` is safe because:
+1. Our TPROXY/MARK rule inserts at `-I OUTPUT 1` (runs first).
+2. Policy routing matches in OUTPUT before HyperOS's POSTROUTING
+   `MARK and 0x0` clears marks (delivery already happened).
+3. HyperOS's `routectrl_mangle_INPUT` stamps `0x30069/0x7fefffff` on
+   inbound only — doesn't conflict with our OUTPUT-path mark.
+
 ## [1.1.0] — 2026-05-27
 
 ### Added — Leak Protection

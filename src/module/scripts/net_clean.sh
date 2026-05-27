@@ -25,6 +25,12 @@ NAT_CHAINS="SSHC_OUTPUT SSHC_PREROUTING SSHC_PROXY SSHC_DNS SSHC_HOTSPOT SSHC_HO
 FILTER_CHAINS="SSHC_FILTER_QUIC"
 # IPv6 filter-table chains (also v1.1.0).
 V6_FILTER_CHAINS="SSHC_FILTER_OUTPUT6 SSHC_FILTER_FORWARD6"
+# Mangle-table chains for TPROXY mode (v1.2.0).
+MANGLE_CHAINS="SSHC_TPROXY_OUT SSHC_TPROXY_PRE"
+V6_MANGLE_CHAINS="SSHC_TPROXY_OUT6 SSHC_TPROXY_PRE6"
+# TPROXY policy routing
+TPROXY_MARK="0x1/0x1"
+TPROXY_TABLE="100"
 IFACES="wlan+ swlan+ ap+ rndis+ ncm+ bt-pan+"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOG"; }
@@ -83,6 +89,40 @@ clean_v6_filter() {
   done
 }
 
+clean_v4_mangle() {
+  for C in $MANGLE_CHAINS; do
+    run $IPT -t mangle -D OUTPUT -p tcp -j "$C"
+    run $IPT -t mangle -D PREROUTING -p tcp -j "$C"
+    for IF in $IFACES; do
+      run $IPT -t mangle -D PREROUTING -i "$IF" -p tcp -j "$C"
+    done
+    run $IPT -t mangle -F "$C"
+    run $IPT -t mangle -X "$C"
+  done
+}
+
+clean_v6_mangle() {
+  for C in $V6_MANGLE_CHAINS; do
+    run $IP6T -t mangle -D OUTPUT -p tcp -j "$C"
+    run $IP6T -t mangle -D PREROUTING -p tcp -j "$C"
+    for IF in $IFACES; do
+      run $IP6T -t mangle -D PREROUTING -i "$IF" -p tcp -j "$C"
+    done
+    run $IP6T -t mangle -F "$C"
+    run $IP6T -t mangle -X "$C"
+  done
+  run $IP6T -D FORWARD -j ACCEPT
+}
+
+clean_policy_routes() {
+  run ip rule del fwmark "$TPROXY_MARK" table "$TPROXY_TABLE"
+  run ip route del local 0.0.0.0/0 dev lo table "$TPROXY_TABLE"
+  run ip -6 rule del fwmark "$TPROXY_MARK" table "$TPROXY_TABLE"
+  run ip -6 route del local ::/0 dev lo table "$TPROXY_TABLE"
+  run ip route flush table "$TPROXY_TABLE"
+  run ip -6 route flush table "$TPROXY_TABLE"
+}
+
 # Restore the kernel sysctls the daemon may have tweaked. Defaults are
 # Android's standard values; if the user had non-default values these
 # get overwritten, but that's a non-issue on stock builds.
@@ -98,6 +138,9 @@ clean_v4_nat
 clean_v4_filter
 clean_v6_nat
 clean_v6_filter
+clean_v4_mangle
+clean_v6_mangle
+clean_policy_routes
 restore_sysctls
 log "clean complete"
 exit 0
