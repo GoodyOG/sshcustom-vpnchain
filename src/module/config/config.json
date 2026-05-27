@@ -34,7 +34,12 @@
     "dns_port": 10811,
     "udp_mode": "disabled",
     "chains_prefix": "SSHC",
-    "apply_after_ssh_connected": true
+    "apply_after_ssh_connected": true,
+    "block_ipv6_leaks": true,
+    "block_quic": true,
+    "flush_conntrack": true,
+    "route_localnet": true,
+    "leak_protection_v": 1
   },
   "hotspot": {
     "enabled": true,

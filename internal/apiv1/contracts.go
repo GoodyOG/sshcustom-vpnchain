@@ -27,10 +27,22 @@ type HotspotSettings struct {
 	Interfaces []string `json:"interfaces,omitempty"`
 }
 
+// LeakProtectionSettings is the patch surface for v1.1.0 leak protection
+// toggles. All fields are pointer-bool so the caller can change one
+// toggle without resetting the others — matching the existing pattern in
+// HotspotSettings.
+type LeakProtectionSettings struct {
+	BlockIPv6Leaks *bool `json:"block_ipv6_leaks,omitempty"`
+	BlockQUIC      *bool `json:"block_quic,omitempty"`
+	FlushConntrack *bool `json:"flush_conntrack,omitempty"`
+	RouteLocalnet  *bool `json:"route_localnet,omitempty"`
+}
+
 type ConfigPatchRequest struct {
-	DNS     *DNSSettings     `json:"dns,omitempty"`
-	Hotspot *HotspotSettings `json:"hotspot,omitempty"`
-	Restart bool             `json:"restart,omitempty"`
+	DNS             *DNSSettings            `json:"dns,omitempty"`
+	Hotspot         *HotspotSettings        `json:"hotspot,omitempty"`
+	LeakProtection  *LeakProtectionSettings `json:"leak_protection,omitempty"`
+	Restart         bool                    `json:"restart,omitempty"`
 }
 
 type ConfigUpdateResponse struct {

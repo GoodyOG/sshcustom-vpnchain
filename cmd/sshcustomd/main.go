@@ -84,6 +84,21 @@ type Config struct {
 		UDPMode       string `json:"udp_mode"`
 		ChainsPrefix  string `json:"chains_prefix"`
 		ApplyAfterSSH bool   `json:"apply_after_ssh_connected"`
+		// Leak protection (added in v1.1.0). All default to true via
+		// normalizeConfig so existing config.json files automatically pick
+		// up the new behaviour after upgrade. Each flag is independently
+		// togglable from the WebUI.
+		BlockIPv6Leaks bool `json:"block_ipv6_leaks"`
+		BlockQUIC      bool `json:"block_quic"`
+		FlushConntrack bool `json:"flush_conntrack"`
+		RouteLocalnet  bool `json:"route_localnet"`
+		// LeakProtectionV is a schema marker. When the daemon loads a
+		// config with LeakProtectionV < currentLeakProtectionV, it
+		// enables every leak-protection toggle to true and bumps the
+		// marker. Lets users upgrading from a pre-leak-protection build
+		// pick up the new defaults automatically while still allowing
+		// them to opt-out afterwards via WebUI.
+		LeakProtectionV int `json:"leak_protection_v"`
 	} `json:"transparent_proxy"`
 	Hotspot struct {
 		Enabled    bool     `json:"enabled"`
@@ -2978,12 +2993,16 @@ func isLocalOrBlockedTarget(target string, cfg Config) bool {
 // schema changes only touch this one helper.
 func iptablesCfgFromConfig(cfg Config) iptables.Config {
 	return iptables.Config{
-		ChainsPrefix:  cfg.TransparentProxy.ChainsPrefix,
-		TCPPort:       cfg.TransparentProxy.TCPPort,
-		APIPort:       cfg.API.Port,
-		SocksPort:     cfg.LocalProxy.SocksPort,
-		Hotspot:       cfg.Hotspot.Enabled && cfg.Hotspot.TCP,
-		HotspotIfaces: cfg.Hotspot.Interfaces,
+		ChainsPrefix:   cfg.TransparentProxy.ChainsPrefix,
+		TCPPort:        cfg.TransparentProxy.TCPPort,
+		APIPort:        cfg.API.Port,
+		SocksPort:      cfg.LocalProxy.SocksPort,
+		Hotspot:        cfg.Hotspot.Enabled && cfg.Hotspot.TCP,
+		HotspotIfaces:  cfg.Hotspot.Interfaces,
+		BlockIPv6Leaks: cfg.TransparentProxy.BlockIPv6Leaks,
+		BlockQUIC:      cfg.TransparentProxy.BlockQUIC,
+		FlushConntrack: cfg.TransparentProxy.FlushConntrack,
+		SetSysctls:     cfg.TransparentProxy.RouteLocalnet,
 	}
 }
 
@@ -3055,7 +3074,24 @@ func normalizeConfig(cfg *Config) {
 	if len(cfg.Hotspot.Interfaces) == 0 {
 		cfg.Hotspot.Interfaces = []string{"wlan+", "swlan+", "ap+", "rndis+", "ncm+", "bt-pan+"}
 	}
+	// Leak-protection defaults. When upgrading from an older build that
+	// didn't have these fields, the JSON marshaller fills them with zero
+	// values (all false). The schema version marker tells us to flip them
+	// to the secure defaults exactly once, then leave them alone.
+	if cfg.TransparentProxy.LeakProtectionV < currentLeakProtectionV {
+		cfg.TransparentProxy.BlockIPv6Leaks = true
+		cfg.TransparentProxy.BlockQUIC = true
+		cfg.TransparentProxy.FlushConntrack = true
+		cfg.TransparentProxy.RouteLocalnet = true
+		cfg.TransparentProxy.LeakProtectionV = currentLeakProtectionV
+	}
 }
+
+// currentLeakProtectionV bumps every time the leak-protection defaults
+// change. Bumping it forces a one-time re-enable on the next config load,
+// which is how we ship a "more secure default" without overriding a user
+// who deliberately turned a toggle off.
+const currentLeakProtectionV = 1
 
 func normalizeDNSMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
@@ -3125,6 +3161,35 @@ func applyConfigPatch(cfg Config, req apiv1.ConfigPatchRequest) (Config, []strin
 		normalizeConfig(&next)
 		if before.Enabled != next.Hotspot.Enabled || before.TCP != next.Hotspot.TCP || before.DNS != next.Hotspot.DNS || strings.Join(before.Interfaces, ",") != strings.Join(next.Hotspot.Interfaces, ",") {
 			changed = append(changed, "hotspot")
+			restartRequired = true
+		}
+	}
+	if req.LeakProtection != nil {
+		// Take a snapshot of the four flags before mutation so we can
+		// detect change and only mark restart-required when something
+		// actually moved. Pointer-bool semantics mean a missing field
+		// means "no change", consistent with HotspotSettings.
+		before := next.TransparentProxy
+		if req.LeakProtection.BlockIPv6Leaks != nil {
+			next.TransparentProxy.BlockIPv6Leaks = *req.LeakProtection.BlockIPv6Leaks
+		}
+		if req.LeakProtection.BlockQUIC != nil {
+			next.TransparentProxy.BlockQUIC = *req.LeakProtection.BlockQUIC
+		}
+		if req.LeakProtection.FlushConntrack != nil {
+			next.TransparentProxy.FlushConntrack = *req.LeakProtection.FlushConntrack
+		}
+		if req.LeakProtection.RouteLocalnet != nil {
+			next.TransparentProxy.RouteLocalnet = *req.LeakProtection.RouteLocalnet
+		}
+		// Don't normalizeConfig here; that would re-trigger the schema
+		// migration and silently revert any toggle the user just turned
+		// off. The migration only runs on disk-load, never on patch.
+		if before.BlockIPv6Leaks != next.TransparentProxy.BlockIPv6Leaks ||
+			before.BlockQUIC != next.TransparentProxy.BlockQUIC ||
+			before.FlushConntrack != next.TransparentProxy.FlushConntrack ||
+			before.RouteLocalnet != next.TransparentProxy.RouteLocalnet {
+			changed = append(changed, "leak_protection")
 			restartRequired = true
 		}
 	}
@@ -3703,10 +3768,14 @@ func configSummary(cfg Config) map[string]any {
 			"socks_port":    cfg.LocalProxy.SocksPort,
 		},
 		"transparent_proxy": map[string]any{
-			"enabled":       cfg.TransparentProxy.Enabled,
-			"tcp_port":      cfg.TransparentProxy.TCPPort,
-			"chains_prefix": cfg.TransparentProxy.ChainsPrefix,
-			"ipv4_only":     true,
+			"enabled":           cfg.TransparentProxy.Enabled,
+			"tcp_port":          cfg.TransparentProxy.TCPPort,
+			"chains_prefix":     cfg.TransparentProxy.ChainsPrefix,
+			"ipv4_only":         true,
+			"block_ipv6_leaks":  cfg.TransparentProxy.BlockIPv6Leaks,
+			"block_quic":        cfg.TransparentProxy.BlockQUIC,
+			"flush_conntrack":   cfg.TransparentProxy.FlushConntrack,
+			"route_localnet":    cfg.TransparentProxy.RouteLocalnet,
 		},
 	}
 }
@@ -3718,6 +3787,10 @@ func apiCapabilities(cfg Config) []apiv1.Capability {
 		{Name: "hotspot_tcp_share", Enabled: cfg.Hotspot.Enabled && cfg.Hotspot.TCP, Description: "TCP sharing for tethered clients"},
 		{Name: "socks5", Enabled: cfg.LocalProxy.SocksEnabled, Description: "local SOCKS5 listener"},
 		{Name: "dns_mode_select", Enabled: true, Description: "device, Google, Cloudflare, and custom resolver modes for SSHCustom endpoints"},
+		{Name: "block_ipv6_leaks", Enabled: cfg.TransparentProxy.BlockIPv6Leaks, Description: "REJECT outbound IPv6 except daemon (UID 0); apps fall back to IPv4 instead of stalling"},
+		{Name: "block_quic", Enabled: cfg.TransparentProxy.BlockQUIC, Description: "REJECT UDP/443+UDP/80 except daemon; forces Chrome/YouTube TCP fallback"},
+		{Name: "flush_conntrack", Enabled: cfg.TransparentProxy.FlushConntrack, Description: "drop existing flows on rule install/remove so old direct sockets reconnect via tunnel"},
+		{Name: "route_localnet", Enabled: cfg.TransparentProxy.RouteLocalnet, Description: "set route_localnet=1 + rp_filter=loose for reliable OUTPUT REDIRECT"},
 		{Name: "per_app_routing", Enabled: false, Description: "planned future feature"},
 		{Name: "ipv6", Enabled: false, Description: "intentionally out of scope for current rebuild"},
 	}

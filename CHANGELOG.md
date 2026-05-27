@@ -4,6 +4,104 @@ All notable changes to SSHCustom_Magisk are recorded here. Format is loosely
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-05-27
+
+### Added — Leak Protection
+
+Diagnosed against a Poco F6 / HyperOS 3 device on a CGNAT-restricted
+carrier (MTN UNLIMITED 🇬🇧) where YouTube and Chrome were stalling for
+~8 seconds per request despite a healthy SSH tunnel. Root cause: the
+nat-table REDIRECT can only catch new IPv4 TCP flows. Anything else
+escapes the tunnel and hits the carrier's restriction wall.
+
+- **IPv6 lockdown.** New `transparent_proxy.block_ipv6_leaks` toggle
+  (default ON). Installs `ip6tables -t filter` chains
+  `SSHC_FILTER_OUTPUT6` and `SSHC_FILTER_FORWARD6` that REJECT outbound
+  IPv6 with `icmp6-adm-prohibited`, except for UID 0 (the daemon),
+  loopback, link-local NDP/RA, and ICMPv6. Apps that race-connect via
+  IPv6 (RFC 6724 happy-eyeballs) fall back to IPv4 in milliseconds
+  instead of waiting for kernel timeouts.
+- **QUIC block.** New `transparent_proxy.block_quic` toggle (default
+  ON). Installs `iptables -t filter` chain `SSHC_FILTER_QUIC` that
+  REJECTs UDP/443 and UDP/80 except from UID 0. Forces Chrome and
+  YouTube off QUIC and onto TCP/443, which our nat REDIRECT does
+  capture, so QUIC traffic actually rides the tunnel.
+- **Conntrack flush on apply/cleanup.** New
+  `transparent_proxy.flush_conntrack` toggle (default ON). Drops every
+  existing connection-tracking entry whenever rules are installed or
+  removed. Without this, sockets opened before tunnel-up keep using the
+  stale direct route forever (the conntrack entry shortcuts the nat
+  table). Tries `/proc/sys/net/netfilter/nf_conntrack_flush`,
+  `conntrack -F`, and `ip route flush cache` in order; whichever the
+  kernel exposes wins.
+- **Sysctl hardening.** New `transparent_proxy.route_localnet` toggle
+  (default ON). Sets `net.ipv4.conf.{all,default,*}/route_localnet=1`
+  and `rp_filter=2` so OUTPUT REDIRECTs that bounce through 127.0.0.1
+  reliably reach the daemon's listener even on stricter kernels.
+- **Schema migration.** New `transparent_proxy.leak_protection_v` field
+  on the daemon Config. Existing installs upgrading from v1.0.x will
+  see `leak_protection_v=0` on first load and have all four toggles
+  flipped to ON exactly once, then the marker is bumped to 1. Users
+  who later turn a toggle off keep their choice — the migration only
+  fires when the marker is below the current schema version.
+
+### Added — API surface
+
+- `apiv1.LeakProtectionSettings` patch struct in
+  `apiv1.ConfigPatchRequest`, with pointer-bool semantics for each
+  toggle (consistent with `HotspotSettings`).
+- `/api/v1/config` POST now accepts
+  `{"leak_protection": {"block_ipv6_leaks": true, ...}}` and triggers
+  a tunnel restart when any of the four flags change.
+- `/api/v1/diagnostics` capabilities now include `block_ipv6_leaks`,
+  `block_quic`, `flush_conntrack`, `route_localnet` so the WebUI and
+  third-party scripts can introspect leak-protection state.
+- `/api/v1/status` config block reports the four toggles under
+  `transparent_proxy.{block_ipv6_leaks,block_quic,flush_conntrack,
+  route_localnet}`.
+
+### Added — WebUI
+
+- New "Leak Protection" section on the Settings tab with four
+  switches, sitting between "Sharing" and "Boot". Each switch persists
+  via `/api/v1/config` and triggers a tunnel restart when toggled.
+  Subtitles explain the trade-off in plain language.
+
+### Changed
+
+- `internal/iptables.Config` extended with `BlockIPv6Leaks`,
+  `BlockQUIC`, `FlushConntrack`, `SetSysctls` fields.
+- `internal/iptables.Apply` now installs the leak-protection layer
+  after the nat chains and flushes conntrack last so existing flows
+  re-resolve through the new rules.
+- `internal/iptables.Cleanup` symmetrically removes the new chains and
+  restores sysctls to Android's documented defaults (`route_localnet=0`,
+  `rp_filter=1`).
+- `src/module/scripts/net_clean.sh` extended to clean the new filter
+  chains in both IPv4 and IPv6 tables, and to restore sysctls.
+
+### Forensics
+
+If you want to verify the leak-protection layer on a running device:
+
+```sh
+# IPv6 lockdown
+ip6tables -t filter -nvL SSHC_FILTER_OUTPUT6 --line-numbers
+# Should show climbing byte counters on the REJECT rule when apps try v6.
+
+# QUIC block
+iptables -t filter -nvL SSHC_FILTER_QUIC --line-numbers
+# Should show climbing byte counters on the UDP/443 REJECT.
+
+# REDIRECT effectiveness
+iptables -t nat -nvL SSHC_OUTPUT --line-numbers
+# Counter on the REDIRECT rule should grow much faster than before
+# because old conntrack entries no longer shortcut the nat table.
+```
+
+A diagnostic dump from a Poco F6 / HyperOS 3 / MTN scenario is committed
+at `docs/sshc_diag_20260527_030754.txt` for reference.
+
 ## [2.2.0] — 2026-05-16
 
 ### Added
