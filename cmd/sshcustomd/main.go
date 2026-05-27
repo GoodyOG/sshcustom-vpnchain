@@ -1516,7 +1516,24 @@ func connectionManager(ctx context.Context, cfg Config, p Profile, st *State) {
 		// 10s route check: halves subprocess overhead vs 3s without hurting reconnect speed.
 		routeTicker := time.NewTicker(10 * time.Second)
 		lastRouteSig := routeSignature(routeInfo())
-		routeChangeMismatches := 0 // consecutive mismatches before acting
+		// lastNewSig is the previous tick's "candidate new" signature. We
+		// only count a mismatch as real when the new signature is itself
+		// stable across two consecutive ticks. This collapses transient
+		// interface flicker (rmnet_data0 -> rmnet_data1 -> rmnet_data0)
+		// that would otherwise trip the mismatch counter while the radio
+		// is still settling after a data-toggle event.
+		lastNewSig := ""
+		routeChangeMismatches := 0    // consecutive STABLE mismatches before acting
+		offlineTicks := 0             // consecutive ticks where ri.Online == false
+		// transparentReadyAt is the moment the transparent rules + listener
+		// finished installing. For the first routeSettlingDuration after
+		// this, the route-change detector defers teardowns: a brief
+		// interface flicker is normal during the post-data-toggle settle
+		// and must not cause a rebuild storm. v1.3.3 had no grace, so the
+		// detector tore the rules down ~12-30s after every reconnect.
+		transparentReadyAt := time.Now()
+		const routeSettlingDuration = 20 * time.Second
+		const routeMismatchThreshold = 5 // 50s of stable-but-different signature
 
 		stopActive := func(reason string) {
 			if stopTransparent != nil {
@@ -1550,26 +1567,69 @@ func connectionManager(ctx context.Context, cfg Config, p Profile, st *State) {
 					st.Gateway = ri.Gw
 					st.SourceIP = ri.Src
 				})
+
+				inSettlingGrace := time.Since(transparentReadyAt) < routeSettlingDuration
+
+				// Offline handling. Outside of the settling grace, a single
+				// offline tick triggers an immediate teardown so a real
+				// disconnect doesn't sit in idle. During the grace, we
+				// require two consecutive offline ticks (~20s) so a brief
+				// rmnet flap during post-data-toggle radio handoff doesn't
+				// rebuild everything for nothing.
 				if !ri.Online {
-					log.Printf("network route lost; stopping transparent rules and closing SSH pool for clean resume")
-					delay = time.Second
-					stopActive("network route lost; waiting for clean resume")
-					active = false
-					break
-				}
-				if lastRouteSig != "" && newSig != "" && newSig != lastRouteSig {
-					routeChangeMismatches++
-					log.Printf("route mismatch %d/3: old=%q new=%q", routeChangeMismatches, lastRouteSig, newSig)
-					if routeChangeMismatches >= 3 {
-						log.Printf("route changed confirmed; rebuilding SSH runtime")
+					offlineTicks++
+					if inSettlingGrace && offlineTicks < 2 {
+						log.Printf("network briefly offline during settling grace (%d/2 ticks); deferring teardown", offlineTicks)
+					} else {
+						log.Printf("network route lost; stopping transparent rules and closing SSH pool for clean resume")
 						delay = time.Second
-						stopActive("network route changed; rebuilding SSH runtime")
+						stopActive("network route lost; waiting for clean resume")
 						active = false
 						break
 					}
-					// Do NOT update lastRouteSig yet — wait for confirmation
+				} else {
+					offlineTicks = 0
+				}
+
+				// During the settling grace, refresh signature state but do
+				// not act on mismatches. The interface name commonly flaps
+				// across rmnet_data0/rmnet_data1/rmnet_data2 in the first
+				// 10-20 seconds after data toggles back on; counting those
+				// flickers as "route changed" caused the 12s teardown
+				// observed in v1.3.3 logs.
+				if inSettlingGrace {
+					lastRouteSig = newSig
+					lastNewSig = ""
+					routeChangeMismatches = 0
+					pool.EnsureAsync()
+					st.SetPoolSnapshot(pool.Snapshot())
+					break
+				}
+
+				if lastRouteSig != "" && newSig != "" && newSig != lastRouteSig {
+					// Stable-new requirement: only count a mismatch when
+					// the new signature itself stabilizes. If newSig keeps
+					// changing across ticks (rmnet_data1 -> rmnet_data0),
+					// reset the counter and wait for a stable new state.
+					if lastNewSig == newSig {
+						routeChangeMismatches++
+						log.Printf("route mismatch %d/%d: old=%q new=%q", routeChangeMismatches, routeMismatchThreshold, lastRouteSig, newSig)
+						if routeChangeMismatches >= routeMismatchThreshold {
+							log.Printf("route changed confirmed; rebuilding SSH runtime")
+							delay = time.Second
+							stopActive("network route changed; rebuilding SSH runtime")
+							active = false
+							break
+						}
+					} else {
+						log.Printf("route flicker: old=%q new=%q (prev=%q); waiting for stable new state", lastRouteSig, newSig, lastNewSig)
+						routeChangeMismatches = 0
+					}
+					lastNewSig = newSig
+					// Do NOT update lastRouteSig yet — wait for confirmation.
 				} else {
 					routeChangeMismatches = 0
+					lastNewSig = ""
 					lastRouteSig = newSig
 				}
 				pool.EnsureAsync()

@@ -54,9 +54,19 @@
 //
 // # Sysctl hardening
 //
-// applySysctls sets:
-//   - net.ipv4.conf.all.route_localnet=1 (required for TPROXY loopback)
-//   - net.ipv4.conf.all.rp_filter=2 (loose, accepts return packets on lo)
+// route_localnet=1 is REQUIRED for TPROXY OUTPUT and is therefore set
+// unconditionally on every Apply() via applyTPROXYRequiredSysctls(). Without
+// it, the policy route `local 0.0.0.0/0 dev lo table 100` silently drops
+// marked packets and the listener never receives traffic.
+//
+// applyDefensiveSysctls sets the optional rp_filter=2 (loose) knob; this is
+// gated by the user-facing "Sysctl Hardening" toggle.
+//
+// restoreSysctls (run during Cleanup) only restores rp_filter. We deliberately
+// leave route_localnet=1 in place: resetting it to 0 in v1.3.3 caused TPROXY
+// to break on the second apply when the toggle was off, because Apply only
+// re-set the value when the toggle was on, leaving an asymmetric apply/cleanup
+// cycle that zeroed route_localnet permanently after one rule cycle.
 //
 // # Lock contention (v1.3.0)
 //
@@ -206,9 +216,20 @@ func Apply(cfg Config, bypassIPs []string) error {
 	// Always clean before applying.
 	_ = Cleanup(cfg)
 
-	// Sysctl hardening must come *before* any rule install.
+	// route_localnet=1 is REQUIRED for TPROXY OUTPUT regardless of the
+	// user-facing "Sysctl Hardening" toggle. The toggle only governs the
+	// defensive rp_filter knob (applyDefensiveSysctls). v1.3.3 conflated
+	// the two, so toggling sysctl_hardening OFF caused TPROXY to break on
+	// the second apply: restoreSysctls() unconditionally zeroed
+	// route_localnet but applySysctls() was gated by the toggle, leaving
+	// an asymmetric add/cleanup cycle that permanently broke the local
+	// loopback delivery path until reboot.
+	applyTPROXYRequiredSysctls()
+
+	// Sysctl hardening (defensive rp_filter=loose) must come before any
+	// rule install when enabled.
 	if cfg.SetSysctls {
-		applySysctls()
+		applyDefensiveSysctls()
 	}
 
 	var err error
@@ -458,14 +479,26 @@ func Cleanup(cfg Config) error {
 			break
 		}
 	}
-	_ = exec.Command("ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", tproxyTable).Run()
+	// Loop-delete the local-route too: rare, but if a previous apply
+	// somehow installed it twice (kernel quirks during rapid reconnect)
+	// we want to remove every copy. The flush below is the real safety
+	// net, but explicit deletion makes intent clear.
+	for i := 0; i < 5; i++ {
+		if exec.Command("ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", tproxyTable).Run() != nil {
+			break
+		}
+	}
 	// Legacy v6 policy routes from v1.2.x/v1.3.0.
 	for i := 0; i < 5; i++ {
 		if exec.Command("ip", "-6", "rule", "del", "fwmark", tproxyMark, "table", tproxyTable).Run() != nil {
 			break
 		}
 	}
-	_ = exec.Command("ip", "-6", "route", "del", "local", "::/0", "dev", "lo", "table", tproxyTable).Run()
+	for i := 0; i < 5; i++ {
+		if exec.Command("ip", "-6", "route", "del", "local", "::/0", "dev", "lo", "table", tproxyTable).Run() != nil {
+			break
+		}
+	}
 	// Flush table 100 entirely in case any stale routes remain.
 	_ = exec.Command("ip", "route", "flush", "table", tproxyTable).Run()
 	_ = exec.Command("ip", "-6", "route", "flush", "table", tproxyTable).Run()
@@ -573,39 +606,67 @@ func cleanupIPv6Lockdown(prefix string) {
 	}
 }
 
-// applySysctls writes route_localnet=1 and rp_filter=2 to the relevant
-// procfs paths. These make REDIRECT-via-loopback more reliable on Android
-// stock kernels where the defaults are sometimes too strict.
+// applyTPROXYRequiredSysctls writes the sysctl knobs that TPROXY itself
+// REQUIRES to function: route_localnet=1 on every IPv4 conf path. Without
+// it, the policy route `local 0.0.0.0/0 dev lo table 100` silently drops
+// marked packets (kernel treats the source as a martian) and the listener
+// never receives traffic.
 //
-// Best-effort: every write is a single syscall and ignored on failure.
-// On many Android variants these paths exist but require SELinux
-// permissions that the daemon already has via Magisk's u:r:su:s0 context.
-func applySysctls() {
+// This is called unconditionally from Apply(), independent of the
+// user-facing "Sysctl Hardening" toggle. The toggle only governs the
+// defensive rp_filter knob (applyDefensiveSysctls). Conflating the two in
+// v1.3.3 meant a user with sysctl_hardening=false saw TPROXY break on the
+// second apply: Cleanup() reset route_localnet=0 unconditionally, but
+// Apply() only set it back to 1 when the toggle was on.
+func applyTPROXYRequiredSysctls() {
 	writeProc("/proc/sys/net/ipv4/conf/all/route_localnet", "1\n")
 	writeProc("/proc/sys/net/ipv4/conf/default/route_localnet", "1\n")
+	// lo specifically — the TPROXY loopback hop happens here.
+	writeProc("/proc/sys/net/ipv4/conf/lo/route_localnet", "1\n")
+	if entries, err := os.ReadDir("/proc/sys/net/ipv4/conf"); err == nil {
+		for _, e := range entries {
+			if e.Name() == "all" || e.Name() == "default" || e.Name() == "lo" {
+				continue
+			}
+			writeProc("/proc/sys/net/ipv4/conf/"+e.Name()+"/route_localnet", "1\n")
+		}
+	}
+}
+
+// applyDefensiveSysctls writes the optional rp_filter=2 (loose) knob,
+// gated by the user-facing "Sysctl Hardening" toggle. Loose rp_filter
+// accepts return packets on lo even when the routing table would normally
+// reject them, which helps on stricter Android kernels.
+func applyDefensiveSysctls() {
 	writeProc("/proc/sys/net/ipv4/conf/all/rp_filter", "2\n")
 	writeProc("/proc/sys/net/ipv4/conf/default/rp_filter", "2\n")
-	// Also apply to every currently-existing per-interface knob. New
-	// interfaces (USB-tether plugged in later, second SIM activated) get
-	// the value via the "default" entry above.
 	if entries, err := os.ReadDir("/proc/sys/net/ipv4/conf"); err == nil {
 		for _, e := range entries {
 			if e.Name() == "all" || e.Name() == "default" {
 				continue
 			}
-			writeProc("/proc/sys/net/ipv4/conf/"+e.Name()+"/route_localnet", "1\n")
 			writeProc("/proc/sys/net/ipv4/conf/"+e.Name()+"/rp_filter", "2\n")
 		}
 	}
 }
 
-// restoreSysctls puts the kernel knobs back to Android's documented
-// defaults. We don't snapshot the originals because reading-then-writing
-// adds I/O cost on every Apply() and the practical answer is always the
-// stock value.
+// restoreSysctls puts rp_filter back to Android's documented default. We
+// deliberately do NOT touch route_localnet here:
+//
+//   - TPROXY requires route_localnet=1. Resetting it to 0 mid-cycle (e.g.
+//     between Cleanup and the next Apply, or during a reconnect race)
+//     silently breaks the loopback delivery path.
+//   - route_localnet=1 has no security implications outside of routing
+//     packets bound to 127.0.0.0/8; on Android, only privileged callers
+//     can craft such packets anyway.
+//   - The asymmetric apply/cleanup of route_localnet was the v1.3.3
+//     reconnect bug: Cleanup zeroed it unconditionally while Apply only
+//     restored it when the toggle was on, leaving TPROXY broken until
+//     reboot when the toggle was off.
+//
+// We don't snapshot original values because reading-then-writing adds I/O
+// cost on every Apply() and the practical answer is always the stock value.
 func restoreSysctls() {
-	writeProc("/proc/sys/net/ipv4/conf/all/route_localnet", "0\n")
-	writeProc("/proc/sys/net/ipv4/conf/default/route_localnet", "0\n")
 	writeProc("/proc/sys/net/ipv4/conf/all/rp_filter", "1\n")
 	writeProc("/proc/sys/net/ipv4/conf/default/rp_filter", "1\n")
 }

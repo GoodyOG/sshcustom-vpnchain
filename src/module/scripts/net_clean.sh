@@ -123,12 +123,20 @@ clean_policy_routes() {
   run ip -6 route flush table "$TPROXY_TABLE"
 }
 
-# Restore the kernel sysctls the daemon may have tweaked. Defaults are
-# Android's standard values; if the user had non-default values these
-# get overwritten, but that's a non-issue on stock builds.
+# Restore the kernel sysctls the daemon may have tweaked.
+#
+# We deliberately do NOT reset route_localnet=0 here. TPROXY requires
+# route_localnet=1 to function (the policy route 'local 0.0.0.0/0 dev lo
+# table 100' silently drops packets without it). In v1.3.3 this script
+# unconditionally zeroed route_localnet, which combined with the daemon's
+# similar bug to break TPROXY on the second apply cycle until reboot.
+# Leaving route_localnet=1 has no security implications outside of routing
+# packets bound to 127.0.0.0/8 — only privileged callers can craft those.
+#
+# rp_filter is the only knob we restore. Its strict (1) default is what
+# Android ships with, and a defensive loose (2) value is only useful while
+# our TPROXY rules are live.
 restore_sysctls() {
-  echo 0 > /proc/sys/net/ipv4/conf/all/route_localnet 2>/dev/null
-  echo 0 > /proc/sys/net/ipv4/conf/default/route_localnet 2>/dev/null
   echo 1 > /proc/sys/net/ipv4/conf/all/rp_filter 2>/dev/null
   echo 1 > /proc/sys/net/ipv4/conf/default/rp_filter 2>/dev/null
 }

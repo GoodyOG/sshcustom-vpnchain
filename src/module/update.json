@@ -1,6 +1,6 @@
 {
-  "version": "v1.3.3",
-  "versionCode": 10303,
-  "zipUrl": "https://github.com/GoodyOG/sshcustom-vpnchain/releases/latest/download/SSHCustom-VPNChain-v1.3.3.zip",
-  "changelog": "v1.3.3: Add lifetime TPROXY connection counter to runtime, log first 10 transparent accepts unconditionally so traffic flow is visible without verbose mode."
+  "version": "v1.3.4",
+  "versionCode": 10304,
+  "zipUrl": "https://github.com/GoodyOG/sshcustom-vpnchain/releases/latest/download/SSHCustom-VPNChain-v1.3.4.zip",
+  "changelog": "v1.3.4: Fix TPROXY breakage on reconnect. route_localnet=1 is now always set on apply and never reset on cleanup (TPROXY requires it; previously a sysctl_hardening=false config silently lost TPROXY delivery after the second cleanup). Add 20s settling grace and stable-new requirement to the route-change detector so transient rmnet flicker after data toggle can no longer trigger a teardown storm."
 }

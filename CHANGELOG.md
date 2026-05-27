@@ -4,6 +4,54 @@ All notable changes to SSHCustom-VPNChain are recorded here. Format is loosely
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.4] — 2026-05-27
+
+### Fixed — TPROXY silently broken after reconnect
+
+- **`route_localnet` sysctl is now symmetric with TPROXY's actual
+  requirement, not the user-facing toggle.** v1.3.3 had `applySysctls()`
+  gated by `transparent_proxy.sysctl_hardening` (default ON, but commonly
+  toggled OFF when users disable leak protection) while
+  `restoreSysctls()` unconditionally wrote `route_localnet=0` on every
+  cleanup. With the toggle off, the first apply happened to work because
+  some earlier source had set `route_localnet=1`, but the very next
+  cleanup zeroed it and no apply ever restored it. TPROXY's policy route
+  `local 0.0.0.0/0 dev lo table 100` then silently dropped marked packets
+  as martians, the listener received no traffic, and the only fix was a
+  reboot. New layout: `applyTPROXYRequiredSysctls()` runs unconditionally
+  on every Apply (TPROXY needs it; the toggle does not gate it), and
+  `restoreSysctls()` no longer touches `route_localnet`. The hardening
+  toggle now controls only the optional `rp_filter=2` knob, which is what
+  it was always documented to do (`internal/iptables/iptables.go`,
+  `src/module/scripts/net_clean.sh`).
+
+- **Route-change detector no longer tears down rules during the
+  post-reconnect settling window.** A 20-second grace period after
+  transparent rules apply defers all route-change teardowns, so the
+  inevitable rmnet_dataN interface flicker that follows a data toggle
+  can't trigger a rebuild storm. During the grace, an offline indication
+  also requires two consecutive ticks before triggering a clean resume.
+  After the grace, the detector additionally requires the new signature
+  itself to be stable across two consecutive ticks before counting it as
+  a real mismatch, and the threshold for action is raised from 3 to 5
+  consecutive stable mismatches (50 seconds of stable-but-different
+  signature). v1.3.3 saw a teardown roughly 12 seconds after the
+  reconnect that followed a data-off/data-on cycle, with logs showing the
+  interface oscillating between rmnet_data0 and rmnet_data1
+  (`cmd/sshcustomd/main.go`).
+
+- **Cleanup phase 5 loops policy-route deletions for both v4 and v6.**
+  The `ip route del local … table 100` commands now retry up to 5 times
+  to flush any duplicates a previous apply may have left behind during
+  rapid reconnect cycles. The post-loop `ip route flush table 100`
+  remains as the safety net (`internal/iptables/iptables.go`).
+
+### Internal
+
+- No iptables chain structure changes. No leak-protection toggle defaults
+  changed. No config schema bumps. The `currentLeakProtectionV` schema
+  marker stays at 2; existing config files load unchanged.
+
 ## [1.3.3] — 2026-05-27
 
 ### Added — Visibility into TPROXY traffic flow
