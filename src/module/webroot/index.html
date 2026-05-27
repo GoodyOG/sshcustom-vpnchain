@@ -665,6 +665,42 @@
             </div>
           </div>
         </div>
+        <h2 class="section-pill">Leak Protection</h2>
+        <div class="list-container">
+          <div class="list-item">
+            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></div>
+            <div class="list-item-content">
+              <div class="toggle-text">Block IPv6 Leaks</div>
+              <span class="supporting-text">REJECT outbound IPv6 except daemon. Apps fall back to IPv4 instead of stalling on broken v6 routes.</span>
+            </div>
+            <button id="lpIPv6Switch" class="switch" onclick="toggleLP('lpIPv6Switch')" aria-label="Toggle IPv6 leak protection"></button>
+          </div>
+          <div class="list-item">
+            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg></div>
+            <div class="list-item-content">
+              <div class="toggle-text">Block QUIC (force TCP fallback)</div>
+              <span class="supporting-text">REJECT UDP/443 + UDP/80. Forces Chrome / YouTube off QUIC so they ride the tunnel instead of stalling 8s on UDP.</span>
+            </div>
+            <button id="lpQUICSwitch" class="switch" onclick="toggleLP('lpQUICSwitch')" aria-label="Toggle QUIC block"></button>
+          </div>
+          <div class="list-item">
+            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg></div>
+            <div class="list-item-content">
+              <div class="toggle-text">Flush Conntrack on Apply</div>
+              <span class="supporting-text">Drop existing flows when rules install, so old direct sockets reconnect through the tunnel.</span>
+            </div>
+            <button id="lpConntrackSwitch" class="switch" onclick="toggleLP('lpConntrackSwitch')" aria-label="Toggle conntrack flush"></button>
+          </div>
+          <div class="list-item">
+            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.68 1.65 1.65 0 0010 3.17V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></div>
+            <div class="list-item-content">
+              <div class="toggle-text">Sysctl Hardening</div>
+              <span class="supporting-text">route_localnet=1 + rp_filter=loose for reliable OUTPUT REDIRECT on stricter kernels.</span>
+            </div>
+            <button id="lpSysctlSwitch" class="switch" onclick="toggleLP('lpSysctlSwitch')" aria-label="Toggle sysctl hardening"></button>
+          </div>
+        </div>
+
         <h2 class="section-pill">Boot</h2>
         <div class="list-container">
           <div class="list-item">
@@ -1061,9 +1097,21 @@
       $('customDnsServers').value = (dns.servers || []).join(', ');
       const hotspot = cfg.hotspot || {};
       $('hotspotSwitch').classList.toggle('on', !!(hotspot.enabled && hotspot.tcp));
+      // Leak protection toggles. Default to true if the field is missing
+      // so that a daemon running an older config schema (pre-v1.1.0)
+      // still shows the secure defaults until the migration completes.
+      const tp = cfg.transparent_proxy || {};
+      $('lpIPv6Switch').classList.toggle('on', tp.block_ipv6_leaks !== false);
+      $('lpQUICSwitch').classList.toggle('on', tp.block_quic !== false);
+      $('lpConntrackSwitch').classList.toggle('on', tp.flush_conntrack !== false);
+      $('lpSysctlSwitch').classList.toggle('on', tp.route_localnet !== false);
     }
     $('dnsMode').addEventListener('change', () => $('customDnsRow').hidden = $('dnsMode').value !== 'custom');
     function toggleHotspot() { $('hotspotSwitch').classList.toggle('on'); }
+    // toggleLP flips a leak-protection switch optimistically. The actual
+    // persist-to-disk + tunnel restart happens when the user hits
+    // "Apply & Restart" via saveNetwork().
+    function toggleLP(id) { $(id).classList.toggle('on'); }
     async function toggleAutostart() {
       const sw = $('autostartSwitch');
       const next = !sw.classList.contains('on');
@@ -1088,7 +1136,13 @@
         const enabled = $('hotspotSwitch').classList.contains('on');
         const dns = { mode };
         if (mode === 'custom') dns.servers = $('customDnsServers').value.split(',').map(s => s.trim()).filter(Boolean);
-        await postV1('/config', { dns, hotspot: { enabled, tcp: enabled, dns: false }, restart: true }, 12000);
+        const leak_protection = {
+          block_ipv6_leaks: $('lpIPv6Switch').classList.contains('on'),
+          block_quic: $('lpQUICSwitch').classList.contains('on'),
+          flush_conntrack: $('lpConntrackSwitch').classList.contains('on'),
+          route_localnet: $('lpSysctlSwitch').classList.contains('on')
+        };
+        await postV1('/config', { dns, hotspot: { enabled, tcp: enabled, dns: false }, leak_protection, restart: true }, 12000);
         toast('Network settings saved. Restarting tunnel...');
         showRestarting();
         setTimeout(loadStatus, 3000);
