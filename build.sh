@@ -75,22 +75,53 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
   -o "$ARM64_BIN" \
   ./cmd/sshcustomd/
 
-echo "==> Building tun2socks for ARM64"
-# Clone tun2socks if not already present
-TUN2SOCKS_SRC="$DIST/tun2socks-src"
-if [ ! -d "$TUN2SOCKS_SRC" ]; then
-  git clone --depth 1 https://github.com/xjasonlyu/tun2socks.git "$TUN2SOCKS_SRC"
+echo "==> Acquiring tun2socks for ARM64"
+# tun2socks restructured upstream: builds are now from repo root (main.go),
+# not ./cmd/tun2socks. Newer releases also ship pre-built linux/arm64
+# binaries which is faster and dodges the moving-target Go-version
+# requirement of `go build` against their unreleased main branch.
+TUN2SOCKS_VERSION="${TUN2SOCKS_VERSION:-v2.6.0}"
+TUN2SOCKS_URL="https://github.com/xjasonlyu/tun2socks/releases/download/${TUN2SOCKS_VERSION}/tun2socks-linux-arm64.zip"
+if [ ! -f "$TUN2SOCKS_BIN" ] || [ "${FORCE_REBUILD_TUN2SOCKS:-}" = "1" ]; then
+  TUN2SOCKS_DL="$DIST/tun2socks.zip"
+  if curl -fsSL "$TUN2SOCKS_URL" -o "$TUN2SOCKS_DL"; then
+    # The release zip ships a single binary named tun2socks-linux-arm64.
+    # We unzip into DIST then move into place. unzip is part of the
+    # default ubuntu-latest image; if missing, the source-build fallback
+    # below picks up the slack.
+    if command -v unzip >/dev/null 2>&1 && unzip -p "$TUN2SOCKS_DL" tun2socks-linux-arm64 > "$TUN2SOCKS_BIN" 2>/dev/null && [ -s "$TUN2SOCKS_BIN" ]; then
+      chmod +x "$TUN2SOCKS_BIN"
+      echo "   downloaded prebuilt tun2socks $TUN2SOCKS_VERSION ($(ls -lh "$TUN2SOCKS_BIN" | awk '{print $5}'))"
+    else
+      rm -f "$TUN2SOCKS_BIN"
+    fi
+  fi
+  # Fallback: build from source (now from repo root, not ./cmd/tun2socks).
+  if [ ! -f "$TUN2SOCKS_BIN" ]; then
+    echo "   prebuilt unavailable, building tun2socks from source"
+    TUN2SOCKS_SRC="$DIST/tun2socks-src"
+    if [ ! -d "$TUN2SOCKS_SRC" ]; then
+      git clone --depth 1 --branch "$TUN2SOCKS_VERSION" https://github.com/xjasonlyu/tun2socks.git "$TUN2SOCKS_SRC" 2>/dev/null || \
+        git clone --depth 1 https://github.com/xjasonlyu/tun2socks.git "$TUN2SOCKS_SRC"
+    fi
+    (
+      cd "$TUN2SOCKS_SRC"
+      # Build from repo root. The cmd/tun2socks subdir was removed in
+      # a 2025 restructure; main.go lives at the top level now.
+      GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
+        -trimpath \
+        -buildvcs=false \
+        -ldflags="-s -w" \
+        -o "$TUN2SOCKS_BIN" \
+        .
+    )
+  fi
 fi
-(
-  cd "$TUN2SOCKS_SRC"
-  GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
-    -trimpath \
-    -buildvcs=false \
-    -ldflags="-s -w" \
-    -o "$TUN2SOCKS_BIN" \
-    ./cmd/tun2socks
-)
-echo "   tun2socks built: $(ls -lh "$TUN2SOCKS_BIN" | awk '{print $5}')"
+if [ -f "$TUN2SOCKS_BIN" ]; then
+  echo "   tun2socks ready: $(ls -lh "$TUN2SOCKS_BIN" | awk '{print $5}')"
+else
+  echo "   WARNING: tun2socks unavailable. VPN Chain feature will be inert."
+fi
 
 echo "==> Acquiring static OpenVPN for ARM64"
 # Download pre-built static openvpn for arm64 from a known source.
