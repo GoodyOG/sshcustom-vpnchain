@@ -1,0 +1,2212 @@
+==== device ====
+24069RA21C
+peridot
+16
+V816
+OS3.0.303.0.WNPCNXM
+Linux localhost 6.1.138-android14-11-g0c3d559bcd85-ab14529422 #1 SMP PREEMPT Wed Dec  3 02:05:30 UTC 2025 aarch64 Toybox
+==== kernel features (relevant) ====
+nf_conntrack
+nf_conntrack_amanda
+nf_conntrack_ftp
+nf_conntrack_h323
+nf_conntrack_irc
+nf_conntrack_netbios_ns
+nf_conntrack_sane
+nf_conntrack_tftp
+CONFIG_NF_CONNTRACK=y
+CONFIG_NF_CONNTRACK_MARK=y
+CONFIG_NF_CONNTRACK_SECMARK=y
+# CONFIG_NF_CONNTRACK_ZONES is not set
+CONFIG_NF_CONNTRACK_PROCFS=y
+CONFIG_NF_CONNTRACK_EVENTS=y
+# CONFIG_NF_CONNTRACK_TIMEOUT is not set
+# CONFIG_NF_CONNTRACK_TIMESTAMP is not set
+# CONFIG_NF_CONNTRACK_LABELS is not set
+CONFIG_NF_CONNTRACK_AMANDA=y
+CONFIG_NF_CONNTRACK_FTP=y
+CONFIG_NF_CONNTRACK_H323=y
+CONFIG_NF_CONNTRACK_IRC=y
+CONFIG_NF_CONNTRACK_BROADCAST=y
+CONFIG_NF_CONNTRACK_NETBIOS_NS=y
+# CONFIG_NF_CONNTRACK_SNMP is not set
+CONFIG_NF_CONNTRACK_PPTP=y
+CONFIG_NF_CONNTRACK_SANE=y
+# CONFIG_NF_CONNTRACK_SIP is not set
+CONFIG_NF_CONNTRACK_TFTP=y
+CONFIG_NETFILTER_XT_MARK=y
+CONFIG_NETFILTER_XT_TARGET_TPROXY=y
+CONFIG_NETFILTER_XT_MATCH_MARK=y
+# CONFIG_IP_SET is not set
+CONFIG_NF_TPROXY_IPV4=y
+CONFIG_NF_TPROXY_IPV6=y
+# CONFIG_IP6_NF_NAT is not set
+# CONFIG_NF_CONNTRACK_BRIDGE is not set
+==== sshcustom status ====
+SSHCustom status: running
+pid: 9225
+api: online http://127.0.0.1:9190
+work_dir: /data/adb/sshcustom
+total 18
+drwxr-xr-x 2 root root  3452 2026-05-27 02:40 .
+drwxr-xr-x 7 root root  3452 2026-05-27 02:43 ..
+-rw-rw-rw- 1 root root   424 2026-05-27 02:40 boot.log
+-rw-rw-rw- 1 root root   151 2026-05-27 02:40 control.log
+-rw-r--r-- 1 root root 10756 2026-05-27 03:07 core.log
+-rw-rw-rw- 1 root root     5 2026-05-27 02:40 daemon.pid
+-rw-r--r-- 1 root root   268 2026-05-27 02:45 net_clean.log
+==== sshcustom logs (last 80 lines each) ====
+--- control.log ---
+2026-05-27 02:40:22 boot reset
+2026-05-27 02:40:26 start-idle: daemon only, no tunnel
+2026-05-27 02:40:28 daemon start requested pid=9225 flags=--idle
+--- core.log ---
+2026/05/27 01:43:18.279923 SSH auth attempt #1 starting
+2026/05/27 01:43:18.280076 dial tcp www.bc.game:80 method=device_system_dns
+2026/05/27 01:43:18.286739 device/system hostname dial failed for www.bc.game:80: dial tcp: lookup www.bc.game on [::1]:53: read udp [::1]:55336->[::1]:53: read: connection refused
+2026/05/27 01:43:20.794391 dnsx: resolved www.bc.game via ping -c 1 -W 2 www.bc.game -> [104.18.28.120]
+2026/05/27 01:43:20.794490 dial tcp 104.18.28.120:80 host=www.bc.game method=android_shell_dns
+2026/05/27 01:43:20.970518 sending payload timing=before_ssh bytes=87
+2026/05/27 01:43:21.708922 server message: http/html banner suppressed (535 bytes)
+2026/05/27 01:43:21.866919 SSH authenticated: banner="SSH-2.0-dropbear_2022.83" http_statuses=[101] pool_size=4 max_streams_per_ssh=64
+2026/05/27 01:43:21.867084 SSH pool slot 3 connecting
+2026/05/27 01:43:21.867123 SSH pool slot 2 connecting
+2026/05/27 01:43:21.867241 dial tcp www.bc.game:80 method=device_system_dns
+2026/05/27 01:43:21.867394 dial tcp www.bc.game:80 method=device_system_dns
+2026/05/27 01:43:21.867504 SOCKS5 listening on 127.0.0.1:1080
+2026/05/27 01:43:21.867563 SSH pool slot 4 connecting
+2026/05/27 01:43:21.867764 dial tcp www.bc.game:80 method=device_system_dns
+2026/05/27 01:43:21.885485 device/system hostname dial failed for www.bc.game:80: dial tcp: lookup www.bc.game on [::1]:53: read udp [::1]:43822->[::1]:53: read: connection refused
+2026/05/27 01:43:21.885553 dnsx: resolved www.bc.game from cache mode=device -> [104.18.28.120]
+2026/05/27 01:43:21.885573 dial tcp 104.18.28.120:80 host=www.bc.game method=dns_cached_android_shell_dns
+2026/05/27 01:43:21.885788 device/system hostname dial failed for www.bc.game:80: dial tcp: lookup www.bc.game on [::1]:53: read udp [::1]:43822->[::1]:53: read: connection refused
+2026/05/27 01:43:21.885824 dnsx: resolved www.bc.game from cache mode=device -> [104.18.28.120]
+2026/05/27 01:43:21.885835 dial tcp 104.18.28.120:80 host=www.bc.game method=dns_cached_android_shell_dns
+2026/05/27 01:43:21.885940 device/system hostname dial failed for www.bc.game:80: dial tcp: lookup www.bc.game on [::1]:53: read udp [::1]:43822->[::1]:53: read: connection refused
+2026/05/27 01:43:21.886084 dnsx: resolved www.bc.game from cache mode=device -> [104.18.28.120]
+2026/05/27 01:43:21.886100 dial tcp 104.18.28.120:80 host=www.bc.game method=dns_cached_android_shell_dns
+2026/05/27 01:43:22.019308 sending payload timing=before_ssh bytes=87
+2026/05/27 01:43:22.024299 sending payload timing=before_ssh bytes=87
+2026/05/27 01:43:22.024986 sending payload timing=before_ssh bytes=87
+2026/05/27 01:43:22.695976 server message: http/html banner suppressed (535 bytes)
+2026/05/27 01:43:22.703841 server message: http/html banner suppressed (535 bytes)
+2026/05/27 01:43:22.711983 server message: http/html banner suppressed (535 bytes)
+2026/05/27 01:43:22.862214 SSH pool slot 2 connected
+2026/05/27 01:43:22.872418 SSH pool slot 4 connected
+2026/05/27 01:43:22.872920 SSH pool slot 3 connected
+2026/05/27 01:43:27.080967 transparent TCP listening on 0.0.0.0:10810; iptables applied; hotspot_tcp=true
+2026/05/27 01:45:02.624612 transparent TCP stopped on 0.0.0.0:10810; iptables cleaned
+2026/05/27 01:45:02.625098 SOCKS5 stopped on 127.0.0.1:1080
+2026/05/27 01:45:07.424442 tunnel stopped
+2026/05/27 02:07:03.337271 starting tunnel with profile "MTN UNLIMITED 🇬🇧" (mode=direct)
+2026/05/27 02:07:03.339857 SSH auth attempt #1 starting
+2026/05/27 02:07:03.339908 dial tcp www.bc.game:80 method=device_system_dns
+2026/05/27 02:07:03.341667 device/system hostname dial failed for www.bc.game:80: dial tcp: lookup www.bc.game on [::1]:53: read udp [::1]:40775->[::1]:53: read: connection refused
+2026/05/27 02:07:05.817457 dnsx: resolved www.bc.game via ping -c 1 -W 2 www.bc.game -> [104.18.29.120]
+2026/05/27 02:07:05.817921 dial tcp 104.18.29.120:80 host=www.bc.game method=android_shell_dns
+2026/05/27 02:07:05.980359 sending payload timing=before_ssh bytes=87
+2026/05/27 02:07:06.627794 server message: http/html banner suppressed (535 bytes)
+2026/05/27 02:07:06.785191 SSH authenticated: banner="SSH-2.0-dropbear_2022.83" http_statuses=[101] pool_size=4 max_streams_per_ssh=64
+2026/05/27 02:07:06.785636 SOCKS5 listening on 127.0.0.1:1080
+2026/05/27 02:07:06.786687 SSH pool slot 4 connecting
+2026/05/27 02:07:06.787086 SSH pool slot 2 connecting
+2026/05/27 02:07:06.787179 dial tcp www.bc.game:80 method=device_system_dns
+2026/05/27 02:07:06.787572 SSH pool slot 3 connecting
+2026/05/27 02:07:06.787773 dial tcp www.bc.game:80 method=device_system_dns
+2026/05/27 02:07:06.791053 dial tcp www.bc.game:80 method=device_system_dns
+2026/05/27 02:07:06.793156 device/system hostname dial failed for www.bc.game:80: dial tcp: lookup www.bc.game on [::1]:53: read udp [::1]:49700->[::1]:53: read: connection refused
+2026/05/27 02:07:06.793351 dnsx: resolved www.bc.game from cache mode=device -> [104.18.29.120]
+2026/05/27 02:07:06.793389 dial tcp 104.18.29.120:80 host=www.bc.game method=dns_cached_android_shell_dns
+2026/05/27 02:07:06.793904 device/system hostname dial failed for www.bc.game:80: dial tcp: lookup www.bc.game on [::1]:53: read udp [::1]:49700->[::1]:53: read: connection refused
+2026/05/27 02:07:06.793954 dnsx: resolved www.bc.game from cache mode=device -> [104.18.29.120]
+2026/05/27 02:07:06.793969 dial tcp 104.18.29.120:80 host=www.bc.game method=dns_cached_android_shell_dns
+2026/05/27 02:07:06.794233 device/system hostname dial failed for www.bc.game:80: dial tcp: lookup www.bc.game on [::1]:53: read udp [::1]:49700->[::1]:53: read: connection refused
+2026/05/27 02:07:06.794269 dnsx: resolved www.bc.game from cache mode=device -> [104.18.29.120]
+2026/05/27 02:07:06.794281 dial tcp 104.18.29.120:80 host=www.bc.game method=dns_cached_android_shell_dns
+2026/05/27 02:07:06.933141 sending payload timing=before_ssh bytes=87
+2026/05/27 02:07:06.933352 sending payload timing=before_ssh bytes=87
+2026/05/27 02:07:06.936087 sending payload timing=before_ssh bytes=87
+2026/05/27 02:07:07.624573 server message: http/html banner suppressed (535 bytes)
+2026/05/27 02:07:07.634534 server message: http/html banner suppressed (535 bytes)
+2026/05/27 02:07:07.790567 SSH pool slot 4 connected
+2026/05/27 02:07:07.793519 SSH pool slot 2 connected
+2026/05/27 02:07:09.781367 transparent TCP listening on 0.0.0.0:10810; iptables applied; hotspot_tcp=true
+2026/05/27 02:07:10.877272 server message: http/html banner suppressed (535 bytes)
+2026/05/27 02:07:11.050715 SSH pool slot 3 connected
+2026/05/27 02:07:23.522004 SSH pool slot 3 connecting
+2026/05/27 02:07:23.522149 dial tcp www.bc.game:80 method=device_system_dns
+2026/05/27 02:07:23.525461 device/system hostname dial failed for www.bc.game:80: dial tcp: lookup www.bc.game on [::1]:53: read udp [::1]:34890->[::1]:53: read: connection refused
+2026/05/27 02:07:23.525498 dnsx: resolved www.bc.game from cache mode=device -> [104.18.29.120]
+2026/05/27 02:07:23.525508 dial tcp 104.18.29.120:80 host=www.bc.game method=dns_cached_android_shell_dns
+2026/05/27 02:07:23.676432 sending payload timing=before_ssh bytes=87
+2026/05/27 02:07:24.458841 server message: http/html banner suppressed (535 bytes)
+2026/05/27 02:07:24.637493 SSH pool slot 3 connected
+--- watchdog.log ---
+--- boot.log ---
+2026-05-27 02:40:09 boot service started (v2.2.0)
+2026-05-27 02:40:22 boot completed; resetting to stopped state
+2026-05-27 02:40:26 starting daemon in idle mode (WebUI always accessible)
+starting sshcustom daemon (idle mode, WebUI only)...
+sshcustom runtime started with pid: 9225
+sshcustom daemon started in idle mode (WebUI at 127.0.0.1:9190)
+2026-05-27 02:40:28 autostart disabled; daemon idle (WebUI at 127.0.0.1:9190)
+--- net_clean.log ---
+2026-05-27 02:39:37 clean start
+2026-05-27 02:39:42 clean complete
+2026-05-27 02:40:22 clean start
+2026-05-27 02:40:26 clean complete
+2026-05-27 02:42:55 clean start
+2026-05-27 02:43:00 clean complete
+2026-05-27 02:45:02 clean start
+2026-05-27 02:45:07 clean complete
+==== vpnchain status ====
+{"running": false, "location": "", "ip": ""}
+==== interfaces & addresses ====
+lo               UNKNOWN        00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP> 
+dummy0           UNKNOWN        e2:05:0a:0c:f0:07 <BROADCAST,NOARP,UP,LOWER_UP> 
+ifb0             DOWN           ea:cc:30:7b:b5:70 <BROADCAST,NOARP> 
+ifb1             DOWN           f2:90:ba:31:1b:13 <BROADCAST,NOARP> 
+tunl0@NONE       DOWN           0.0.0.0 <NOARP> 
+gre0@NONE        DOWN           0.0.0.0 <NOARP> 
+gretap0@NONE     DOWN           00:00:00:00:00:00 <BROADCAST,MULTICAST> 
+erspan0@NONE     DOWN           00:00:00:00:00:00 <BROADCAST,MULTICAST> 
+ip_vti0@NONE     DOWN           0.0.0.0 <NOARP> 
+ip6_vti0@NONE    DOWN           :: <NOARP> 
+sit0@NONE        DOWN           0.0.0.0 <NOARP> 
+ip6tnl0@NONE     DOWN           :: <NOARP> 
+ip6gre0@NONE     DOWN           00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00 <NOARP> 
+miw_oem0         DOWN           3e:a5:31:92:4e:d2 <NOARP> 
+rmnet_ipa0       UNKNOWN        <UP,LOWER_UP> 
+rmnet_data0@rmnet_ipa0 UNKNOWN        <UP,LOWER_UP> 
+rmnet_data2@rmnet_ipa0 UNKNOWN        <UP,LOWER_UP> 
+rmnet_data1@rmnet_ipa0 DOWN           <> 
+r_rmnet_data1@rmnet_ipa0 DOWN           <> 
+r_rmnet_data2@rmnet_ipa0 DOWN           <> 
+r_rmnet_data0@rmnet_ipa0 DOWN           <> 
+r_rmnet_data3@rmnet_ipa0 DOWN           <> 
+wlan0            DOWN           6c:48:3f:a8:bd:ff <BROADCAST,MULTICAST> 
+p2p0             DOWN           6e:48:3f:2a:bd:ff <BROADCAST,MULTICAST> 
+wifi-aware0      DOWN           6e:48:3f:2b:bd:ff <BROADCAST,MULTICAST> 
+rmnet_data3@rmnet_ipa0 DOWN           <> 
+rmnet_data4@rmnet_ipa0 DOWN           <> 
+lo               UNKNOWN        127.0.0.1/8 ::1/128 
+dummy0           UNKNOWN        fe80::e005:aff:fe0c:f007/64 
+ifb0             DOWN           
+ifb1             DOWN           
+tunl0@NONE       DOWN           
+gre0@NONE        DOWN           
+gretap0@NONE     DOWN           
+erspan0@NONE     DOWN           
+ip_vti0@NONE     DOWN           
+ip6_vti0@NONE    DOWN           
+sit0@NONE        DOWN           
+ip6tnl0@NONE     DOWN           
+ip6gre0@NONE     DOWN           
+miw_oem0         DOWN           
+rmnet_ipa0       UNKNOWN        
+rmnet_data0@rmnet_ipa0 UNKNOWN        fe80::b87e:d0ff:fe74:6b49/64 
+rmnet_data2@rmnet_ipa0 UNKNOWN        10.40.64.192/25 2c0f:f5c0:b02:27da:1057:94ff:fece:e8b5/64 fe80::1057:94ff:fece:e8b5/64 
+rmnet_data1@rmnet_ipa0 DOWN           
+r_rmnet_data1@rmnet_ipa0 DOWN           
+r_rmnet_data2@rmnet_ipa0 DOWN           
+r_rmnet_data0@rmnet_ipa0 DOWN           
+r_rmnet_data3@rmnet_ipa0 DOWN           
+wlan0            DOWN           
+p2p0             DOWN           
+wifi-aware0      DOWN           
+rmnet_data3@rmnet_ipa0 DOWN           
+rmnet_data4@rmnet_ipa0 DOWN           
+==== ipv4 routing ====
+10.40.64.128/25 dev rmnet_data2 proto kernel scope link src 10.40.64.192 
+0:	from all lookup local 
+10000:	from all fwmark 0xc0000/0xd0000 lookup legacy_system 
+11000:	from all iif lo oif dummy0 uidrange 0-0 lookup dummy0 
+11000:	from all iif lo oif rmnet_data0 uidrange 0-0 lookup rmnet_data0 
+11000:	from all iif lo oif rmnet_data2 uidrange 0-0 lookup rmnet_data2 
+14999:	from all fwmark 0x4000000/0xce00000 lookup 60 
+14999:	from all fwmark 0x8000000/0xce00000 lookup 60 
+16000:	from all fwmark 0x10063/0x1ffff iif lo lookup local_network 
+16000:	from all fwmark 0x10062/0x1ffff iif lo lookup local_network 
+16000:	from all fwmark 0x12328/0x1ffff iif lo lookup local_network 
+16000:	from all fwmark 0x12329/0x1ffff iif lo lookup local_network 
+16000:	from all fwmark 0xd0001/0xdffff iif lo lookup rmnet_data0 
+16000:	from all fwmark 0x10069/0x1ffff iif lo lookup rmnet_data2 
+17000:	from all iif lo oif dummy0 lookup dummy0 
+17000:	from all fwmark 0xc0000/0xc0000 iif lo oif rmnet_data0 lookup rmnet_data0 
+17000:	from all iif lo oif rmnet_data2 lookup rmnet_data2 
+18000:	from all fwmark 0x0/0x10000 lookup legacy_system 
+19000:	from all fwmark 0x0/0x10000 lookup legacy_network 
+20000:	from all fwmark 0x0/0x10000 lookup local_network 
+20000:	from all fwmark 0x0/0x10000 lookup local_network 
+20000:	from all fwmark 0x0/0x10000 lookup local_network 
+20000:	from all fwmark 0x0/0x10000 lookup local_network 
+23000:	from all fwmark 0x69/0x1ffff iif lo lookup rmnet_data2 
+31000:	from all fwmark 0x0/0xffff iif lo lookup rmnet_data2 
+32000:	from all unreachable
+224.0.0.0/24 dev rmnet_data0 table rmnet_data0_local proto static scope link 
+10.40.64.128/25 dev rmnet_data2 table rmnet_data2_local proto static scope link 
+224.0.0.0/24 dev rmnet_data2 table rmnet_data2_local proto static scope link 
+default dev dummy0 table dummy0 proto static scope link 
+default via 10.40.64.193 dev rmnet_data2 table rmnet_data2 proto static mtu 1500 
+10.40.64.128/25 dev rmnet_data2 table rmnet_data2 proto static scope link 
+10.40.64.128/25 dev rmnet_data2 proto kernel scope link src 10.40.64.192 
+local 10.40.64.192 dev rmnet_data2 table local proto kernel scope host src 10.40.64.192 
+broadcast 10.40.64.255 dev rmnet_data2 table local proto kernel scope link src 10.40.64.192 
+local 127.0.0.0/8 dev lo table local proto kernel scope host src 127.0.0.1 
+local 127.0.0.1 dev lo table local proto kernel scope host src 127.0.0.1 
+broadcast 127.255.255.255 dev lo table local proto kernel scope link src 127.0.0.1 
+2c0f:f5c0:b02:27da::/64 dev rmnet_data2 table rmnet_data2_local proto static metric 1024 pref medium
+fe80::/64 dev dummy0 table dummy0 proto kernel metric 256 pref medium
+default dev dummy0 table dummy0 proto static metric 1024 pref medium
+fe80::/64 dev rmnet_data0 table rmnet_data0 proto kernel metric 256 pref medium
+2c0f:f5c0:b02:27da::/64 dev rmnet_data2 table rmnet_data2 proto kernel metric 256 pref medium
+2c0f:f5c0:b02:27da::/64 dev rmnet_data2 table rmnet_data2 proto static metric 1024 pref medium
+fe80::/64 dev rmnet_data2 table rmnet_data2 proto kernel metric 256 pref medium
+default via fe80::3123:3f62:5878:f70c dev rmnet_data2 table rmnet_data2 proto ra metric 1024 expires 63969sec mtu 1280 hoplimit 64 pref medium
+local ::1 dev lo table local proto kernel metric 0 pref medium
+local 2c0f:f5c0:b02:27da:1057:94ff:fece:e8b5 dev rmnet_data2 table local proto kernel metric 0 pref medium
+local fe80::1057:94ff:fece:e8b5 dev rmnet_data2 table local proto kernel metric 0 pref medium
+local fe80::b87e:d0ff:fe74:6b49 dev rmnet_data0 table local proto kernel metric 0 pref medium
+local fe80::e005:aff:fe0c:f007 dev dummy0 table local proto kernel metric 0 pref medium
+multicast ff00::/8 dev dummy0 table local proto kernel metric 256 pref medium
+multicast ff00::/8 dev rmnet_data0 table local proto kernel metric 256 pref medium
+multicast ff00::/8 dev rmnet_data2 table local proto kernel metric 256 pref medium
+==== ipv6 routing ====
+0:	from all lookup local 
+10000:	from all fwmark 0xc0000/0xd0000 lookup legacy_system 
+11000:	from all iif lo oif dummy0 uidrange 0-0 lookup dummy0 
+11000:	from all iif lo oif rmnet_data0 uidrange 0-0 lookup rmnet_data0 
+11000:	from all iif lo oif rmnet_data2 uidrange 0-0 lookup rmnet_data2 
+16000:	from all fwmark 0x10063/0x1ffff iif lo lookup local_network 
+16000:	from all fwmark 0x10062/0x1ffff iif lo lookup local_network 
+16000:	from all fwmark 0x12328/0x1ffff iif lo lookup local_network 
+16000:	from all fwmark 0x12329/0x1ffff iif lo lookup local_network 
+16000:	from all fwmark 0xd0001/0xdffff iif lo lookup rmnet_data0 
+16000:	from all fwmark 0x10069/0x1ffff iif lo lookup rmnet_data2 
+17000:	from all iif lo oif dummy0 lookup dummy0 
+17000:	from all fwmark 0xc0000/0xc0000 iif lo oif rmnet_data0 lookup rmnet_data0 
+17000:	from all iif lo oif rmnet_data2 lookup rmnet_data2 
+18000:	from all fwmark 0x0/0x10000 lookup legacy_system 
+19000:	from all fwmark 0x0/0x10000 lookup legacy_network 
+20000:	from all fwmark 0x0/0x10000 lookup local_network 
+20000:	from all fwmark 0x0/0x10000 lookup local_network 
+20000:	from all fwmark 0x0/0x10000 lookup local_network 
+20000:	from all fwmark 0x0/0x10000 lookup local_network 
+23000:	from all fwmark 0x69/0x1ffff iif lo lookup rmnet_data2 
+31000:	from all fwmark 0x0/0xffff iif lo lookup rmnet_data2 
+32000:	from all unreachable
+==== sysctls ====
+1
+0
+0
+==== iptables nat (with line numbers) ====
+Chain PREROUTING (policy ACCEPT 227 packets, 15444 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1        0     0 SSHC_PREROUTING  tcp  --  bt-pan+ *       0.0.0.0/0            0.0.0.0/0           
+2        0     0 SSHC_PREROUTING  tcp  --  ncm+   *       0.0.0.0/0            0.0.0.0/0           
+3        0     0 SSHC_PREROUTING  tcp  --  rndis+ *       0.0.0.0/0            0.0.0.0/0           
+4        0     0 SSHC_PREROUTING  tcp  --  ap+    *       0.0.0.0/0            0.0.0.0/0           
+5        0     0 SSHC_PREROUTING  tcp  --  swlan+ *       0.0.0.0/0            0.0.0.0/0           
+6        0     0 SSHC_PREROUTING  tcp  --  wlan+  *       0.0.0.0/0            0.0.0.0/0           
+7      227 15444 oem_nat_pre  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain INPUT (policy ACCEPT 227 packets, 15444 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain OUTPUT (policy ACCEPT 1560 packets, 160K bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1       23  1380 SSHC_OUTPUT  tcp  --  *      *       0.0.0.0/0            0.0.0.0/0           
+2     1560  160K onelink_nat_chain  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain POSTROUTING (policy ACCEPT 1636 packets, 164K bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     1636  164K qcom_nicm_masquerade_skip  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+2     1636  164K tetherctrl_nat_POSTROUTING  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain SSHC_OUTPUT (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1        2   120 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0            owner UID match 0
+2        0     0 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/8           
+3        0     0 RETURN     all  --  *      *       0.0.0.0/0            10.0.0.0/8          
+4        0     0 RETURN     all  --  *      *       0.0.0.0/0            100.64.0.0/10       
+5        4   240 RETURN     all  --  *      *       0.0.0.0/0            127.0.0.0/8         
+6        0     0 RETURN     all  --  *      *       0.0.0.0/0            169.254.0.0/16      
+7        0     0 RETURN     all  --  *      *       0.0.0.0/0            172.16.0.0/12       
+8        0     0 RETURN     all  --  *      *       0.0.0.0/0            192.168.0.0/16      
+9        0     0 RETURN     all  --  *      *       0.0.0.0/0            224.0.0.0/4         
+10       0     0 RETURN     all  --  *      *       0.0.0.0/0            240.0.0.0/4         
+11       0     0 RETURN     all  --  *      *       0.0.0.0/0            104.18.29.120       
+12       0     0 RETURN     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:9190
+13       0     0 RETURN     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:1080
+14       0     0 RETURN     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:10810
+15      17  1020 REDIRECT   tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            redir ports 10810
+
+Chain SSHC_PREROUTING (6 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1        0     0 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/8           
+2        0     0 RETURN     all  --  *      *       0.0.0.0/0            10.0.0.0/8          
+3        0     0 RETURN     all  --  *      *       0.0.0.0/0            100.64.0.0/10       
+4        0     0 RETURN     all  --  *      *       0.0.0.0/0            127.0.0.0/8         
+5        0     0 RETURN     all  --  *      *       0.0.0.0/0            169.254.0.0/16      
+6        0     0 RETURN     all  --  *      *       0.0.0.0/0            172.16.0.0/12       
+7        0     0 RETURN     all  --  *      *       0.0.0.0/0            192.168.0.0/16      
+8        0     0 RETURN     all  --  *      *       0.0.0.0/0            224.0.0.0/4         
+9        0     0 RETURN     all  --  *      *       0.0.0.0/0            240.0.0.0/4         
+10       0     0 RETURN     all  --  *      *       0.0.0.0/0            104.18.29.120       
+11       0     0 RETURN     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:9190
+12       0     0 RETURN     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:1080
+13       0     0 RETURN     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:10810
+14       0     0 REDIRECT   tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            redir ports 10810
+
+Chain oem_nat_pre (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain onelink_nat_chain (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain qcom_nat_POSTROUTING_MIW (0 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1        0     0 MASQUERADE  all  --  *      miw_oem0  0.0.0.0/0            0.0.0.0/0           
+
+Chain qcom_nicm_masquerade_skip (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain tetherctrl_nat_POSTROUTING (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+==== iptables mangle (HyperOS netd lives here) ====
+Chain PREROUTING (policy ACCEPT 76251 packets, 82M bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain INPUT (policy ACCEPT 76251 packets, 82M bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1    76251   82M connmark_mangle_INPUT  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+2    76251   82M wakeupctrl_mangle_INPUT  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+3    76251   82M routectrl_mangle_INPUT  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1        0     0 tetherctrl_mangle_FORWARD  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain OUTPUT (policy ACCEPT 64380 packets, 48M bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1    64380   48M qcom_NWMGR  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+2    64380   48M connmark_mangle_OUTPUT  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+3    64380   48M qos_reset_OUTPUT  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain POSTROUTING (policy ACCEPT 64380 packets, 48M bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1    64380   48M qcom_htimer_POSTROUTING  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+2    64380   48M oem_mangle_post  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+3    64380   48M bw_mangle_POSTROUTING  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+4    64380   48M idletimer_mangle_POSTROUTING  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+5    64380   48M qcom_qos_reset_POSTROUTING  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+6    64380   48M qcom_qos_filter_POSTROUTING  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain bw_mangle_POSTROUTING (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1        0     0 RETURN     all  --  *      ipsec+  0.0.0.0/0            0.0.0.0/0           
+2        0     0 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0            policy match dir out pol ipsec
+3    64380   48M MARK       all  --  *      *       0.0.0.0/0            0.0.0.0/0            MARK and 0xffefffff
+4    64380   48M            all  --  *      *       0.0.0.0/0            0.0.0.0/0           match bpf pinned /sys/fs/bpf/netd_shared/prog_netd_skfilter_egress_xtbpf
+
+Chain connmark_mangle_INPUT (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     2717 2229K CONNMARK   all  --  *      *       0.0.0.0/0            0.0.0.0/0            connmark match  0x0/0xfffff CONNMARK save mask 0xfffff
+
+Chain connmark_mangle_OUTPUT (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     3889  650K CONNMARK   all  --  *      *       0.0.0.0/0            0.0.0.0/0            connmark match  0x0/0xfffff CONNMARK save mask 0xfffff
+
+Chain idletimer_mangle_POSTROUTING (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1    11078 2697K IDLETIMER  all  --  *      rmnet_data2  0.0.0.0/0            0.0.0.0/0            timeout:10 label:105 send_nl_msg
+
+Chain oem_mangle_post (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain qcom_MIW_wapper (0 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain qcom_NWMGR (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain qcom_htimer_POSTROUTING (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain qcom_qos_filter_POSTROUTING (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain qcom_qos_reset_POSTROUTING (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1    11466 2785K MARK       all  --  *      rmnet_data+  0.0.0.0/0            0.0.0.0/0            MARK and 0x0
+
+Chain qos_reset_OUTPUT (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain routectrl_mangle_INPUT (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1        0     0 MARK       all  --  rmnet_data0 *       0.0.0.0/0            0.0.0.0/0            MARK xset 0xf0001/0x7fefffff
+2    17641   21M MARK       all  --  rmnet_data2 *       0.0.0.0/0            0.0.0.0/0            MARK xset 0x30069/0x7fefffff
+
+Chain tc_idletimer (0 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain tc_limiter_OUTPUT (0 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain tc_wmm (0 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain tetherctrl_mangle_FORWARD (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1        0     0 TCPMSS     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp flags:0x02/0x02 TCPMSS clamp to PMTU
+
+Chain wakeupctrl_mangle_INPUT (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1        0     0 NFLOG      all  --  rmnet_data2 *       0.0.0.0/0            0.0.0.0/0            mark match 0x80000000/0x80000000 limit: avg 10/sec burst 5 nflog-prefix "454377263117:rmnet_data2" nflog-group 3 nflog-threshold 8
+==== iptables filter (just OUTPUT/FORWARD) ====
+Chain OUTPUT (policy ACCEPT 64380 packets, 48M bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1    64380   48M oem_out    all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+2    64380   48M fw_OUTPUT  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+3    64380   48M st_OUTPUT  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+4    64380   48M bw_OUTPUT  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+5    64380   48M onelink_filter_chain  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+6    12343 3025K tc_mobile_limiter  all  --  *      rmnet_data2  0.0.0.0/0            0.0.0.0/0           
+Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1        0     0 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+2        0     0 oem_fwd    all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+3        0     0 fw_FORWARD  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+4        0     0 bw_FORWARD  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+5        0     0 tetherctrl_FORWARD  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+==== ip6tables nat/mangle ====
+Chain PREROUTING (policy ACCEPT 740 packets, 408K bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain INPUT (policy ACCEPT 727 packets, 407K bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      727  407K connmark_mangle_INPUT  all  --  *      *       ::/0                 ::/0                
+2      727  407K wakeupctrl_mangle_INPUT  all  --  *      *       ::/0                 ::/0                
+3      727  407K routectrl_mangle_INPUT  all  --  *      *       ::/0                 ::/0                
+
+Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1        0     0 tetherctrl_mangle_FORWARD  all  --  *      *       ::/0                 ::/0                
+
+Chain OUTPUT (policy ACCEPT 1903 packets, 1140K bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     1897 1140K qcom_NWMGR  all  --  *      *       ::/0                 ::/0                
+2     1903 1140K connmark_mangle_OUTPUT  all  --  *      *       ::/0                 ::/0                
+3     1890 1137K qos_reset_OUTPUT  all  --  *      *       ::/0                 ::/0                
+
+Chain POSTROUTING (policy ACCEPT 1941 packets, 1143K bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     1939 1143K qcom_htimer_POSTROUTING  all  --  *      *       ::/0                 ::/0                
+2     1941 1143K oem_mangle_post  all  --  *      *       ::/0                 ::/0                
+3     1941 1143K bw_mangle_POSTROUTING  all  --  *      *       ::/0                 ::/0                
+4     1941 1143K idletimer_mangle_POSTROUTING  all  --  *      *       ::/0                 ::/0                
+5     1940 1143K qcom_qos_reset_POSTROUTING  all  --  *      *       ::/0                 ::/0                
+6     1940 1143K qcom_qos_filter_POSTROUTING  all  --  *      *       ::/0                 ::/0                
+
+Chain bw_mangle_POSTROUTING (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1        0     0 RETURN     all  --  *      ipsec+  ::/0                 ::/0                
+2        0     0 RETURN     all  --  *      *       ::/0                 ::/0                 policy match dir out pol ipsec
+3     1941 1143K MARK       all  --  *      *       ::/0                 ::/0                 MARK and 0xffefffff
+4     1941 1143K            all  --  *      *       ::/0                 ::/0                match bpf pinned /sys/fs/bpf/netd_shared/prog_netd_skfilter_egress_xtbpf
+
+Chain connmark_mangle_INPUT (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1       64  7168 CONNMARK   all  --  *      *       ::/0                 ::/0                 connmark match  0x0/0xfffff CONNMARK save mask 0xfffff
+
+Chain connmark_mangle_OUTPUT (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      270 67245 CONNMARK   all  --  *      *       ::/0                 ::/0                 connmark match  0x0/0xfffff CONNMARK save mask 0xfffff
+
+Chain idletimer_mangle_POSTROUTING (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     1489 1030K IDLETIMER  all  --  *      rmnet_data2  ::/0                 ::/0                 timeout:10 label:105 send_nl_msg
+
+Chain oem_mangle_post (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain qcom_NWMGR (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain qcom_htimer_POSTROUTING (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain qcom_qos_filter_POSTROUTING (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain qcom_qos_reset_POSTROUTING (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     1818 1132K MARK       all  --  *      rmnet_data+  ::/0                 ::/0                 MARK and 0x0
+
+Chain qos_reset_OUTPUT (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain routectrl_mangle_INPUT (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1        1    68 MARK       all  --  rmnet_data0 *       ::/0                 ::/0                 MARK xset 0xf0001/0x7fefffff
+2      478  340K MARK       all  --  rmnet_data2 *       ::/0                 ::/0                 MARK xset 0x30069/0x7fefffff
+
+Chain tc_idletimer (0 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain tc_limiter_OUTPUT (0 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain tc_wmm (0 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain tetherctrl_mangle_FORWARD (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain wakeupctrl_mangle_INPUT (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1        0     0 NFLOG      all  --  rmnet_data2 *       ::/0                 ::/0                 mark match 0x80000000/0x80000000 limit: avg 10/sec burst 5 nflog-prefix "454377263117:rmnet_data2" nflog-group 3 nflog-threshold 8
+==== conntrack (top 60) ====
+ipv4     2 tcp      6 46 TIME_WAIT src=127.0.0.1 dst=127.0.0.1 sport=58276 dport=1080 packets=41 bytes=3772 src=127.0.0.1 dst=127.0.0.1 sport=1080 dport=58276 packets=48 bytes=11455 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 430664 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=48302 dport=993 packets=16 bytes=1593 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=48302 packets=16 bytes=6012 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 46 TIME_WAIT src=127.0.0.1 dst=127.0.0.1 sport=45958 dport=1080 packets=18 bytes=1894 src=127.0.0.1 dst=127.0.0.1 sport=1080 dport=45958 packets=20 bytes=6408 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 430646 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=38046 dport=993 packets=16 bytes=1953 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=38046 packets=16 bytes=6032 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 277 ESTABLISHED src=10.40.64.192 dst=34.230.213.144 sport=58884 dport=443 packets=9 bytes=7438 src=34.230.213.144 dst=10.40.64.192 sport=443 dport=58884 packets=1 bytes=60 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 430681 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=58480 dport=993 packets=17 bytes=1719 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=58480 packets=17 bytes=5859 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv6     10 tcp      6 296 ESTABLISHED src=2c0f:f5c0:0b02:27da:1057:94ff:fece:e8b5 dst=2c0f:fb50:4003:0800:0000:0000:0000:2016 sport=59992 dport=443 packets=8 bytes=8560 src=2c0f:fb50:4003:0800:0000:0000:0000:2016 dst=2c0f:f5c0:0b02:27da:1057:94ff:fece:e8b5 sport=443 dport=59992 packets=1 bytes=80 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 46 TIME_WAIT src=127.0.0.1 dst=127.0.0.1 sport=45578 dport=1080 packets=18 bytes=1890 src=127.0.0.1 dst=127.0.0.1 sport=1080 dport=45578 packets=20 bytes=6428 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv6     10 tcp      6 298 ESTABLISHED src=2c0f:f5c0:0b02:27da:1057:94ff:fece:e8b5 dst=2c0f:fb50:4003:0802:0000:0000:0000:2001 sport=40462 dport=443 packets=7 bytes=6374 src=2c0f:fb50:4003:0802:0000:0000:0000:2001 dst=2c0f:f5c0:0b02:27da:1057:94ff:fece:e8b5 sport=443 dport=40462 packets=1 bytes=80 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 45 TIME_WAIT src=127.0.0.1 dst=127.0.0.1 sport=60782 dport=1080 packets=58 bytes=14166 src=127.0.0.1 dst=127.0.0.1 sport=1080 dport=60782 packets=57 bytes=13169 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 430692 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=44362 dport=993 packets=17 bytes=1832 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=44362 packets=19 bytes=6159 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 62 TIME_WAIT src=127.0.0.1 dst=127.0.0.1 sport=46932 dport=9190 packets=5 bytes=895 src=127.0.0.1 dst=127.0.0.1 sport=9190 dport=46932 packets=5 bytes=1510 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 430684 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=51166 dport=993 packets=50 bytes=4737 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=51166 packets=68 bytes=39880 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 431838 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=38050 dport=993 packets=55 bytes=4296 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=38050 packets=61 bytes=21054 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 86 SYN_SENT src=10.40.64.192 dst=216.239.32.223 sport=57030 dport=443 packets=1 bytes=60 [UNREPLIED] src=127.0.0.1 dst=10.40.64.192 sport=10810 dport=57030 packets=0 bytes=0 mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 430698 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=44384 dport=993 packets=17 bytes=1798 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=44384 packets=16 bytes=5992 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 udp      17 21 src=10.40.64.192 dst=10.198.136.54 sport=26167 dport=53 packets=1 bytes=66 src=10.198.136.54 dst=10.40.64.192 sport=53 dport=26167 packets=1 bytes=180 mark=983145 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 430690 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=44350 dport=993 packets=16 bytes=1597 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=44350 packets=16 bytes=5989 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 430695 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=44370 dport=993 packets=14 bytes=1633 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=44370 packets=14 bytes=5532 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 udp      17 23 src=10.40.64.192 dst=8.8.8.8 sport=26216 dport=53 packets=1 bytes=81 src=8.8.8.8 dst=10.40.64.192 sport=53 dport=26216 packets=1 bytes=145 mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 430652 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=33260 dport=993 packets=16 bytes=1597 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=33260 packets=16 bytes=5988 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 46 TIME_WAIT src=127.0.0.1 dst=127.0.0.1 sport=42312 dport=1080 packets=29 bytes=3195 src=127.0.0.1 dst=127.0.0.1 sport=1080 dport=42312 packets=36 bytes=9119 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 297 ESTABLISHED src=10.40.64.192 dst=34.230.213.144 sport=58868 dport=443 packets=10 bytes=7618 src=34.230.213.144 dst=10.40.64.192 sport=443 dport=58868 packets=1 bytes=60 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 430700 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=47362 dport=993 packets=13 bytes=1420 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=47362 packets=14 bytes=5521 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 46 TIME_WAIT src=127.0.0.1 dst=127.0.0.1 sport=45824 dport=1080 packets=52 bytes=5442 src=127.0.0.1 dst=127.0.0.1 sport=1080 dport=45824 packets=66 bytes=40608 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 431988 ESTABLISHED src=127.0.0.1 dst=127.0.0.1 sport=39798 dport=14754 packets=166 bytes=13801 src=127.0.0.1 dst=127.0.0.1 sport=14754 dport=39798 packets=150 bytes=19339 [ASSURED] mark=104 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 430689 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=44342 dport=993 packets=16 bytes=1597 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=44342 packets=16 bytes=5989 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 udp      17 21 src=10.40.64.192 dst=10.198.136.54 sport=39627 dport=53 packets=1 bytes=66 src=10.198.136.54 dst=10.40.64.192 sport=53 dport=39627 packets=1 bytes=235 mark=983145 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 46 TIME_WAIT src=127.0.0.1 dst=127.0.0.1 sport=45638 dport=1080 packets=19 bytes=2145 src=127.0.0.1 dst=127.0.0.1 sport=1080 dport=45638 packets=21 bytes=6503 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv6     10 udp      17 26 src=2c0f:f5c0:0b02:27da:1057:94ff:fece:e8b5 dst=2001:4860:4802:0036:0000:0000:0000:0223 sport=42824 dport=443 packets=6 bytes=7668 [UNREPLIED] src=2001:4860:4802:0036:0000:0000:0000:0223 dst=2c0f:f5c0:0b02:27da:1057:94ff:fece:e8b5 sport=443 dport=42824 packets=0 bytes=0 mark=65641 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 46 TIME_WAIT src=127.0.0.1 dst=127.0.0.1 sport=58264 dport=1080 packets=42 bytes=3770 src=127.0.0.1 dst=127.0.0.1 sport=1080 dport=58264 packets=48 bytes=11875 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv6     10 tcp      6 430350 ESTABLISHED src=2c0f:f5c0:0b08:229a:ac32:c5ff:fe11:67b5 dst=2600:1416:3001:0004:0000:0000:b81b:8c49 sport=53858 dport=443 packets=4 bytes=813 src=2600:1416:3001:0004:0000:0000:b81b:8c49 dst=2c0f:f5c0:0b08:229a:ac32:c5ff:fe11:67b5 sport=443 dport=53858 packets=3 bytes=5056 [ASSURED] mark=100 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 46 TIME_WAIT src=127.0.0.1 dst=127.0.0.1 sport=45898 dport=1080 packets=15 bytes=1693 src=127.0.0.1 dst=127.0.0.1 sport=1080 dport=45898 packets=18 bytes=5924 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 udp      17 23 src=10.40.64.192 dst=8.8.8.8 sport=28894 dport=53 packets=1 bytes=81 src=8.8.8.8 dst=10.40.64.192 sport=53 dport=28894 packets=1 bytes=193 mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 431984 ESTABLISHED src=10.40.64.192 dst=104.18.29.120 sport=41436 dport=80 packets=36 bytes=8127 src=104.18.29.120 dst=10.40.64.192 sport=80 dport=41436 packets=42 bytes=26001 [ASSURED] mark=0 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 277 ESTABLISHED src=10.40.64.192 dst=34.230.213.144 sport=58802 dport=443 packets=9 bytes=7438 src=34.230.213.144 dst=10.40.64.192 sport=443 dport=58802 packets=1 bytes=60 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 430679 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=58464 dport=993 packets=15 bytes=1654 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=58464 packets=16 bytes=5995 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv6     10 tcp      6 297 ESTABLISHED src=2c0f:f5c0:0b02:27da:1057:94ff:fece:e8b5 dst=2c0f:fb50:4003:0802:0000:0000:0000:200e sport=51000 dport=443 packets=8 bytes=7560 src=2c0f:fb50:4003:0802:0000:0000:0000:200e dst=2c0f:f5c0:0b02:27da:1057:94ff:fece:e8b5 sport=443 dport=51000 packets=1 bytes=80 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 46 TIME_WAIT src=127.0.0.1 dst=127.0.0.1 sport=45822 dport=1080 packets=16 bytes=1790 src=127.0.0.1 dst=127.0.0.1 sport=1080 dport=45822 packets=19 bytes=6356 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv6     10 udp      17 29 src=2c0f:f5c0:0b02:27da:1057:94ff:fece:e8b5 dst=2001:4860:4802:0032:0000:0000:0000:0223 sport=57344 dport=443 packets=5 bytes=5239 [UNREPLIED] src=2001:4860:4802:0032:0000:0000:0000:0223 dst=2c0f:f5c0:0b02:27da:1057:94ff:fece:e8b5 sport=443 dport=57344 packets=0 bytes=0 mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 46 TIME_WAIT src=127.0.0.1 dst=127.0.0.1 sport=45804 dport=1080 packets=18 bytes=1898 src=127.0.0.1 dst=127.0.0.1 sport=1080 dport=45804 packets=20 bytes=6409 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 udp      17 26 src=127.0.0.1 dst=127.0.0.1 sport=42471 dport=443 packets=1 bytes=1278 [UNREPLIED] src=127.0.0.1 dst=127.0.0.1 sport=443 dport=42471 packets=0 bytes=0 mark=786537 secctx=u:object_r:unlabeled:s0 use=2
+ipv6     10 tcp      6 299 ESTABLISHED src=2c0f:f5c0:0b02:27da:1057:94ff:fece:e8b5 dst=2001:4860:4802:0032:0000:0000:0000:0223 sport=52710 dport=443 packets=7 bytes=3607 src=2001:4860:4802:0032:0000:0000:0000:0223 dst=2c0f:f5c0:0b02:27da:1057:94ff:fece:e8b5 sport=443 dport=52710 packets=1 bytes=80 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 430698 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=44392 dport=993 packets=14 bytes=1553 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=44392 packets=14 bytes=5521 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 430656 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=33276 dport=993 packets=17 bytes=1641 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=33276 packets=16 bytes=5994 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 430704 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=47384 dport=993 packets=16 bytes=1735 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=47384 packets=17 bytes=6082 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 430659 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=33298 dport=993 packets=18 bytes=1842 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=33298 packets=15 bytes=5956 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv6     10 udp      17 2 src=2c0f:f5c0:0b02:27da:1057:94ff:fece:e8b5 dst=2c0f:fb50:4003:0802:0000:0000:0000:200e sport=51738 dport=443 packets=7 bytes=7791 [UNREPLIED] src=2c0f:fb50:4003:0802:0000:0000:0000:200e dst=2c0f:f5c0:0b02:27da:1057:94ff:fece:e8b5 sport=443 dport=51738 packets=0 bytes=0 mark=65641 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 431429 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=48306 dport=993 packets=66 bytes=5317 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=48306 packets=87 bytes=66101 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 430648 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=38112 dport=993 packets=17 bytes=1637 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=38112 packets=16 bytes=5992 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv6     10 tcp      6 102 SYN_SENT src=2c0f:f5c0:0b02:27da:1057:94ff:fece:e8b5 dst=2c0f:fb50:4003:0802:0000:0000:0000:2001 sport=60272 dport=443 packets=1 bytes=80 [UNREPLIED] src=2c0f:fb50:4003:0802:0000:0000:0000:2001 dst=2c0f:f5c0:0b02:27da:1057:94ff:fece:e8b5 sport=443 dport=60272 packets=0 bytes=0 mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 62 TIME_WAIT src=127.0.0.1 dst=127.0.0.1 sport=46948 dport=9190 packets=5 bytes=904 src=127.0.0.1 dst=127.0.0.1 sport=9190 dport=46948 packets=5 bytes=824 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 46 TIME_WAIT src=127.0.0.1 dst=127.0.0.1 sport=58208 dport=1080 packets=68 bytes=6208 src=127.0.0.1 dst=127.0.0.1 sport=1080 dport=58208 packets=86 bytes=39665 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 430642 ESTABLISHED src=172.16.0.1 dst=192.178.223.109 sport=38026 dport=993 packets=15 bytes=1662 src=192.178.223.109 dst=172.16.0.1 sport=993 dport=38026 packets=16 bytes=5998 [ASSURED] mark=262249 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 udp      17 21 src=10.40.64.192 dst=10.198.136.54 sport=10929 dport=53 packets=1 bytes=59 src=10.198.136.54 dst=10.40.64.192 sport=53 dport=10929 packets=1 bytes=169 mark=983145 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 udp      17 23 src=10.40.64.192 dst=8.8.8.8 sport=22928 dport=53 packets=1 bytes=81 src=8.8.8.8 dst=10.40.64.192 sport=53 dport=22928 packets=1 bytes=138 mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 62 TIME_WAIT src=127.0.0.1 dst=127.0.0.1 sport=46928 dport=9190 packets=6 bytes=945 src=127.0.0.1 dst=127.0.0.1 sport=9190 dport=46928 packets=6 bytes=4657 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+ipv6     10 tcp      6 430363 ESTABLISHED src=2c0f:f5c0:0b08:229a:ac32:c5ff:fe11:67b5 dst=2c0f:fb50:4003:0801:0000:0000:0000:200a sport=60148 dport=443 packets=14 bytes=3640 src=2c0f:fb50:4003:0801:0000:0000:0000:200a dst=2c0f:f5c0:0b08:229a:ac32:c5ff:fe11:67b5 sport=443 dport=60148 packets=16 bytes=8479 [ASSURED] mark=100 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 430367 ESTABLISHED src=10.220.60.98 dst=142.251.216.106 sport=55350 dport=443 packets=8 bytes=1189 src=142.251.216.106 dst=10.220.60.98 sport=443 dport=55350 packets=7 bytes=1279 [ASSURED] mark=786533 secctx=u:object_r:unlabeled:s0 use=2
+ipv4     2 tcp      6 46 TIME_WAIT src=127.0.0.1 dst=127.0.0.1 sport=58062 dport=1080 packets=17 bytes=1854 src=127.0.0.1 dst=127.0.0.1 sport=1080 dport=58062 packets=20 bytes=6414 [ASSURED] mark=105 secctx=u:object_r:unlabeled:s0 use=2
+==== local listeners ====
+State       Recv-Q Send-Q Local Address:Port               Peer Address:Port              
+LISTEN      0      4096   127.0.0.1:14731              0.0.0.0:*                   users:(("scene-daemon",pid=13258,fd=10))
+LISTEN      0      4096   127.0.0.1:14754              0.0.0.0:*                   users:(("scene-daemon",pid=13258,fd=4))
+LISTEN      0      4096   127.0.0.1:1080               0.0.0.0:*                   users:(("sshcustomd",pid=9225,fd=9))
+LISTEN      0      4096   127.0.0.1:9190               0.0.0.0:*                   users:(("sshcustomd",pid=9225,fd=6))
+LISTEN      0      50      [::ffff:127.0.0.1]:39659                    *:*                   users:(("android.youtube",pid=22452,fd=163))
+LISTEN      0      4096         *:10810                    *:*                   users:(("sshcustomd",pid=9225,fd=10))
+State       Recv-Q Send-Q Local Address:Port               Peer Address:Port              
+UNCONN      0      0      [fe80::b87e:d0ff:fe74:6b49]%rmnet_data0:35948                 [::]:*                   users:(("binder:2819_2",pid=2819,fd=58))
+UNCONN      0      0            *:5228                     *:*                   users:((".gms.persistent",pid=5879,fd=176))
+UNCONN      0      0      [fe80::b87e:d0ff:fe74:6b49]%rmnet_data0:57224                 [::]:*                   users:(("binder:4406_2",pid=4406,fd=19))
+UNCONN      0      0      [fe80::b87e:d0ff:fe74:6b49]%rmnet_data0:57731                 [::]:*                   users:(("binder:4406_2",pid=4406,fd=18))
+UNCONN      0      0            *:51392                    *:*                   users:(("system_server",pid=2441,fd=455))
+==== DNS / connectivity probes ====
+PING 1.1.1.1 (1.1.1.1) 56(84) bytes of data.
+
+--- 1.1.1.1 ping statistics ---
+2 packets transmitted, 0 received, 100% packet loss, time 1018ms
+
+PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
+
+--- 8.8.8.8 ping statistics ---
+2 packets transmitted, 0 received, 100% packet loss, time 1004ms
+
+PING 2606:4700:4700::1111(2606:4700:4700::1111) 56 data bytes
+
+--- 2606:4700:4700::1111 ping statistics ---
+2 packets transmitted, 0 received, 100% packet loss, time 1023ms
+
+/system/bin/sh: nslookup: inaccessible or not found
+==== quick HTTP check via tunnel (SOCKS 127.0.0.1:1080) ====
+direct  https://1.1.1.1     000 8.003283s
+via-sock https://1.1.1.1    301 0.549754s
+direct  https://www.youtube 000 8.003052s
+via-sock https://www.youtube 200 1.355787s
+==== api health ====
+<!doctype html>
+<html lang="en" data-theme-resolved="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <title>SSHCustom-VPNChain</title>
+  <style>
+    :root {
+      /* WebUI-X inset variables (injected by the host app at runtime) */
+      --top-inset: var(--window-inset-top, 0px);
+      --bottom-inset: var(--window-inset-bottom, 0px);
+
+      --font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --surface: #111318;
+      --on-surface: #e3e2e8;
+      --on-variant: #c5c6d0;
+      --surface-low: #191b20;
+      --surface-mid: #1d2025;
+      --surface-high: #282a30;
+      --surface-highest: #33353b;
+      --primary: #adc6ff;
+      --on-primary-container: #dbe5ff;
+      --primary-container: #284777;
+      --secondary: #bdc7dc;
+      --secondary-container: #3f4759;
+      --on-secondary-container: #dce5f9;
+      --tertiary: #dcc1dd;
+      --tertiary-container: #573e5b;
+      --error: #ffb4ab;
+      --error-container: #93000a;
+      --on-error-container: #ffdad6;
+      --outline: #8f919a;
+      --good: #9bd67d;
+      --warn: #f4c66a;
+      --small: 8px;
+      --large: 20px;
+      --full: 9999px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; margin: 0; }
+    body {
+      font-family: var(--font);
+      background: var(--surface);
+      color: var(--on-surface);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, input, select, textarea { font: inherit; }
+    button { -webkit-tap-highlight-color: transparent; }
+    [hidden] { display: none !important; }
+
+    .app-layout { min-height: 100vh; display: flex; flex-direction: column; }
+    .app-top-bar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      min-height: calc(56px + var(--top-inset));
+      padding: calc(8px + var(--top-inset)) 16px 8px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+    }
+    .app-title { margin: 0; font-size: 1.25rem; font-weight: 600; letter-spacing: 0.0125em; }
+    .spacer { flex: 1; }
+    .network-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--on-surface);
+      font-size: 0.8125rem;
+      font-weight: 600;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--error);
+      box-shadow: 0 0 6px 2px var(--error);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    .status-dot.connected { background: var(--good); box-shadow: 0 0 8px 3px var(--good); }
+    .status-dot.connecting { background: var(--warn); box-shadow: 0 0 6px 2px var(--warn); }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+    #pages {
+      width: min(100%, 860px);
+      margin: 0 auto;
+      padding: 16px 16px calc(80px + var(--bottom-inset));
+    }
+    section:not([hidden]) {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      animation: page-enter 350ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    }
+    @keyframes page-enter {
+      from { opacity: 0; transform: translateY(16px) scale(0.97); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .card {
+      border-radius: var(--large);
+      background: var(--surface-high);
+      color: var(--on-surface);
+      overflow: hidden;
+    }
+    .hero-card { background: var(--surface-mid); border: 1px solid var(--surface-highest); }
+    .hero-card__body {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 20px;
+    }
+    .hero-icon, .li-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--primary-container);
+      color: var(--on-primary-container);
+      flex-shrink: 0;
+      font-size: 0.75rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+    .li-icon { width: 40px; height: 40px; font-size: 0.65rem; }
+    .hero-title { margin: 0; font-size: 1rem; font-weight: 700; }
+    .hero-subtitle {
+      margin: 2px 0 0;
+      color: var(--on-variant);
+      font-size: 0.8125rem;
+      line-height: 1.4;
+    }
+    .chip-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 28px;
+      padding: 4px 12px;
+      border-radius: var(--full);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      background: var(--surface-highest);
+      color: var(--on-surface);
+      white-space: nowrap;
+    }
+    .chip.primary { background: var(--primary-container); color: var(--on-primary-container); }
+    .chip.warn { background: var(--tertiary-container); color: var(--on-surface); }
+    .chip.error { background: var(--error-container); color: var(--on-error-container); }
+
+    .button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .button-row.full { grid-template-columns: 1fr; }
+    .md3-tonal, .md3-filled, .md3-text {
+      min-height: 44px;
+      border: none;
+      border-radius: var(--full);
+      font-weight: 700;
+      cursor: pointer;
+      padding: 0 18px;
+      color: var(--on-secondary-container);
+      background: var(--secondary-container);
+    }
+    .md3-filled { background: var(--primary); color: #10203a; }
+    .md3-text { background: transparent; color: var(--primary); min-height: 36px; }
+    .md3-danger { background: var(--error-container); color: var(--on-error-container); }
+    .md3-tonal:disabled, .md3-filled:disabled, .md3-text:disabled { opacity: 0.45; pointer-events: none; }
+
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .info-card {
+      min-height: 72px;
+      padding: 14px;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface-high);
+      border-radius: 14px;
+    }
+    .info-card__text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+    .info-card--data {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 4px;
+    }
+    .info-card.primary { background: var(--primary-container); color: var(--on-primary-container); }
+    .info-card__icon {
+      width: 32px;
+      height: 32px;
+      opacity: 0.7;
+      flex-shrink: 0;
+    }
+    .info-label { margin: 0 0 4px; color: inherit; font-size: 0.875rem; font-weight: 700; }
+    .info-value {
+      margin: 0;
+      color: inherit;
+      font-size: 1.125rem;
+      font-weight: 700;
+      line-height: 1.2;
+      word-break: break-word;
+    }
+    .supporting-text {
+      font-size: 0.8125rem;
+      color: var(--secondary);
+      line-height: 1.4;
+    }
+
+    .section-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--primary);
+      padding: 4px 14px;
+      font-size: 0.85rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin: 8px 0 0;
+    }
+    .section-pill:first-child { margin-top: 0; }
+    .list-container {
+      width: 100%;
+      border-radius: var(--large);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      overflow: clip;
+    }
+    .list-item {
+      min-height: 56px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface-high);
+      padding: 12px 16px;
+      border-radius: 12px;
+    }
+    .list-item-content { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+    .list-item .supporting-text { margin-top: 2px; font-size: 0.75rem; }
+    .toggle-text { font-size: 0.9375rem; font-weight: 700; line-height: 1.3; }
+    .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .select-shell, .field, .textarea {
+      width: 100%;
+      min-height: 48px;
+      border: 1px solid var(--outline);
+      border-radius: 14px;
+      padding: 0 16px;
+      color: var(--on-surface);
+      background: transparent;
+      outline: none;
+    }
+    .textarea { min-height: 100px; padding: 12px 16px; resize: vertical; font-family: "Courier New", monospace; }
+    .field-label { margin: 0 0 6px; color: var(--secondary); font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+    .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .field-full { grid-column: 1 / -1; }
+
+    .switch {
+      width: 52px;
+      height: 32px;
+      border: none;
+      border-radius: var(--full);
+      background: var(--surface-highest);
+      padding: 4px;
+      display: flex;
+      justify-content: flex-start;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+    .switch.on { justify-content: flex-end; background: var(--primary-container); }
+    .switch::before {
+      content: "";
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--on-variant);
+    }
+    .switch.on::before { background: var(--on-primary-container); }
+
+    .terminal {
+      background: var(--surface-low);
+      border: 1px solid var(--surface-highest);
+      border-radius: 14px;
+      padding: 14px 16px;
+      font-family: "JetBrains Mono", "Courier New", monospace;
+      font-size: 0.75rem;
+      line-height: 1.6;
+      color: var(--on-variant);
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 52vh;
+      overflow: auto;
+    }
+    .runtime-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      padding: 8px 0;
+    }
+    .runtime-tabs .chip { cursor: pointer; transition: background 0.2s, color 0.2s; }
+    .log-actions { display: flex; gap: 8px; align-items: center; }
+    .log-actions .md3-tonal { min-height: 36px; font-size: 0.8125rem; padding: 0 14px; }
+
+    .nav-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 30;
+      display: flex;
+      align-items: stretch;
+      justify-content: space-around;
+      height: calc(64px + var(--bottom-inset));
+      background: var(--surface-high);
+      border-top: 1px solid var(--surface-highest);
+      padding: 0;
+      padding-bottom: var(--bottom-inset);
+    }
+
+    .nav-tab {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 8px 0;
+      border: none;
+      background: transparent;
+      color: var(--on-variant);
+      cursor: pointer;
+      position: relative;
+    }
+    .nav-tab.active { color: var(--primary); }
+    .nav-tab.active::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 48px;
+      height: 3px;
+      border-radius: 0 0 3px 3px;
+      background: var(--primary);
+    }
+    .nav-icon { width: 22px; height: 22px; flex-shrink: 0; }
+    .nav-label {
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      opacity: 0.85;
+    }
+    .nav-tab.active .nav-label { opacity: 1; }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: rgba(0,0,0,0.62);
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      width: min(100%, 820px);
+      max-height: 92vh;
+      overflow: auto;
+      border-radius: 28px 28px 0 0;
+      background: var(--surface-high);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .modal-head { display: flex; align-items: center; gap: 12px; }
+    .modal-title { margin: 0; font-size: 1.1rem; font-weight: 800; }
+    .toast {
+      position: fixed;
+      bottom: calc(84px + var(--bottom-inset));
+      left: 50%;
+      transform: translateX(-50%) translateY(120px);
+      visibility: hidden;
+      min-height: 52px;
+      min-width: 288px;
+      max-width: calc(100vw - 24px);
+      padding: 14px 18px;
+      border-radius: 14px;
+      z-index: 60;
+      background: var(--surface-highest);
+      color: var(--on-surface);
+      font-size: 0.875rem;
+      font-weight: 700;
+      transition: transform 0.35s cubic-bezier(0.2, 0, 0, 1);
+    }
+    .toast.open { transform: translateX(-50%) translateY(0); visibility: visible; }
+    .toast.error { background: var(--error-container); color: var(--on-error-container); }
+
+    .about-row { display: flex; gap: 14px; align-items: center; }
+    .about-mark {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      background: var(--primary-container);
+      color: var(--on-primary-container);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      flex-shrink: 0;
+    }
+    .about-link {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 700;
+    }
+    .about-link:hover { text-decoration: underline; }
+
+    @media (max-width: 620px) {
+      #pages { padding-inline: 12px; }
+      .field-grid { grid-template-columns: 1fr; }
+      .field-full { grid-column: auto; }
+      .hero-card__body { align-items: flex-start; }
+      .app-title { font-size: 1.08rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <header class="app-top-bar">
+      <h1 class="app-title">SSHCustom-VPNChain</h1>
+      <div class="spacer"></div>
+      <span id="networkChip" class="network-chip"><span id="statusDot" class="status-dot"></span><span id="statusText">offline</span></span>
+    </header>
+
+    <main id="pages">
+      <!-- HOME -->
+      <section id="page-home">
+        <div class="card hero-card">
+          <div class="hero-card__body">
+            <div class="hero-icon" id="heroIcon">SSH</div>
+            <div style="flex:1;min-width:0">
+              <p class="hero-title" id="heroTitle">Daemon offline</p>
+              <p class="hero-subtitle" id="heroSubtitle">Start SSHCustom-VPNChain from the Magisk or KernelSU action button.</p>
+              <div class="chip-row" id="heroChips"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="button-row full" id="buttonRow">
+          <button class="md3-filled" id="btnStart" onclick="controlRuntime('start')">Start Tunnel</button>
+          <button class="md3-filled" id="btnRestart" onclick="controlRuntime('restart')" hidden>Restart Tunnel</button>
+          <button class="md3-tonal md3-danger" id="btnStop" onclick="controlRuntime('stop')" hidden>Stop Tunnel</button>
+        </div>
+
+        <div class="card info-card">
+          <svg class="info-card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+          <div class="info-card__text">
+            <p class="info-label">Tunnel Exit IP</p>
+            <p class="info-value" id="tunnelIp">Unavailable</p>
+            <span class="supporting-text" id="tunnelIpMeta">Waiting for tunnel lookup</span>
+          </div>
+        </div>
+        <div class="card info-card">
+          <svg class="info-card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+          <div class="info-card__text">
+            <p class="info-label">Device IP</p>
+            <p class="info-value" id="deviceIp">--</p>
+            <span class="supporting-text" id="deviceIpMeta">Local interface address</span>
+          </div>
+        </div>
+        <div class="card info-card">
+          <svg class="info-card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <div class="info-card__text">
+            <p class="info-label">Tunnel Uptime</p>
+            <p class="info-value" id="runtimeValue">--</p>
+            <span class="supporting-text" id="runtimeMeta">No active session</span>
+          </div>
+        </div>
+        <div class="card info-card">
+          <svg class="info-card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <div class="info-card__text">
+            <p class="info-label">Performance</p>
+            <p class="info-value" id="perfValue">--</p>
+            <span class="supporting-text" id="perfMeta">CPU and memory unavailable</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- PROFILES -->
+      <section id="page-profiles" hidden>
+        <div class="button-row">
+          <button class="md3-filled" onclick="openProfileEditor('')">New Profile</button>
+          <button class="md3-tonal" onclick="loadProfiles()">Refresh Profiles</button>
+        </div>
+        <div class="list-container" id="profilesList"></div>
+      </section>
+
+      <!-- RUNTIME -->
+      <section id="page-runtime" hidden>
+        <h2 class="section-pill"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg> Details</h2>
+        <div class="info-grid">
+          <div class="card info-card info-card--data primary">
+            <p class="info-label">SSH Pool</p>
+            <p class="info-value" id="poolValue">--</p>
+            <span class="supporting-text" id="poolMeta">pool unavailable</span>
+          </div>
+          <div class="card info-card info-card--data">
+            <p class="info-label">Streams</p>
+            <p class="info-value" id="streamsValue">--</p>
+            <span class="supporting-text" id="streamsMeta">no active streams</span>
+          </div>
+          <div class="card info-card info-card--data">
+            <p class="info-label">CPU</p>
+            <p class="info-value" id="cpuValue">--</p>
+            <span class="supporting-text">daemon process</span>
+          </div>
+          <div class="card info-card info-card--data">
+            <p class="info-label">Memory</p>
+            <p class="info-value" id="memoryValue">--</p>
+            <span class="supporting-text" id="memoryMeta">RSS</span>
+          </div>
+          <div class="card info-card info-card--data">
+            <p class="info-label">Route</p>
+            <p class="info-value" id="routeValue">--</p>
+            <span class="supporting-text" id="routeMeta">gateway unavailable</span>
+          </div>
+          <div class="card info-card info-card--data">
+            <p class="info-label">Resolver</p>
+            <p class="info-value" id="resolverValue">--</p>
+            <span class="supporting-text" id="resolverMeta">no DNS activity yet</span>
+          </div>
+        </div>
+
+        <h2 class="section-pill"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg> Paths</h2>
+        <div class="terminal" id="pathsBox">Loading paths...</div>
+
+        <h2 class="section-pill"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> Logs</h2>
+        <div class="runtime-tabs">
+          <button class="chip primary" id="coreLogTab" onclick="setLogKind('core')">Core</button>
+          <button class="chip" id="controlLogTab" onclick="setLogKind('control')">Control</button>
+          <button class="chip" id="actionLogTab" onclick="setLogKind('action')">Action</button>
+          <div class="spacer"></div>
+          <div class="log-actions">
+            <button class="md3-tonal" id="logToggleBtn" onclick="toggleLogVisibility()">Show</button>
+            <button class="md3-tonal" onclick="loadLog()">Refresh</button>
+            <button class="md3-tonal md3-danger" onclick="clearCurrentLog()">Clear</button>
+          </div>
+        </div>
+        <pre class="terminal" id="runtimeLog" hidden>Loading log...</pre>
+      </section>
+
+      <!-- VPN CHAIN -->
+      <section id="page-vpnchain" hidden>
+        <div class="card hero-card">
+          <div class="hero-card__body">
+            <div class="hero-icon" id="vcHeroIcon" style="background:var(--tertiary-container);color:var(--on-surface)">VPN</div>
+            <div style="flex:1;min-width:0">
+              <p class="hero-title" id="vcHeroTitle">VPN Chain</p>
+              <p class="hero-subtitle" id="vcHeroSubtitle">Route traffic through Windscribe VPN over SSH tunnel.</p>
+              <div class="chip-row" id="vcChips"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card info-card" id="vcStatusCard">
+          <svg class="info-card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <div class="info-card__text">
+            <p class="info-label">VPN Chain Status</p>
+            <p class="info-value" id="vcStatus">Stopped</p>
+            <span class="supporting-text" id="vcStatusMeta">Not connected</span>
+          </div>
+        </div>
+
+        <div class="card info-card" id="vcIpCard">
+          <svg class="info-card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+          <div class="info-card__text">
+            <p class="info-label">Windscribe IP</p>
+            <p class="info-value" id="vcIp">--</p>
+            <span class="supporting-text" id="vcIpMeta">VPN exit address</span>
+          </div>
+        </div>
+
+        <h2 class="section-pill"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Control</h2>
+
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <p class="field-label">Location</p>
+          <select id="vcLocation" class="select-shell">
+            <option value="">Loading locations...</option>
+          </select>
+        </div>
+
+        <div class="button-row" id="vcButtons">
+          <button class="md3-filled" id="vcBtnStart" onclick="vcStart()">Start VPN Chain</button>
+          <button class="md3-tonal md3-danger" id="vcBtnStop" onclick="vcStop()" hidden>Stop</button>
+          <button class="md3-tonal" id="vcBtnSwitch" onclick="vcSwitch()" hidden>Switch Location</button>
+        </div>
+
+        <h2 class="section-pill"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> Log</h2>
+        <div class="log-actions">
+          <button class="md3-tonal" onclick="vcLoadLog()">Refresh Log</button>
+          <button class="md3-tonal" id="vcLogToggleBtn" onclick="vcToggleLog()">Hide</button>
+          <button class="md3-tonal md3-danger" onclick="vcClearLog()">Clear</button>
+        </div>
+        <pre class="terminal" id="vcLog" style="max-height:30vh">No log yet</pre>
+      </section>
+
+      <!-- SETTINGS -->
+      <section id="page-settings" hidden>
+        <h2 class="section-pill">DNS</h2>
+        <div class="list-container">
+          <div class="list-item">
+            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></div>
+            <div class="list-item-content">
+              <div class="toggle-text">DNS Mode</div>
+              <span class="supporting-text">Applies to SSHCustom endpoint resolution. Device DNS is unaffected.</span>
+            </div>
+            <select id="dnsMode" class="select-shell" style="max-width:150px">
+              <option value="device">Device default</option>
+              <option value="google">Google DNS</option>
+              <option value="cloudflare">Cloudflare DNS</option>
+              <option value="custom">Custom DNS</option>
+            </select>
+          </div>
+          <div class="list-item" id="customDnsRow" hidden>
+            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
+            <div class="list-item-content">
+              <div class="toggle-text">Custom Resolvers</div>
+            </div>
+            <input id="customDnsServers" class="field" placeholder="1.1.1.1, 8.8.8.8">
+          </div>
+        </div>
+
+        <h2 class="section-pill">Sharing</h2>
+        <div class="list-container">
+          <div class="list-item">
+            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M1.42 9a16 16 0 0121.16 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg></div>
+            <div class="list-item-content">
+              <div class="toggle-text">Share Hotspot TCP Tunnel</div>
+              <span class="supporting-text">Tether IPv4 TCP through SSHCustom for connected clients.</span>
+            </div>
+            <button id="hotspotSwitch" class="switch" onclick="toggleHotspot()" aria-label="Toggle hotspot"></button>
+          </div>
+          <div class="list-item">
+            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+            <div class="list-item-content">
+              <div class="toggle-text">Transparent IPv4 TCP</div>
+              <span class="supporting-text" id="transparentMeta">iptables REDIRECT status unavailable</span>
+            </div>
+          </div>
+          <div class="list-item">
+            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg></div>
+            <div class="list-item-content">
+              <div class="toggle-text">SOCKS5 Local Proxy</div>
+              <span class="supporting-text" id="socksMeta">SOCKS status unavailable</span>
+            </div>
+          </div>
+        </div>
+        <h2 class="section-pill">Boot</h2>
+        <div class="list-container">
+          <div class="list-item">
+            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></div>
+            <div class="list-item-content">
+              <div class="toggle-text">Autostart on Boot</div>
+              <span class="supporting-text">Wait for connectivity (cap 30s) then start the tunnel automatically.</span>
+            </div>
+            <button id="autostartSwitch" class="switch" onclick="toggleAutostart()" aria-label="Toggle autostart"></button>
+          </div>
+        </div>
+
+        <button class="md3-filled" onclick="saveNetwork()" style="margin-top:8px">Apply &amp; Restart</button>
+
+        <h2 class="section-pill">About</h2>
+        <div class="list-container">
+          <div class="list-item">
+            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17L10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
+            <div class="list-item-content">
+              <div class="toggle-text">SSHCustom-VPNChain</div>
+              <span class="supporting-text" id="aboutVersion">version --</span>
+              <span class="supporting-text">SSH tunnel + Windscribe VPN chain routing for rooted Android. SOCKS5, transparent proxy, and VPN Chain.</span>
+            </div>
+          </div>
+          <a class="list-item" href="https://github.com/GoodyOG/sshcustom-vpnchain" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;cursor:pointer">
+            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22"/></svg></div>
+            <div class="list-item-content">
+              <div class="toggle-text">Repository</div>
+              <span class="supporting-text">github.com/GoodyOG/sshcustom-vpnchain</span>
+            </div>
+          </a>
+        </div>
+        <p class="supporting-text" style="margin:4px 0 0;padding-left:14px;font-size:0.7rem;opacity:0.6">Licensed under Apache-2.0</p>
+      </section>
+    </main>
+
+    <nav class="nav-bar" aria-label="Main navigation">
+      <button class="nav-tab active" data-page="home" onclick="showPage('home')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg><span class="nav-label">Home</span></button>
+      <button class="nav-tab" data-page="profiles" onclick="showPage('profiles')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg><span class="nav-label">Profiles</span></button>
+      <button class="nav-tab" data-page="runtime" onclick="showPage('runtime')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span class="nav-label">Runtime</span></button>
+      <button class="nav-tab" data-page="vpnchain" onclick="showPage('vpnchain')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span class="nav-label">VPN</span></button>
+      <button class="nav-tab" data-page="settings" onclick="showPage('settings')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg><span class="nav-label">Settings</span></button>
+    </nav>
+  </div>
+
+  <!-- PROFILE EDITOR MODAL -->
+  <div class="modal-backdrop" id="profileModal" onclick="closeModalOnBackdrop(event)">
+    <div class="modal">
+      <div class="modal-head">
+        <h3 class="modal-title" id="profileModalTitle">Profile</h3>
+        <div class="spacer"></div>
+        <button class="md3-text" onclick="closeProfileEditor()">Close</button>
+      </div>
+      <div class="field-grid">
+        <div>
+          <p class="field-label">Name</p>
+          <input class="field" id="pfName">
+        </div>
+        <div>
+          <p class="field-label">Mode</p>
+          <select class="select-shell" id="pfMode" onchange="renderProfileModeFields()">
+            <option value="direct">Direct SSH</option>
+            <option value="http_proxy">HTTP Proxy</option>
+            <option value="tls_sni">TLS/SNI</option>
+            <option value="http_proxy_tls_sni">HTTP Proxy + TLS/SNI</option>
+          </select>
+        </div>
+        <div>
+          <p class="field-label">SSH Host</p>
+          <input class="field" id="pfHost" placeholder="hostname or IP">
+        </div>
+        <div>
+          <p class="field-label">SSH Port</p>
+          <input class="field" id="pfPort" inputmode="numeric">
+        </div>
+        <div>
+          <p class="field-label">Username</p>
+          <input class="field" id="pfUser">
+        </div>
+        <div>
+          <p class="field-label">Password</p>
+          <input class="field" id="pfPass" type="password">
+        </div>
+        <div id="proxyFields">
+          <p class="field-label">Proxy Host</p>
+          <input class="field" id="pfProxyHost">
+        </div>
+        <div id="proxyPortField">
+          <p class="field-label">Proxy Port</p>
+          <input class="field" id="pfProxyPort" inputmode="numeric">
+        </div>
+        <div id="tlsFields" class="field-full">
+          <p class="field-label">SNI Server Name</p>
+          <input class="field" id="pfSni">
+        </div>
+        <div class="field-full">
+          <div class="list-item" style="padding-inline:0;background:transparent">
+            <div class="list-item-content">
+              <div class="toggle-text">Payload Injection</div>
+              <span class="supporting-text">Send payload before SSH or after the proxy socket, depending on the selected mode.</span>
+            </div>
+            <div class="spacer"></div>
+            <button id="payloadSwitch" class="switch" onclick="togglePayload()"></button>
+          </div>
+        </div>
+        <div class="field-full" id="payloadFields">
+          <p class="field-label">Payload Template</p>
+          <textarea class="textarea" id="pfPayload"></textarea>
+        </div>
+      </div>
+      <div class="button-row" style="grid-template-columns:1fr 1fr 1fr">
+        <button class="md3-tonal" onclick="saveProfile(false,false)">Save</button>
+        <button class="md3-filled" onclick="saveProfile(true,true)">Save &amp; Restart</button>
+        <button class="md3-tonal md3-danger" id="deleteProfileBtn" onclick="deleteProfile()" style="display:none">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONFIRM DIALOG -->
+  <div class="modal-backdrop" id="confirmModal" onclick="closeConfirmOnBackdrop(event)">
+    <div class="modal" style="max-width:480px">
+      <div class="modal-head">
+        <h3 class="modal-title" id="confirmTitle">Confirm</h3>
+      </div>
+      <p class="supporting-text" id="confirmBody" style="margin:0"></p>
+      <div class="button-row">
+        <button class="md3-tonal" onclick="resolveConfirm(false)">Cancel</button>
+        <button class="md3-filled md3-danger" id="confirmAccept" onclick="resolveConfirm(true)">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // --- WebUI-X Portable Integration ---
+    // Detect module interface injected by WebUI-X (global $sshcustom_magisk)
+    const wxModuleId = Object.keys(window).find(k => k.startsWith('$') && k !== '$' && typeof window[k] === 'object' && window[k] !== null && 'setLightStatusBars' in window[k]);
+    const wxInterface = wxModuleId ? window[wxModuleId] : null;
+    const isWebUIX = !!(wxInterface || window.webui);
+
+    // Set status bar icons to match dark theme when running inside WebUI-X
+    if (wxInterface) {
+      try { wxInterface.setLightStatusBars(false); } catch(e) {}
+    }
+
+    // Handle WX_ON_BACK event for back navigation inside WebUI-X
+    window.addEventListener('message', function(e) {
+      try {
+        if (typeof e.data !== 'string') return;
+        var msg = JSON.parse(e.data);
+        if (!msg || msg.type !== 'WX_ON_BACK') return;
+        // Priority: close confirm dialog > close profile modal > navigate home > exit
+        if (confirmResolver) { resolveConfirm(false); return; }
+        if (document.getElementById('profileModal').classList.contains('open')) { closeProfileEditor(); return; }
+        if (currentPage !== 'home') { showPage('home'); return; }
+        // On home page with nothing open — let WebUI-X exit
+        if (window.webui && typeof window.webui.exit === 'function') { window.webui.exit(); }
+      } catch(_) {}
+    });
+
+    const API = (location.protocol === 'file:' || location.port !== '9190') ? 'http://127.0.0.1:9190' : location.origin;
+    let statusData = null;
+    let configData = null;
+    let profilesData = { selected_id: '', profiles: [] };
+    let pathsData = {};
+    let currentPage = 'home';
+    let currentLog = 'core';
+    let profileEditId = '';
+    let toastTimer = null;
+    let confirmResolver = null;
+
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+    async function api(path, options = {}) {
+      const res = await fetch(API + path, { signal: AbortSignal.timeout(options.timeout || 8000), ...options });
+      if (!res.ok) throw new Error(await res.text() || res.status);
+      return res.json();
+    }
+    async function v1(path, options = {}) {
+      const envelope = await api('/api/v1' + path, options);
+      if (!envelope.ok) throw new Error(envelope.error || 'API error');
+      return envelope.data;
+    }
+    async function postV1(path, data, timeout = 10000) {
+      return v1(path, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data || {}), timeout });
+    }
+
+    function toast(message, kind = '') {
+      const el = $('toast');
+      el.textContent = message;
+      el.className = 'toast open' + (kind ? ' ' + kind : '');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.remove('open'), 4200);
+    }
+
+    function fmtBytes(n) {
+      if (!n) return '--';
+      if (n >= 1073741824) return (n / 1073741824).toFixed(1) + ' GB';
+      if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+      if (n >= 1024) return (n / 1024).toFixed(0) + ' KB';
+      return n + ' B';
+    }
+    function fmtUptime(s) {
+      s = Number(s || 0);
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const sec = s % 60;
+      if (h) return h + 'h ' + m + 'm';
+      if (m) return m + 'm ' + sec + 's';
+      return sec + 's';
+    }
+    function ipMeta(d) {
+      if (!d) return 'not checked';
+      if (!d.ok) return d.error || 'lookup failed';
+      const loc = [d.city, d.region, d.country].filter(Boolean).join(', ') || 'unknown location';
+      const net = [d.isp, d.asn].filter(Boolean).join(' - ') || 'unknown network';
+      return loc + ' / ' + net + (d.cached ? ' / cached' : '');
+    }
+
+    function showPage(page) {
+      currentPage = page;
+      for (const id of ['home','profiles','runtime','vpnchain','settings']) {
+        const el = $('page-' + id);
+        if (el) el.hidden = id !== page;
+      }
+      document.querySelectorAll('.nav-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.page === page));
+      if (page === 'profiles') loadProfiles();
+      if (page === 'runtime') { loadDiagnostics(); loadLog(); }
+      if (page === 'vpnchain') { vcLoadStatus(); vcLoadLocations(); }
+    }
+
+    async function loadStatus() {
+      try {
+        const data = await v1('/status');
+        statusData = data.runtime;
+        configData = data.config;
+        pathsData = data.paths || {};
+        renderStatus(data);
+        renderPaths();
+        renderAbout();
+      } catch (e) {
+        renderOffline();
+      }
+    }
+
+    function renderStatus(data) {
+      const s = data.runtime;
+      const cfg = data.config || {};
+      const connected = !!(s.connected && s.ssh_authenticated);
+      const busy = !!(s.running && !connected);
+      const standby = !!(s.running && s.state === 'PAUSED_NO_NETWORK');
+      const tunnelActive = s.running;
+
+      // Status dot — always pulses, color reflects tunnel state
+      if (connected) {
+        $('statusDot').className = 'status-dot connected';
+        $('statusText').textContent = 'connected';
+      } else if (standby) {
+        $('statusDot').className = 'status-dot connecting';
+        $('statusText').textContent = 'standby';
+      } else if (busy) {
+        $('statusDot').className = 'status-dot connecting';
+        $('statusText').textContent = 'connecting';
+      } else {
+        $('statusDot').className = 'status-dot';
+        $('statusText').textContent = 'disconnected';
+      }
+
+      // Hero card
+      if (connected) {
+        $('heroIcon').textContent = 'ON';
+        $('heroTitle').textContent = 'Tunnel Connected';
+        $('heroSubtitle').textContent = s.last_error || s.last_event || ('SSH pool healthy ' + (s.pool_healthy||0) + '/' + (s.pool_size||0));
+      } else if (standby) {
+        $('heroIcon').textContent = '||';
+        $('heroTitle').textContent = 'Standby';
+        $('heroSubtitle').textContent = 'Waiting for network connectivity to resume tunnel.';
+      } else if (busy) {
+        $('heroIcon').textContent = '...';
+        $('heroTitle').textContent = s.state || 'Connecting';
+        $('heroSubtitle').textContent = s.last_error || s.last_event || 'Establishing SSH tunnel...';
+      } else {
+        $('heroIcon').textContent = 'OFF';
+        $('heroTitle').textContent = 'Disconnected';
+        $('heroSubtitle').textContent = 'Tap Start Tunnel to connect.';
+      }
+      $('heroChips').innerHTML = '';
+
+      // Buttons — contextual based on tunnel state
+      updateButtons(tunnelActive);
+
+      // Device IP
+      $('deviceIp').textContent = s.source_ip || '--';
+      const meta = [];
+      if (s.interface) meta.push('via ' + s.interface);
+      if (s.gateway) meta.push('gateway ' + s.gateway);
+      $('deviceIpMeta').textContent = meta.length ? meta.join(' / ') : (s.network_online ? 'route detected' : 'no network route');
+
+      // Tunnel Uptime — use tunnel_uptime_seconds
+      $('runtimeValue').textContent = s.tunnel_uptime_seconds ? fmtUptime(s.tunnel_uptime_seconds) : '--';
+      $('runtimeMeta').textContent = tunnelActive ? ([s.selected_mode, s.transport_chain].filter(Boolean).join(' / ') || 'Tunnel active') : 'No active session';
+
+      $('perfValue').textContent = (s.cpu_percent || 0).toFixed(1) + '% CPU';
+      $('perfMeta').textContent = 'RSS ' + fmtBytes(s.memory_rss_bytes) + ', system mem ' + (s.system_mem_used_percent || 0).toFixed(0) + '%';
+      $('cpuValue').textContent = (s.cpu_percent || 0).toFixed(1) + '%';
+      $('memoryValue').textContent = fmtBytes(s.memory_rss_bytes);
+      $('memoryMeta').textContent = 'system memory ' + (s.system_mem_used_percent || 0).toFixed(0) + '% used';
+      $('poolValue').textContent = (s.pool_healthy || 0) + '/' + (s.pool_size || 0);
+      $('poolMeta').textContent = (s.pool_healthy === s.pool_size) ? 'all healthy' : 'reconnecting...';
+      $('streamsValue').textContent = String(s.pool_streams || 0);
+      $('streamsMeta').textContent = 'target ' + (s.pool_max_streams || '--') + ' streams per SSH';
+      $('routeValue').textContent = s.interface || '--';
+      $('routeMeta').textContent = s.gateway ? 'gateway ' + s.gateway : (s.source_ip || 'gateway unavailable');
+      $('resolverValue').textContent = s.resolver_method ? 'android_shell_dns' : (s.dns_mode || '--');
+      $('resolverMeta').textContent = (s.resolved_ips || []).join(', ') || 'no DNS activity yet';
+      $('transparentMeta').textContent = s.transparent_running ? 'listening on ' + (s.transparent_addr || 'transparent port') : 'not running';
+      $('socksMeta').textContent = s.socks_running ? 'listening on ' + (s.socks_addr || 'SOCKS port') : 'not running';
+      renderNetworkConfig(cfg);
+    }
+
+    function updateButtons(tunnelActive) {
+      const row = $('buttonRow');
+      if (tunnelActive) {
+        row.classList.remove('full');
+        $('btnStart').hidden = true;
+        $('btnRestart').hidden = false;
+        $('btnStop').hidden = false;
+      } else {
+        row.classList.add('full');
+        $('btnStart').hidden = false;
+        $('btnRestart').hidden = true;
+        $('btnStop').hidden = true;
+      }
+    }
+
+    function renderOffline() {
+      statusData = null;
+      $('statusDot').className = 'status-dot';
+      $('statusText').textContent = 'offline';
+      $('heroIcon').textContent = 'OFF';
+      $('heroTitle').textContent = 'Daemon Offline';
+      $('heroSubtitle').textContent = 'The daemon is not running. Reboot or start from module manager.';
+      $('heroChips').innerHTML = '';
+      updateButtons(false);
+    }
+
+    function renderPaths() {
+      $('pathsBox').textContent = Object.keys(pathsData).length
+        ? Object.entries(pathsData).map(([k,v]) => k + ': ' + v).join('\n')
+        : 'Paths are available when the daemon is online.';
+    }
+
+    function renderAbout() {
+      const v = (statusData && statusData.version) || '--';
+      $('aboutVersion').textContent = 'version ' + v;
+    }
+
+    async function loadPublicIP(refresh = false) {
+      try {
+        const data = await v1('/network/public-ip' + (refresh ? '?refresh=1' : ''), { timeout: 15000 });
+        $('tunnelIp').textContent = data.tunnel && data.tunnel.ok ? data.tunnel.ip : 'Unavailable';
+        $('tunnelIpMeta').textContent = ipMeta(data.tunnel);
+      } catch (e) {
+        $('tunnelIpMeta').textContent = 'lookup unavailable';
+      }
+    }
+
+    async function controlRuntime(action) {
+      try {
+        await postV1('/control', { action }, 10000);
+        if (action === 'start') {
+          toast('Starting tunnel...');
+          setTimeout(loadStatus, 1500);
+        } else if (action === 'restart') {
+          toast('Restarting tunnel...');
+          showRestarting();
+          setTimeout(loadStatus, 2500);
+        } else {
+          toast('Stopping tunnel...');
+          setTimeout(loadStatus, 1500);
+        }
+      } catch (e) {
+        toast('Control failed: ' + e.message, 'error');
+      }
+    }
+
+    function renderNetworkConfig(cfg) {
+      if (!cfg) return;
+      const dns = cfg.dns || {};
+      $('dnsMode').value = dns.mode || 'device';
+      $('customDnsRow').hidden = $('dnsMode').value !== 'custom';
+      $('customDnsServers').value = (dns.servers || []).join(', ');
+      const hotspot = cfg.hotspot || {};
+      $('hotspotSwitch').classList.toggle('on', !!(hotspot.enabled && hotspot.tcp));
+    }
+    $('dnsMode').addEventListener('change', () => $('customDnsRow').hidden = $('dnsMode').value !== 'custom');
+    function toggleHotspot() { $('hotspotSwitch').classList.toggle('on'); }
+    async function toggleAutostart() {
+      const sw = $('autostartSwitch');
+      const next = !sw.classList.contains('on');
+      sw.classList.toggle('on', next);
+      try {
+        await postV1('/autostart', { enabled: next }, 6000);
+        toast(next ? 'Autostart enabled' : 'Autostart disabled');
+      } catch (e) {
+        sw.classList.toggle('on', !next);
+        toast('Autostart toggle failed: ' + e.message, 'error');
+      }
+    }
+    async function loadAutostart() {
+      try {
+        const r = await v1('/autostart');
+        $('autostartSwitch').classList.toggle('on', !!r.enabled);
+      } catch (_) {}
+    }
+    async function saveNetwork() {
+      try {
+        const mode = $('dnsMode').value;
+        const enabled = $('hotspotSwitch').classList.contains('on');
+        const dns = { mode };
+        if (mode === 'custom') dns.servers = $('customDnsServers').value.split(',').map(s => s.trim()).filter(Boolean);
+        await postV1('/config', { dns, hotspot: { enabled, tcp: enabled, dns: false }, restart: true }, 12000);
+        toast('Network settings saved. Restarting tunnel...');
+        showRestarting();
+        setTimeout(loadStatus, 3000);
+      } catch (e) {
+        toast('Network save failed: ' + e.message, 'error');
+      }
+    }
+
+    async function loadProfiles() {
+      try {
+        profilesData = await v1('/profiles');
+        renderProfiles();
+      } catch (e) {
+        $('profilesList').innerHTML = '<div class="list-item"><div class="list-item-content"><div class="toggle-text">Profiles unavailable</div><span class="supporting-text">Daemon is offline or profiles.json cannot be read.</span></div></div>';
+      }
+    }
+    function modeName(mode) {
+      return ({direct:'Direct SSH', http_proxy:'HTTP Proxy', tls_sni:'TLS/SNI', http_proxy_tls_sni:'Proxy + TLS/SNI'})[mode] || mode || '--';
+    }
+    function renderProfiles() {
+      const list = profilesData.profiles || [];
+      if (!list.length) {
+        $('profilesList').innerHTML = '<div class="list-item"><div class="list-item-content"><div class="toggle-text">No profiles</div><span class="supporting-text">Create a profile to start tunneling.</span></div></div>';
+        return;
+      }
+      $('profilesList').innerHTML = list.map((p, i) => {
+        const active = p.id === profilesData.selected_id || p.selected;
+        const host = p.ssh ? [p.ssh.host, p.ssh.port].filter(Boolean).join(':') : '';
+        return `<div class="list-item">
+          <div class="li-icon">P${i + 1}</div>
+          <div class="list-item-content" style="flex:1">
+            <div class="toggle-text">${esc(p.name || p.id)}</div>
+            <span class="supporting-text truncate">${esc(modeName(p.transport && p.transport.mode))}${p.transport && p.transport.payload && p.transport.payload.enabled ? ' + PL' : ''}</span>
+          </div>
+          ${active ? '<span class="chip primary">active</span>' : `<button class="md3-tonal" onclick="selectProfile('${esc(p.id)}')">Use</button>`}
+          <button class="md3-text" onclick="openProfileEditor('${esc(p.id)}')">Edit</button>
+        </div>`;
+      }).join('');
+    }
+    async function selectProfile(id) {
+      try {
+        await postV1('/profile/select', { selected_id: id, restart: false });
+        toast('Profile selected. Restart to apply.');
+        await loadProfiles();
+      } catch (e) {
+        toast('Select failed: ' + e.message, 'error');
+      }
+    }
+
+    function openProfileEditor(id) {
+      profileEditId = id || '';
+      const p = (profilesData.profiles || []).find(x => x.id === id) || {};
+      $('profileModalTitle').textContent = id ? 'Edit Profile' : 'New Profile';
+      $('pfName').value = p.name || '';
+      $('pfMode').value = p.transport && p.transport.mode || 'direct';
+      $('pfHost').value = p.ssh && p.ssh.host || '';
+      $('pfPort').value = p.ssh && p.ssh.port || 22;
+      $('pfUser').value = p.ssh && p.ssh.username || '';
+      $('pfPass').value = p.ssh && p.ssh.password || '';
+      $('pfProxyHost').value = p.transport && p.transport.http_proxy && p.transport.http_proxy.host || '';
+      $('pfProxyPort').value = p.transport && p.transport.http_proxy && p.transport.http_proxy.port || 80;
+      $('pfSni').value = p.transport && p.transport.tls && p.transport.tls.server_name || '';
+      const payload = p.transport && p.transport.payload || {};
+      $('payloadSwitch').classList.toggle('on', !!payload.enabled);
+      $('pfPayload').value = payload.template || 'GET / HTTP/1.1[crlf]Host: [sni][crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf][crlf]';
+      renderProfileModeFields();
+      renderPayloadFields();
+      $('profileModal').classList.add('open');
+      $('deleteProfileBtn').style.display = profileEditId ? '' : 'none';
+    }
+    function closeProfileEditor() { $('profileModal').classList.remove('open'); }
+    function closeModalOnBackdrop(e) { if (e.target === $('profileModal')) closeProfileEditor(); }
+    function renderProfileModeFields() {
+      const mode = $('pfMode').value;
+      const usesProxy = mode.includes('http_proxy');
+      const usesTLS = mode.includes('tls');
+      $('proxyFields').hidden = !usesProxy;
+      $('proxyPortField').hidden = !usesProxy;
+      $('tlsFields').hidden = !usesTLS;
+    }
+    function togglePayload() { $('payloadSwitch').classList.toggle('on'); renderPayloadFields(); }
+    function renderPayloadFields() { $('payloadFields').hidden = !$('payloadSwitch').classList.contains('on'); }
+
+    async function saveProfile(select, restart) {
+      try {
+        const mode = $('pfMode').value;
+        const usesProxy = mode.includes('http_proxy');
+        const usesTLS = mode.includes('tls');
+        const req = {
+          id: profileEditId,
+          name: $('pfName').value.trim() || 'SSHCustom Profile',
+          select,
+          restart,
+          ssh: {
+            host: $('pfHost').value.trim(),
+            port: parseInt($('pfPort').value, 10) || 22,
+            username: $('pfUser').value.trim(),
+            password: $('pfPass').value,
+            auth_type: 'password'
+            // fallback_ips removed in v2.0.0: hostnames resolve through the
+            // daemon's smart resolver. If a profile previously had fallback_ips,
+            // the daemon keeps them intact in profiles.json on save.
+          },
+          transport: {
+            mode,
+            http_proxy: usesProxy ? {
+              host: $('pfProxyHost').value.trim() || $('pfHost').value.trim(),
+              port: parseInt($('pfProxyPort').value, 10) || 80,
+              connect_method: 'socket'
+            } : undefined,
+            tls: usesTLS ? {
+              enabled: true,
+              server_name: $('pfSni').value.trim() || $('pfHost').value.trim(),
+              insecure_skip_verify: true,
+              alpn: ['http/1.1']
+            } : undefined,
+            payload: {
+              enabled: $('payloadSwitch').classList.contains('on'),
+              template: $('pfPayload').value,
+              send_timing: usesProxy ? 'after_proxy_socket_before_ssh' : 'before_ssh',
+              read_response: true,
+              allow_http_status: [101, 200, 204, 302]
+            }
+          }
+        };
+        await postV1('/profile/save', req, 12000);
+        closeProfileEditor();
+        if (restart) {
+          toast('Profile saved. Restarting tunnel...');
+          showRestarting();
+          setTimeout(loadStatus, 3000);
+        } else {
+          toast('Profile saved.');
+        }
+        await loadProfiles();
+      } catch (e) {
+        toast('Profile save failed: ' + e.message, 'error');
+      }
+    }
+
+    async function deleteProfile() {
+      if (!profileEditId) return;
+      const ok = await confirmDialog('Delete Profile', 'This profile will be permanently removed.', 'Delete');
+      if (!ok) return;
+      try {
+        await postV1('/profile/delete', { id: profileEditId }, 8000);
+        closeProfileEditor();
+        toast('Profile deleted.');
+        await loadProfiles();
+      } catch (e) {
+        toast('Delete failed: ' + e.message, 'error');
+      }
+    }
+
+    function showRestarting() {
+      $('statusDot').className = 'status-dot connecting';
+      $('statusText').textContent = 'restarting';
+      $('heroIcon').textContent = '...';
+      $('heroTitle').textContent = 'Restarting...';
+      $('heroSubtitle').textContent = 'Reconnecting tunnel with new settings.';
+      $('heroChips').innerHTML = '';
+      updateButtons(true);
+    }
+
+    function setLogKind(kind) {
+      currentLog = kind;
+      $('coreLogTab').classList.toggle('primary', kind === 'core');
+      $('controlLogTab').classList.toggle('primary', kind === 'control');
+      $('actionLogTab').classList.toggle('primary', kind === 'action');
+      loadLog();
+    }
+    async function loadLog() {
+      try {
+        const res = await fetch(API + '/api/v1/logs/' + currentLog, { signal: AbortSignal.timeout(7000) });
+        const el = $('runtimeLog');
+        el.textContent = res.ok ? await res.text() : 'Log unavailable';
+        el.scrollTop = el.scrollHeight;
+      } catch (e) {
+        $('runtimeLog').textContent = 'Log unavailable: ' + e.message;
+      }
+    }
+    async function clearCurrentLog() {
+      const ok = await confirmDialog('Clear ' + currentLog + ' log?', 'This permanently truncates ' + currentLog + '.log on disk. The daemon keeps writing new entries afterwards.', 'Clear');
+      if (!ok) return;
+      try {
+        await postV1('/logs/' + currentLog + '/clear', null, 6000);
+        toast(currentLog + ' log cleared.');
+        loadLog();
+      } catch (e) {
+        toast('Clear failed: ' + e.message, 'error');
+      }
+    }
+
+    function confirmDialog(title, body, acceptLabel) {
+      return new Promise(resolve => {
+        $('confirmTitle').textContent = title;
+        $('confirmBody').textContent = body;
+        $('confirmAccept').textContent = acceptLabel || 'Confirm';
+        confirmResolver = resolve;
+        $('confirmModal').classList.add('open');
+      });
+    }
+    function resolveConfirm(value) {
+      $('confirmModal').classList.remove('open');
+      if (confirmResolver) { confirmResolver(value); confirmResolver = null; }
+    }
+    function closeConfirmOnBackdrop(e) {
+      if (e.target === $('confirmModal')) resolveConfirm(false);
+    }
+
+    async function loadDiagnostics() {
+      try {
+        const d = await v1('/diagnostics');
+        const p = d.pool || {};
+        $('poolValue').textContent = (p.healthy || 0) + '/' + (p.size || 0);
+        $('poolMeta').textContent = p.capacity_hint || 'pool unavailable';
+        $('streamsValue').textContent = String(p.streams || 0);
+        $('streamsMeta').textContent = 'max target ' + (p.max_streams || '--') + ' per SSH';
+      } catch (e) {}
+    }
+
+    async function refreshAll() {
+      await loadStatus();
+      if (currentPage === 'profiles') await loadProfiles();
+      if (currentPage === 'runtime') { await loadDiagnostics(); await loadLog(); }
+    }
+
+    let logVisible = false;
+    function toggleLogVisibility() {
+      logVisible = !logVisible;
+      $('runtimeLog').hidden = !logVisible;
+      $('logToggleBtn').textContent = logVisible ? 'Hide' : 'Show';
+    }
+
+    loadStatus();
+    loadProfiles();
+    loadPublicIP(false);
+    loadDiagnostics();
+    loadLog();
+    loadAutostart();
+
+    // --- VPN CHAIN ---
+    let vcState = { running: false, location: '', ip: '' };
+    let vcLocations = [];
+
+    async function vcLoadStatus() {
+      try {
+        const data = await v1('/vpnchain/status');
+        vcState = data;
+        vcRender();
+      } catch (e) {
+        vcState = { running: false, location: '', ip: '' };
+        vcRender();
+      }
+    }
+
+    async function vcLoadLocations() {
+      try {
+        const data = await v1('/vpnchain/locations');
+        vcLocations = data || [];
+        const sel = $('vcLocation');
+        if (vcLocations.length === 0) {
+          sel.innerHTML = '<option value="">No configs found</option>';
+        } else {
+          sel.innerHTML = vcLocations.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join('');
+          // Restore last selected location from localStorage
+          const saved = localStorage.getItem('vcSelectedLocation');
+          if (saved && vcLocations.includes(saved)) {
+            sel.value = saved;
+          } else if (vcState.running && vcState.location && vcLocations.includes(vcState.location)) {
+            sel.value = vcState.location;
+          }
+        }
+      } catch (e) {
+        $('vcLocation').innerHTML = '<option value="">Error loading</option>';
+      }
+    }
+
+    // Save location selection to localStorage whenever user changes it
+    document.addEventListener('DOMContentLoaded', function() {
+      var sel = document.getElementById('vcLocation');
+      if (sel) sel.addEventListener('change', function() {
+        if (this.value) localStorage.setItem('vcSelectedLocation', this.value);
+      });
+    });
+
+    function vcRender() {
+      const running = vcState.running;
+      if (running) {
+        $('vcHeroIcon').textContent = 'ON';
+        $('vcHeroIcon').style.background = 'var(--primary-container)';
+        $('vcHeroIcon').style.color = 'var(--on-primary-container)';
+        $('vcHeroTitle').textContent = 'VPN Chain Active';
+        $('vcHeroSubtitle').textContent = 'Traffic routing through Windscribe via SSH tunnel.';
+        $('vcChips').innerHTML = `<span class="chip primary">${esc(vcState.location || 'unknown')}</span>`;
+        $('vcStatus').textContent = 'Connected';
+        $('vcStatusMeta').textContent = 'Location: ' + (vcState.location || '--');
+        $('vcIp').textContent = vcState.ip || 'resolving...';
+        $('vcIpMeta').textContent = 'Windscribe exit IP';
+        $('vcBtnStart').hidden = true;
+        $('vcBtnStop').hidden = false;
+        $('vcBtnSwitch').hidden = false;
+      } else {
+        $('vcHeroIcon').textContent = 'VPN';
+        $('vcHeroIcon').style.background = 'var(--tertiary-container)';
+        $('vcHeroIcon').style.color = 'var(--on-surface)';
+        $('vcHeroTitle').textContent = 'VPN Chain';
+        $('vcHeroSubtitle').textContent = 'Route traffic through Windscribe VPN over SSH tunnel.';
+        $('vcChips').innerHTML = '';
+        $('vcStatus').textContent = 'Stopped';
+        $('vcStatusMeta').textContent = 'Not connected';
+        $('vcIp').textContent = '--';
+        $('vcIpMeta').textContent = 'VPN exit address';
+        $('vcBtnStart').hidden = false;
+        $('vcBtnStop').hidden = true;
+        $('vcBtnSwitch').hidden = true;
+      }
+    }
+
+    async function vcStart() {
+      const loc = $('vcLocation').value;
+      if (!loc) { toast('Select a location first', 'error'); return; }
+      $('vcBtnStart').disabled = true;
+      toast('Starting VPN Chain (' + loc + ')...');
+      try {
+        await postV1('/vpnchain/start', { location: loc }, 45000);
+        toast('VPN Chain started!');
+        setTimeout(vcLoadStatus, 2000);
+      } catch (e) {
+        toast('Start failed: ' + e.message, 'error');
+      }
+      $('vcBtnStart').disabled = false;
+    }
+
+    async function vcStop() {
+      $('vcBtnStop').disabled = true;
+      toast('Stopping VPN Chain...');
+      try {
+        await postV1('/vpnchain/stop', {}, 15000);
+        toast('VPN Chain stopped');
+        setTimeout(vcLoadStatus, 1000);
+      } catch (e) {
+        toast('Stop failed: ' + e.message, 'error');
+      }
+      $('vcBtnStop').disabled = false;
+    }
+
+    async function vcSwitch() {
+      const loc = $('vcLocation').value;
+      if (!loc) { toast('Select a location first', 'error'); return; }
+      $('vcBtnSwitch').disabled = true;
+      toast('Switching to ' + loc + '...');
+      try {
+        await postV1('/vpnchain/switch', { location: loc }, 45000);
+        toast('Switched to ' + loc);
+        setTimeout(vcLoadStatus, 2000);
+      } catch (e) {
+        toast('Switch failed: ' + e.message, 'error');
+      }
+      $('vcBtnSwitch').disabled = false;
+    }
+
+    async function vcLoadLog() {
+      try {
+        const res = await fetch(API + '/api/v1/vpnchain/log', { signal: AbortSignal.timeout(7000) });
+        $('vcLog').textContent = res.ok ? await res.text() : 'Log unavailable';
+        $('vcLog').scrollTop = $('vcLog').scrollHeight;
+      } catch (e) {
+        $('vcLog').textContent = 'Log unavailable: ' + e.message;
+      }
+    }
+
+    let vcLogVisible = true;
+    function vcToggleLog() {
+      vcLogVisible = !vcLogVisible;
+      $('vcLog').hidden = !vcLogVisible;
+      $('vcLogToggleBtn').textContent = vcLogVisible ? 'Hide' : 'Show';
+    }
+
+    async function vcClearLog() {
+      try {
+        await postV1('/vpnchain/log/clear', {}, 6000);
+        toast('VPN log cleared');
+        vcLoadLog();
+      } catch (e) {
+        // Fallback: just clear the display
+        $('vcLog').textContent = 'Log cleared';
+        toast('Log display cleared');
+      }
+    }
+
+    // --- REFRESH ENGINE ---
+    // Primary: reliable polling loop (like the proven old version).
+    // Enhancement: SSE for instant status updates when connected.
+    // The polling loop ALWAYS runs — SSE just makes status updates faster.
+    let tick = 0;
+    let pollTimer = null;
+    let sseSource = null;
+
+    function refresh() {
+      tick++;
+      loadStatus();
+      // Refresh page-specific content on slower cadences
+      if (currentPage === 'profiles' && tick % 4 === 0) loadProfiles();
+      if (currentPage === 'runtime') {
+        if (tick % 3 === 0) loadDiagnostics();
+        if (tick % 4 === 0) loadLog();
+      }
+      if (currentPage === 'vpnchain' && tick % 3 === 0) vcLoadStatus();
+      if (tick % 20 === 0) loadPublicIP(false);
+    }
+
+    function startPolling() {
+      if (pollTimer) return;
+      pollTimer = setInterval(refresh, 3000);
+    }
+    function stopPolling() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    function startEvents() {
+      if (sseSource) { try { sseSource.close(); } catch(_){} sseSource = null; }
+      try {
+        sseSource = new EventSource(API + '/api/v1/events');
+      } catch (e) { return; }
+      sseSource.addEventListener('status', (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          statusData = data.runtime;
+          configData = data.config;
+          pathsData = data.paths || {};
+          renderStatus(data);
+          renderPaths();
+          renderAbout();
+        } catch (_) {}
+      });
+      sseSource.onerror = () => {
+        // SSE died (daemon restarted, network blip, etc.) — close and retry in 5s.
+        // Polling keeps running regardless so the UI never freezes.
+        try { sseSource.close(); } catch(_) {}
+        sseSource = null;
+        setTimeout(startEvents, 5000);
+      };
+    }
+
+    // Always start polling + SSE together. Polling guarantees freshness;
+    // SSE makes it instant when it's working.
+    startPolling();
+    startEvents();
+  </script>
+</body>
+</html>
+
+==== END ====
