@@ -4,6 +4,41 @@ All notable changes to SSHCustom-VPNChain are recorded here. Format is loosely
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] — 2026-05-27
+
+### Fixed — IPv6 TPROXY removed (critical)
+
+- **Removed IPv6 mangle TPROXY chains entirely.** The SSH relay server
+  (bc.game/dropbear) has zero IPv6 connectivity. Tunneling v6 TCP through
+  it produced "Network is unreachable" for every connection — causing app
+  hangs, log floods, and the appearance of "connected but nothing works".
+- **IPv6 is now handled by filter-table REJECT only.** All v6 TCP/UDP
+  (except UID 0, loopback, link-local, ICMPv6) is rejected immediately
+  with `icmp6-adm-prohibited`. Apps fall back to IPv4 in <50ms.
+- **Removed the "RETURN marked v6 TCP" rule** from the IPv6 lockdown
+  filter that was added in v1.2.0 — this rule was the direct cause of v6
+  traffic reaching the daemon and generating thousands of "Network is
+  unreachable" errors per minute.
+
+### Fixed — Duplicate PREROUTING hooks
+
+- **Cleanup now loops up to 10 times** per hook deletion to remove ALL
+  duplicate entries from prior failed applies. Previously, each failed
+  apply/reconnect attempt added another `-I PREROUTING` rule without
+  cleaning the old one (observed as "7 references" to SSHC_TPROXY_PRE
+  in `iptables -L`).
+
+### Fixed — Policy routing priority
+
+- **`ip rule add` now uses explicit `prio 9999`** to ensure deterministic
+  rule ordering across Android versions and Qualcomm vendor customizations.
+
+### Changed
+
+- Legacy v6 mangle chains (SSHC_TPROXY_OUT6, SSHC_TPROXY_PRE6) and v6
+  policy routes from v1.2.x/v1.3.0 are automatically cleaned up on first
+  run after upgrade.
+
 ## [1.3.0] — 2026-05-27
 
 ### Fixed — iptables lock contention (critical)

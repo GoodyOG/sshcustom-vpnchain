@@ -1,5 +1,5 @@
 // Package iptables installs and removes the SSHCustom transparent-proxy
-// chains using mangle-table TPROXY (IPv4 + IPv6).
+// chains using mangle-table TPROXY (IPv4 only).
 //
 // # What this does
 //
@@ -13,6 +13,14 @@
 // Locally-originated packets flow: OUTPUT (mark) → policy routing →
 // loopback → PREROUTING (TPROXY) → daemon socket. Hotspot/forwarded
 // traffic enters directly via interface-specific PREROUTING hooks.
+//
+// # IPv6 handling (v1.3.1+)
+//
+// IPv6 TCP is NOT tunneled through SSH because the SSH relay server has no
+// IPv6 connectivity. Instead, ip6tables filter REJECT rules block all v6
+// OUTPUT (except UID 0, loopback, link-local, ICMPv6). This forces apps to
+// fall back to IPv4 in <50ms. Legacy v6 mangle chains from v1.2.x/v1.3.0
+// are cleaned up automatically on startup.
 //
 // # The uid-0 RETURN rule
 //
@@ -228,28 +236,18 @@ func Apply(cfg Config, bypassIPs []string) error {
 	return nil
 }
 
-// applyTPROXY installs mangle-table TPROXY chains for IPv4 and IPv6 TCP.
-// This enables transparent proxying of both address families through a
-// single IP_TRANSPARENT listener socket.
+// applyTPROXY installs mangle-table TPROXY chains for IPv4 TCP only.
+// IPv6 is handled by filter-table REJECT (see applyIPv6Lockdown).
 func applyTPROXY(cfg Config, prefix string, port int, bypassIPs []string) error {
 	portStr := strconv.Itoa(port)
 	outChain4 := prefix + "_TPROXY_OUT"
 	preChain4 := prefix + "_TPROXY_PRE"
-	outChain6 := prefix + "_TPROXY_OUT6"
-	preChain6 := prefix + "_TPROXY_PRE6"
 
 	var errs []string
 	run4 := func(args ...string) {
 		full := append([]string{"-w", "5"}, args...)
 		if b, err := exec.Command("iptables", full...).CombinedOutput(); err != nil {
 			errs = append(errs, fmt.Sprintf("iptables %s: %v %s",
-				strings.Join(args, " "), err, strings.TrimSpace(string(b))))
-		}
-	}
-	run6 := func(args ...string) {
-		full := append([]string{"-w", "5"}, args...)
-		if b, err := exec.Command("ip6tables", full...).CombinedOutput(); err != nil {
-			errs = append(errs, fmt.Sprintf("ip6tables %s: %v %s",
 				strings.Join(args, " "), err, strings.TrimSpace(string(b))))
 		}
 	}
@@ -324,61 +322,19 @@ func applyTPROXY(cfg Config, prefix string, port int, bypassIPs []string) error 
 		_ = exec.Command("iptables", "-w", "5", "-I", "FORWARD", "-j", "ACCEPT").Run()
 	}
 
-	// --- IPv6 mangle chains ---
-	run6("-t", "mangle", "-N", outChain6)
-	run6("-t", "mangle", "-F", outChain6)
-	run6("-t", "mangle", "-N", preChain6)
-	run6("-t", "mangle", "-F", preChain6)
+	// --- IPv6: NO mangle TPROXY chains ---
+	// The SSH server (bc.game/dropbear) has no IPv6 connectivity, so tunneling
+	// v6 TCP through it produces "Network is unreachable" for every connection.
+	// Instead, we rely on applyIPv6Lockdown (filter REJECT) to block v6 OUTPUT
+	// immediately — apps fall back to IPv4 in <50ms. v6 mangle chains are
+	// cleaned up by Cleanup() for users upgrading from v1.2.x/v1.3.0.
 
-	// OUTPUT chain v6: bypass UID 0, private v6 CIDRs, daemon ports
-	run6("-t", "mangle", "-A", outChain6, "-m", "owner", "--uid-owner", "0", "-j", "RETURN")
-	for _, cidr := range privateCIDRsV6 {
-		run6("-t", "mangle", "-A", outChain6, "-d", cidr, "-j", "RETURN")
-	}
-	for _, p := range []int{cfg.APIPort, cfg.SocksPort, cfg.TCPPort} {
-		if p > 0 {
-			run6("-t", "mangle", "-A", outChain6, "-p", "tcp", "--dport", strconv.Itoa(p), "-j", "RETURN")
-		}
-	}
-	run6("-t", "mangle", "-A", outChain6, "-p", "tcp", "-j", "MARK", "--set-mark", tproxyMark)
-	// PREROUTING chain v6
-	for _, cidr := range privateCIDRsV6 {
-		run6("-t", "mangle", "-A", preChain6, "-d", cidr, "-j", "RETURN")
-	}
-	for _, p := range []int{cfg.APIPort, cfg.SocksPort, cfg.TCPPort} {
-		if p > 0 {
-			run6("-t", "mangle", "-A", preChain6, "-p", "tcp", "--dport", strconv.Itoa(p), "-j", "RETURN")
-		}
-	}
-	run6("-t", "mangle", "-A", preChain6, "-p", "tcp", "-j", "TPROXY",
-		"--on-port", portStr, "--on-ip", "::", "--tproxy-mark", tproxyMark)
-
-	run6("-t", "mangle", "-I", "OUTPUT", "1", "-p", "tcp", "-j", outChain6)
-	// Same as IPv4: unconditional PREROUTING hook for locally-originated v6
-	// packets that re-enter via loopback after policy routing.
-	run6("-t", "mangle", "-I", "PREROUTING", "1", "-p", "tcp", "-m", "mark", "--mark", tproxyMark, "-j", preChain6)
-	if cfg.Hotspot {
-		ifaces := cfg.HotspotIfaces
-		if len(ifaces) == 0 {
-			ifaces = DefaultHotspotIfaces
-		}
-		for _, iface := range ifaces {
-			if strings.TrimSpace(iface) == "" {
-				continue
-			}
-			run6("-t", "mangle", "-I", "PREROUTING", "1", "-i", iface, "-p", "tcp", "-j", preChain6)
-		}
-		_ = exec.Command("sysctl", "-w", "net.ipv6.conf.all.forwarding=1").Run()
-		_ = exec.Command("ip6tables", "-w", "5", "-I", "FORWARD", "-j", "ACCEPT").Run()
-	}
-
-	// --- Policy routing for TPROXY ---
-	// IPv4: fwmark 0x1/0x1 → table 100 → local 0.0.0.0/0 dev lo
-	_ = exec.Command("ip", "rule", "add", "fwmark", tproxyMark, "table", tproxyTable).Run()
+	// --- Policy routing for TPROXY (IPv4 only) ---
+	// fwmark 0x1/0x1 → table 100 → local 0.0.0.0/0 dev lo
+	// Priority 9999 ensures our rule fires after the local table (priority 0)
+	// but before any other system rules.
+	_ = exec.Command("ip", "rule", "add", "fwmark", tproxyMark, "table", tproxyTable, "prio", "9999").Run()
 	_ = exec.Command("ip", "route", "add", "local", "0.0.0.0/0", "dev", "lo", "table", tproxyTable).Run()
-	// IPv6: same for v6
-	_ = exec.Command("ip", "-6", "rule", "add", "fwmark", tproxyMark, "table", tproxyTable).Run()
-	_ = exec.Command("ip", "-6", "route", "add", "local", "::/0", "dev", "lo", "table", tproxyTable).Run()
 
 	// Filter non-fatal errors
 	var fatal []string
@@ -433,42 +389,82 @@ func Cleanup(cfg Config) error {
 	_ = exec.Command("iptables", "-w", "5", "-D", "FORWARD", "-j", "ACCEPT").Run()
 
 	// Phase 3: clean TPROXY mangle chains (IPv4).
+	// Delete hooks in a loop to handle duplicates from failed prior applies.
 	for _, ch := range allLegacyMangleChains(prefix) {
-		_ = exec.Command("iptables", "-w", "5", "-t", "mangle", "-D", "OUTPUT", "-p", "tcp", "-j", ch).Run()
-		_ = exec.Command("iptables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-j", ch).Run()
-		// Unconditional fwmark-based PREROUTING hook (v1.2.1+).
-		_ = exec.Command("iptables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-m", "mark", "--mark", tproxyMark, "-j", ch).Run()
+		for i := 0; i < 10; i++ {
+			if exec.Command("iptables", "-w", "5", "-t", "mangle", "-D", "OUTPUT", "-p", "tcp", "-j", ch).Run() != nil {
+				break
+			}
+		}
+		for i := 0; i < 10; i++ {
+			if exec.Command("iptables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-j", ch).Run() != nil {
+				break
+			}
+		}
+		for i := 0; i < 10; i++ {
+			if exec.Command("iptables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-m", "mark", "--mark", tproxyMark, "-j", ch).Run() != nil {
+				break
+			}
+		}
 		for _, iface := range ifaces {
 			if strings.TrimSpace(iface) == "" {
 				continue
 			}
-			_ = exec.Command("iptables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-i", iface, "-p", "tcp", "-j", ch).Run()
+			for i := 0; i < 10; i++ {
+				if exec.Command("iptables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-i", iface, "-p", "tcp", "-j", ch).Run() != nil {
+					break
+				}
+			}
 		}
 		_ = exec.Command("iptables", "-w", "5", "-t", "mangle", "-F", ch).Run()
 		_ = exec.Command("iptables", "-w", "5", "-t", "mangle", "-X", ch).Run()
 	}
 
-	// Phase 4: clean TPROXY mangle chains (IPv6).
+	// Phase 4: clean TPROXY mangle chains (IPv6) — legacy from v1.2.x/v1.3.0.
 	for _, ch := range allLegacyV6MangleChains(prefix) {
-		_ = exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-D", "OUTPUT", "-p", "tcp", "-j", ch).Run()
-		_ = exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-j", ch).Run()
-		// Unconditional fwmark-based PREROUTING hook (v1.2.1+).
-		_ = exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-m", "mark", "--mark", tproxyMark, "-j", ch).Run()
+		for i := 0; i < 10; i++ {
+			if exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-D", "OUTPUT", "-p", "tcp", "-j", ch).Run() != nil {
+				break
+			}
+		}
+		for i := 0; i < 10; i++ {
+			if exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-j", ch).Run() != nil {
+				break
+			}
+		}
+		for i := 0; i < 10; i++ {
+			if exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-m", "mark", "--mark", tproxyMark, "-j", ch).Run() != nil {
+				break
+			}
+		}
 		for _, iface := range ifaces {
 			if strings.TrimSpace(iface) == "" {
 				continue
 			}
-			_ = exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-i", iface, "-p", "tcp", "-j", ch).Run()
+			for i := 0; i < 10; i++ {
+				if exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-i", iface, "-p", "tcp", "-j", ch).Run() != nil {
+					break
+				}
+			}
 		}
 		_ = exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-F", ch).Run()
 		_ = exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-X", ch).Run()
 	}
 	_ = exec.Command("ip6tables", "-w", "5", "-D", "FORWARD", "-j", "ACCEPT").Run()
 
-	// Phase 5: remove TPROXY policy routes (best-effort).
-	_ = exec.Command("ip", "rule", "del", "fwmark", tproxyMark, "table", tproxyTable).Run()
+	// Phase 5: remove TPROXY policy routes (best-effort, loop for duplicates).
+	for i := 0; i < 5; i++ {
+		if exec.Command("ip", "rule", "del", "fwmark", tproxyMark, "table", tproxyTable).Run() != nil {
+			break
+		}
+	}
 	_ = exec.Command("ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", tproxyTable).Run()
-	_ = exec.Command("ip", "-6", "rule", "del", "fwmark", tproxyMark, "table", tproxyTable).Run()
+	// Legacy v6 policy routes from v1.2.x/v1.3.0.
+	for i := 0; i < 5; i++ {
+		if exec.Command("ip", "-6", "rule", "del", "fwmark", tproxyMark, "table", tproxyTable).Run() != nil {
+			break
+		}
+	}
 	_ = exec.Command("ip", "-6", "route", "del", "local", "::/0", "dev", "lo", "table", tproxyTable).Run()
 	// Flush table 100 entirely in case any stale routes remain.
 	_ = exec.Command("ip", "route", "flush", "table", tproxyTable).Run()
@@ -532,7 +528,11 @@ func cleanupQUICBlock(prefix string) {
 // The REJECT (ICMPv6 admin-prohibited) is preferable to DROP because it
 // signals the userspace TCP stack to fail-fast instead of waiting for the
 // retransmission timer. Apps fall back to v4 in milliseconds.
-func applyIPv6Lockdown(prefix string, tproxyActive bool) {
+//
+// v1.3.1: We no longer allow marked v6 TCP through. The SSH server has no
+// IPv6 connectivity, so tunneling v6 just produces "Network is unreachable"
+// floods. All v6 gets rejected immediately → fast fallback to IPv4.
+func applyIPv6Lockdown(prefix string, _ bool) {
 	out := prefix + "_FILTER_OUTPUT6"
 	fwd := prefix + "_FILTER_FORWARD6"
 	cmds := [][]string{
@@ -549,24 +549,14 @@ func applyIPv6Lockdown(prefix string, tproxyActive bool) {
 		{"ip6tables", "-w", "5", "-t", "filter", "-A", out, "-d", "fe80::/10", "-j", "RETURN"},
 		{"ip6tables", "-w", "5", "-t", "filter", "-A", out, "-d", "ff00::/8", "-j", "RETURN"},
 		{"ip6tables", "-w", "5", "-t", "filter", "-A", out, "-p", "icmpv6", "-j", "RETURN"},
-	}
-
-	if tproxyActive {
-		// When TPROXY is active, v6 TCP that carries our fwmark is being
-		// proxied — let it through instead of rejecting it.
-		cmds = append(cmds, []string{"ip6tables", "-w", "5", "-t", "filter", "-A", out,
-			"-p", "tcp", "-m", "mark", "--mark", tproxyMark, "-j", "RETURN"})
-	}
-
-	cmds = append(cmds,
-		// Catch-all: REJECT anything else.
-		[]string{"ip6tables", "-w", "5", "-t", "filter", "-A", out, "-j", "REJECT", "--reject-with", "icmp6-adm-prohibited"},
+		// Catch-all: REJECT anything else. Apps fall back to IPv4 in <50ms.
+		{"ip6tables", "-w", "5", "-t", "filter", "-A", out, "-j", "REJECT", "--reject-with", "icmp6-adm-prohibited"},
 		// Forward chain (hotspot v6 leaks).
-		[]string{"ip6tables", "-w", "5", "-t", "filter", "-A", fwd, "-j", "REJECT", "--reject-with", "icmp6-adm-prohibited"},
+		{"ip6tables", "-w", "5", "-t", "filter", "-A", fwd, "-j", "REJECT", "--reject-with", "icmp6-adm-prohibited"},
 		// Hooks at top of builtin chains.
-		[]string{"ip6tables", "-w", "5", "-t", "filter", "-I", "OUTPUT", "1", "-j", out},
-		[]string{"ip6tables", "-w", "5", "-t", "filter", "-I", "FORWARD", "1", "-j", fwd},
-	)
+		{"ip6tables", "-w", "5", "-t", "filter", "-I", "OUTPUT", "1", "-j", out},
+		{"ip6tables", "-w", "5", "-t", "filter", "-I", "FORWARD", "1", "-j", fwd},
+	}
 	for _, c := range cmds {
 		_ = exec.Command(c[0], c[1:]...).Run()
 	}
