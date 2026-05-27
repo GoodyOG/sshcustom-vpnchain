@@ -4,6 +4,51 @@ All notable changes to SSHCustom-VPNChain are recorded here. Format is loosely
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] — 2026-05-27
+
+### Fixed — iptables lock contention (critical)
+
+- **All iptables/ip6tables commands now use `-w 5`** (wait up to 5 seconds
+  for the xtables lock). Previously, if any other process (netd, OpenVPN,
+  HyperOS firewall) held the lock when sshcustomd tried to apply rules,
+  the chain creation would fail instantly — leaving the tunnel "connected"
+  but with zero iptables rules installed, causing the "connected but nothing
+  works" symptom.
+
+### Fixed — Bulletproof cleanup
+
+- **Defensive cleanup on daemon startup**: removes any leftover chains from
+  a prior crash before attempting new rule installation.
+- **Cleanup on apply failure**: if rule installation fails midway (partial
+  apply), the daemon now automatically cleans up the half-installed chains
+  instead of leaving them orphaned.
+- Combined with `-w 5`, the cleanup is now retry-tolerant under lock
+  contention.
+
+### Breaking — REDIRECT mode removed
+
+- **TPROXY is now the only proxy mode.** The nat-table REDIRECT path,
+  the `mode` config field, the auto-detection probe, and the WebUI Proxy
+  Mode dropdown have all been removed.
+- Old config files with `"mode": "auto"` or `"mode": "redirect"` are
+  silently accepted (the JSON field is ignored at runtime). No migration
+  action needed.
+- **Kernel requirement**: `CONFIG_NETFILTER_XT_TARGET_TPROXY` must be
+  enabled. The daemon probes at startup and refuses tunnel start with a
+  clear error message if TPROXY is unavailable.
+
+### Changed — WebUI
+
+- Replaced "Proxy Mode" dropdown with a static "Proxy Engine: TPROXY
+  (IPv4 + IPv6)" info line in Settings.
+
+### Changed — Internal
+
+- Removed ~150 lines of REDIRECT code path from `internal/iptables/`.
+- `iptables.Config` struct no longer has a `Mode` field.
+- `apiv1.ConfigPatchRequest` no longer accepts `transparent_proxy.mode`.
+- `apiCapabilities` always reports `tproxy_mode: true`.
+
 ## [1.2.1] — 2026-05-27
 
 ### Fixed — TPROXY traffic delivery (critical)

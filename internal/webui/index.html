@@ -665,19 +665,13 @@
             </div>
           </div>
         </div>
-        <h2 class="section-pill">Proxy Mode</h2>
+        <h2 class="section-pill">Proxy Engine</h2>
         <div class="list-container">
           <div class="list-item">
             <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
             <div class="list-item-content">
-              <div class="toggle-text">Transparent Proxy Mode</div>
-              <span class="supporting-text">Auto: probe kernel for TPROXY support, fall back to REDIRECT. TPROXY enables IPv6 TCP tunneling. REDIRECT is legacy IPv4-only.</span>
-              <select id="proxyMode" class="select-shell" style="margin-top:6px;width:100%">
-                <option value="auto">Auto (recommended)</option>
-                <option value="tproxy">TPROXY (IPv4 + IPv6)</option>
-                <option value="redirect">REDIRECT (IPv4 only)</option>
-              </select>
-              <span class="supporting-text" id="proxyModeResolved" style="margin-top:4px;font-size:0.7rem;opacity:0.7">Resolved: --</span>
+              <div class="toggle-text">TPROXY (IPv4 + IPv6)</div>
+              <span class="supporting-text">Mangle-table TPROXY with dual-stack support. All TCP traffic is transparently proxied through the SSH tunnel. Requires kernel CONFIG_NETFILTER_XT_TARGET_TPROXY.</span>
             </div>
           </div>
         </div>
@@ -1113,11 +1107,7 @@
       $('customDnsServers').value = (dns.servers || []).join(', ');
       const hotspot = cfg.hotspot || {};
       $('hotspotSwitch').classList.toggle('on', !!(hotspot.enabled && hotspot.tcp));
-      // Proxy mode selector
-      const tp = cfg.transparent_proxy || {};
-      $('proxyMode').value = tp.mode || 'auto';
-      const resolved = tp.resolved_mode || '--';
-      $('proxyModeResolved').textContent = 'Resolved: ' + resolved.toUpperCase() + (tp.mode === 'auto' ? ' (auto-detected)' : '');
+      // Proxy mode: always TPROXY (v1.3.0+), no user-selectable option.
       // Leak protection toggles. Default to true if the field is missing
       // so that a daemon running an older config schema (pre-v1.1.0)
       // still shows the secure defaults until the migration completes.
@@ -1162,8 +1152,7 @@
           flush_conntrack: $('lpConntrackSwitch').classList.contains('on'),
           sysctl_hardening: $('lpSysctlSwitch').classList.contains('on')
         };
-        const transparent_proxy = { mode: $('proxyMode').value };
-        await postV1('/config', { dns, hotspot: { enabled, tcp: enabled, dns: false }, leak_protection, transparent_proxy, restart: true }, 12000);
+        await postV1('/config', { dns, hotspot: { enabled, tcp: enabled, dns: false }, leak_protection, restart: true }, 12000);
         toast('Network settings saved. Restarting tunnel...');
         showRestarting();
         setTimeout(loadStatus, 3000);

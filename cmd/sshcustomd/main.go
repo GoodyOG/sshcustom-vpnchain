@@ -84,13 +84,10 @@ type Config struct {
 		UDPMode       string `json:"udp_mode"`
 		ChainsPrefix  string `json:"chains_prefix"`
 		ApplyAfterSSH bool   `json:"apply_after_ssh_connected"`
-		// Mode selects the transparent proxy mechanism:
-		//   "auto"     — probe for TPROXY at runtime, fall back to REDIRECT
-		//   "redirect" — nat-table REDIRECT (IPv4 only, SO_ORIGINAL_DST)
-		//   "tproxy"   — mangle-table TPROXY (IPv4+IPv6, IP_TRANSPARENT)
+		// Mode is kept for backward compatibility with old config files.
+		// Always hardcoded to "tproxy" at runtime (v1.3.0+).
 		Mode string `json:"mode"`
-		// ResolvedMode is the effective mode after auto-detection.
-		// Not persisted to JSON; computed at runtime.
+		// ResolvedMode is always "tproxy". Not persisted to JSON.
 		ResolvedMode string `json:"-"`
 		// Leak protection (added in v1.1.0). All default to true via
 		// normalizeConfig so existing config.json files automatically pick
@@ -1329,6 +1326,27 @@ func run(args []string) {
 			}
 		}
 	}()
+
+	// Defensive cleanup: remove any leftover iptables chains from a prior
+	// crash or unclean shutdown. This ensures the daemon starts with a clean
+	// slate every time, regardless of what state the rules were left in.
+	_ = cleanupTransparentRules(cfg)
+
+	// Hard TPROXY kernel probe: this build requires CONFIG_NETFILTER_XT_TARGET_TPROXY.
+	// If the kernel doesn't support it, we log a fatal-style error and keep the
+	// daemon running (WebUI stays up) but refuse tunnel start.
+	tproxySupported := iptables.ProbeTPROXY()
+	if !tproxySupported {
+		log.Printf("FATAL: kernel lacks TPROXY support (CONFIG_NETFILTER_XT_TARGET_TPROXY). Tunnel cannot start.")
+		state.set(func() {
+			state.State = "ERROR"
+			state.LastError = "Kernel lacks TPROXY support (CONFIG_NETFILTER_XT_TARGET_TPROXY). This build requires TPROXY. Tunnel cannot start."
+			state.Note = "TPROXY not available — see Settings for details"
+		})
+		*idleMode = true // Force idle so tunnel doesn't attempt to start
+	} else {
+		log.Printf("kernel TPROXY probe: OK")
+	}
 
 	if !*idleMode {
 		// Normal mode: start tunnel immediately
@@ -2879,26 +2897,12 @@ func startTransparentIfEnabled(ctx context.Context, cfg Config, pool *SSHPool, s
 		return nil
 	}
 
-	resolvedMode := cfg.TransparentProxy.ResolvedMode
-	if resolvedMode == "" {
-		resolvedMode = "redirect"
-	}
-
-	var ln net.Listener
-	var err error
-
-	if resolvedMode == "tproxy" {
-		// TPROXY mode: open an IP_TRANSPARENT dual-stack listener.
-		// Packets arrive with LocalAddr() == original destination.
-		ln, err = listenTPROXY(cfg.TransparentProxy.TCPPort)
-	} else {
-		// REDIRECT mode: normal TCP listener on 0.0.0.0.
-		addr := transparentAddr(cfg)
-		ln, err = net.Listen("tcp", addr)
-	}
+	// TPROXY mode: open an IP_TRANSPARENT dual-stack listener.
+	// Packets arrive with LocalAddr() == original destination.
+	ln, err := listenTPROXY(cfg.TransparentProxy.TCPPort)
 
 	if err != nil {
-		log.Printf("transparent TCP listen failed (mode=%s): %v", resolvedMode, err)
+		log.Printf("transparent TCP listen failed: %v", err)
 		st.set(func() {
 			st.TransparentEnabled = true
 			st.TransparentRunning = false
@@ -2932,9 +2936,9 @@ func startTransparentIfEnabled(ctx context.Context, cfg Config, pool *SSHPool, s
 		st.TransparentRunning = true
 		st.TransparentApplied = true
 		st.HotspotRunning = cfg.Hotspot.Enabled && cfg.Hotspot.TCP
-		st.LastEvent = fmt.Sprintf("transparent TCP proxy active on %s (mode=%s)", addr, resolvedMode)
+		st.LastEvent = fmt.Sprintf("transparent TCP proxy active on %s (tproxy)", addr)
 	})
-	log.Printf("transparent TCP listening on %s mode=%s; iptables applied; hotspot_tcp=%v", addr, resolvedMode, cfg.Hotspot.Enabled && cfg.Hotspot.TCP)
+	log.Printf("transparent TCP listening on %s mode=tproxy; iptables applied; hotspot_tcp=%v", addr, cfg.Hotspot.Enabled && cfg.Hotspot.TCP)
 	go func() {
 		defer close(done)
 		for {
@@ -2949,11 +2953,7 @@ func startTransparentIfEnabled(ctx context.Context, cfg Config, pool *SSHPool, s
 				return
 			}
 			tuneTCPConn(c, cfg, false)
-			if resolvedMode == "tproxy" {
-				go handleTPROXYConn(ctx, c, pool, cfg, st)
-			} else {
-				go handleTransparentConn(ctx, c, pool, cfg, st)
-			}
+			go handleTPROXYConn(ctx, c, pool, cfg, st)
 		}
 	}()
 	return func() {
@@ -3093,7 +3093,6 @@ func iptablesCfgFromConfig(cfg Config) iptables.Config {
 		SocksPort:      cfg.LocalProxy.SocksPort,
 		Hotspot:        cfg.Hotspot.Enabled && cfg.Hotspot.TCP,
 		HotspotIfaces:  cfg.Hotspot.Interfaces,
-		Mode:           cfg.TransparentProxy.ResolvedMode,
 		BlockIPv6Leaks: cfg.TransparentProxy.BlockIPv6Leaks,
 		BlockQUIC:      cfg.TransparentProxy.BlockQUIC,
 		FlushConntrack: cfg.TransparentProxy.FlushConntrack,
@@ -3180,13 +3179,11 @@ func normalizeConfig(cfg *Config) {
 		cfg.TransparentProxy.RouteLocalnet = true
 		cfg.TransparentProxy.LeakProtectionV = currentLeakProtectionV
 	}
-	// Transparent proxy mode normalization. Default to "auto" for new
-	// installs and upgrades from pre-1.2.0 builds.
-	cfg.TransparentProxy.Mode = normalizeProxyMode(cfg.TransparentProxy.Mode)
-	// Resolve "auto" to the actual mode by probing kernel support.
-	if cfg.TransparentProxy.ResolvedMode == "" {
-		cfg.TransparentProxy.ResolvedMode = resolveProxyMode(cfg.TransparentProxy.Mode)
-	}
+	// Transparent proxy mode: always TPROXY (v1.3.0+).
+	// The Mode and ResolvedMode fields are kept for backward compatibility
+	// with the API/WebUI but always return "tproxy".
+	cfg.TransparentProxy.Mode = "tproxy"
+	cfg.TransparentProxy.ResolvedMode = "tproxy"
 	// Migrate legacy "route_localnet" key → "sysctl_hardening" (v1.2.1).
 	// If a pre-1.2.1 config had route_localnet=true but the new
 	// sysctl_hardening field unmarshalled as false (because the key
@@ -3203,34 +3200,6 @@ func normalizeConfig(cfg *Config) {
 // which is how we ship a "more secure default" without overriding a user
 // who deliberately turned a toggle off.
 const currentLeakProtectionV = 1
-
-func normalizeProxyMode(mode string) string {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "redirect":
-		return "redirect"
-	case "tproxy":
-		return "tproxy"
-	default:
-		return "auto"
-	}
-}
-
-// resolveProxyMode resolves "auto" by probing kernel TPROXY support.
-// For explicit modes ("redirect"/"tproxy"), returns as-is.
-func resolveProxyMode(mode string) string {
-	switch mode {
-	case "redirect":
-		return "redirect"
-	case "tproxy":
-		return "tproxy"
-	default:
-		// Auto: probe kernel
-		if iptables.ProbeTPROXY() {
-			return "tproxy"
-		}
-		return "redirect"
-	}
-}
 
 func normalizeDNSMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
@@ -3329,15 +3298,6 @@ func applyConfigPatch(cfg Config, req apiv1.ConfigPatchRequest) (Config, []strin
 			before.FlushConntrack != next.TransparentProxy.FlushConntrack ||
 			before.RouteLocalnet != next.TransparentProxy.RouteLocalnet {
 			changed = append(changed, "leak_protection")
-			restartRequired = true
-		}
-	}
-	if req.TransparentProxy != nil && req.TransparentProxy.Mode != nil {
-		oldMode := next.TransparentProxy.Mode
-		next.TransparentProxy.Mode = normalizeProxyMode(*req.TransparentProxy.Mode)
-		next.TransparentProxy.ResolvedMode = resolveProxyMode(next.TransparentProxy.Mode)
-		if oldMode != next.TransparentProxy.Mode {
-			changed = append(changed, "transparent_proxy_mode")
 			restartRequired = true
 		}
 	}
@@ -3919,8 +3879,8 @@ func configSummary(cfg Config) map[string]any {
 			"enabled":           cfg.TransparentProxy.Enabled,
 			"tcp_port":          cfg.TransparentProxy.TCPPort,
 			"chains_prefix":     cfg.TransparentProxy.ChainsPrefix,
-			"mode":              cfg.TransparentProxy.Mode,
-			"resolved_mode":     cfg.TransparentProxy.ResolvedMode,
+			"mode":              "tproxy",
+			"resolved_mode":     "tproxy",
 			"block_ipv6_leaks":  cfg.TransparentProxy.BlockIPv6Leaks,
 			"block_quic":        cfg.TransparentProxy.BlockQUIC,
 			"flush_conntrack":   cfg.TransparentProxy.FlushConntrack,
@@ -3930,19 +3890,18 @@ func configSummary(cfg Config) map[string]any {
 }
 
 func apiCapabilities(cfg Config) []apiv1.Capability {
-	tproxyActive := cfg.TransparentProxy.ResolvedMode == "tproxy"
 	return []apiv1.Capability{
 		{Name: "manual_start", Enabled: cfg.Module.ManualStart, Description: "runtime starts from Magisk/KernelSU action"},
-		{Name: "ipv4_transparent_tcp", Enabled: cfg.TransparentProxy.Enabled, Description: "iptables IPv4 TCP transparent proxy"},
-		{Name: "ipv6_transparent_tcp", Enabled: cfg.TransparentProxy.Enabled && tproxyActive, Description: "ip6tables IPv6 TCP transparent proxy via TPROXY"},
-		{Name: "tproxy_mode", Enabled: tproxyActive, Description: "mangle-table TPROXY active (IPv4+IPv6 dual-stack)"},
+		{Name: "ipv4_transparent_tcp", Enabled: cfg.TransparentProxy.Enabled, Description: "iptables IPv4 TCP transparent proxy via TPROXY"},
+		{Name: "ipv6_transparent_tcp", Enabled: cfg.TransparentProxy.Enabled, Description: "ip6tables IPv6 TCP transparent proxy via TPROXY"},
+		{Name: "tproxy_mode", Enabled: true, Description: "mangle-table TPROXY active (IPv4+IPv6 dual-stack)"},
 		{Name: "hotspot_tcp_share", Enabled: cfg.Hotspot.Enabled && cfg.Hotspot.TCP, Description: "TCP sharing for tethered clients"},
 		{Name: "socks5", Enabled: cfg.LocalProxy.SocksEnabled, Description: "local SOCKS5 listener"},
 		{Name: "dns_mode_select", Enabled: true, Description: "device, Google, Cloudflare, and custom resolver modes for SSHCustom endpoints"},
 		{Name: "block_ipv6_leaks", Enabled: cfg.TransparentProxy.BlockIPv6Leaks, Description: "REJECT outbound IPv6 except daemon (UID 0); apps fall back to IPv4 instead of stalling"},
 		{Name: "block_quic", Enabled: cfg.TransparentProxy.BlockQUIC, Description: "REJECT UDP/443+UDP/80 except daemon; forces Chrome/YouTube TCP fallback"},
 		{Name: "flush_conntrack", Enabled: cfg.TransparentProxy.FlushConntrack, Description: "drop existing flows on rule install/remove so old direct sockets reconnect via tunnel"},
-		{Name: "sysctl_hardening", Enabled: cfg.TransparentProxy.RouteLocalnet, Description: "set route_localnet=1 + rp_filter=loose for reliable OUTPUT REDIRECT"},
+		{Name: "sysctl_hardening", Enabled: cfg.TransparentProxy.RouteLocalnet, Description: "set route_localnet=1 + rp_filter=loose for reliable TPROXY loopback delivery"},
 		{Name: "per_app_routing", Enabled: false, Description: "planned future feature"},
 	}
 }

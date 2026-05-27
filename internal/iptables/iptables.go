@@ -1,86 +1,66 @@
 // Package iptables installs and removes the SSHCustom transparent-proxy
-// chains.
+// chains using mangle-table TPROXY (IPv4 + IPv6).
 //
 // # What this does
 //
-// We install two chains in the nat table:
+// We install chains in the mangle table:
 //
-//   - SSHC_OUTPUT  hooked into nat OUTPUT,  for traffic from this device.
-//   - SSHC_PREROUTING  hooked into nat PREROUTING per hotspot interface,
-//     for traffic from tethered clients.
+//   - SSHC_TPROXY_OUT  hooked into mangle OUTPUT, marks packets with
+//     fwmark 0x1/0x1 for policy routing.
+//   - SSHC_TPROXY_PRE  hooked into mangle PREROUTING, applies the TPROXY
+//     target to deliver packets to the daemon's IP_TRANSPARENT listener.
 //
-// Each chain RETURNs traffic destined to private/loopback/link-local CIDRs,
-// the daemon's own bypass IPs (resolved SSH endpoint addresses), and the
-// daemon's own listener ports. Anything else hits a final
-// REDIRECT --to-ports <transparent_tcp_port>, which the kernel rewrites
-// in-place; the daemon then reads the original destination via the
-// SO_ORIGINAL_DST socket option.
+// Locally-originated packets flow: OUTPUT (mark) → policy routing →
+// loopback → PREROUTING (TPROXY) → daemon socket. Hotspot/forwarded
+// traffic enters directly via interface-specific PREROUTING hooks.
 //
 // # The uid-0 RETURN rule
 //
-// SSHC_OUTPUT also has an early "owner uid 0 RETURN" rule. Without it, the
+// SSHC_TPROXY_OUT has an early "owner uid 0 RETURN" rule. Without it, the
 // daemon's own outbound connections (the SSH tunnel itself, DNS lookups,
-// etc.) would be redirected through itself and form an infinite loop. Since
-// we run from /data/adb/sshcustom-vpnchain under root (Magisk-postFsData environment),
-// matching uid 0 reliably bypasses our own traffic.
+// etc.) would be marked and redirected through itself, forming a loop.
 //
 // # Bypass IPs
 //
 // The daemon passes in a list of resolved SSH endpoint IPs at apply time.
-// Each becomes a `-d <ip> RETURN` rule before the catch-all REDIRECT. This
+// Each becomes a `-d <ip> RETURN` rule before the catch-all MARK. This
 // is critical: without it, the SSH carrier connection itself would hit the
-// REDIRECT and form a loop.
+// TPROXY and form a loop.
 //
 // # Leak protection (v1.1.0)
 //
-// REDIRECT in the nat table only catches new TCP/v4 flows. Three categories
-// of traffic escape it on real Android devices:
+// Three categories of traffic escape TPROXY:
 //
-//   - IPv6 in any form (we don't run ip6tables nat rules; many kernels
-//     don't even support IPv6 nat). Apps that resolve to AAAA records and
-//     race-connect via v6 (RFC 6724) bypass the tunnel completely.
+//   - IPv6 (when TPROXY v6 rules are active, v6 TCP is tunneled; but v6
+//     UDP and non-TCP still leak without additional protection).
 //   - UDP in any form, including QUIC (UDP/443). Chrome/YouTube prefer
-//     QUIC; without intervention they wait the full retry window before
-//     falling back to TCP/443.
-//   - Connections that already exist in conntrack from before our nat
-//     rules were installed. Once a flow has a conntrack entry, the nat
-//     table is bypassed for the rest of its life.
+//     QUIC; without intervention they stall before TCP fallback.
+//   - Connections that already exist in conntrack from before our rules.
 //
-// For carrier-restricted users (CGNAT prepaid plans that whitelist a few
-// hosts), the leaks above mean the broken-direct-route stalls *every*
-// non-tunneled connection by ~8 seconds before the app gives up. The
-// LeakProtection block plugs all three:
+// LeakProtection plugs these:
 //
-//   - applyIPv6Lockdown: ip6tables filter rules that REJECT outbound v6
-//     except from UID 0 (the daemon itself). Apps fall back to v4 instantly.
-//   - applyQUICBlock: iptables filter rules that REJECT UDP/443 (and
-//     UDP/80) except from UID 0. Chrome falls back to TCP immediately.
-//   - flushConntrack: at the end of Apply() and Cleanup(), drop existing
-//     flows so old direct-route sockets die and reconnect through the
-//     freshly-installed rules.
+//   - applyIPv6Lockdown: ip6tables filter rules that REJECT non-TCP v6
+//     except from UID 0. TPROXY-bound v6 TCP is allowed through.
+//   - applyQUICBlock: iptables filter rules that REJECT UDP/443+80.
+//   - flushConntrack: drop existing flows after rule install/remove.
 //
 // # Sysctl hardening
 //
-// applySysctls sets two kernel knobs that make REDIRECT more reliable on
-// the OUTPUT path:
+// applySysctls sets:
+//   - net.ipv4.conf.all.route_localnet=1 (required for TPROXY loopback)
+//   - net.ipv4.conf.all.rp_filter=2 (loose, accepts return packets on lo)
 //
-//   - net.ipv4.conf.all.route_localnet=1 lets the kernel deliver packets
-//     whose post-NAT destination is 127.0.0.0/8. Without this, some
-//     OUTPUT-REDIRECT packets get silently dropped on stricter kernels.
-//   - net.ipv4.conf.all.rp_filter=2 (loose) accepts return packets even
-//     when the reverse-path interface differs from the forward path,
-//     which happens on every OUTPUT REDIRECT bouncing through lo.
+// # Lock contention (v1.3.0)
 //
-// Both are no-ops where the value is already correct; both are reverted
-// to the system default in Cleanup().
+// All iptables/ip6tables invocations use -w 5 (wait up to 5 seconds for
+// the xtables lock). This prevents failures when other Android system
+// components (netd, OpenVPN, etc.) briefly hold the lock.
 //
 // # Cleanup is idempotent
 //
 // Apply() always runs Cleanup() first, and Cleanup() ignores errors from
-// non-existent chains/rules. The point is that running install -> stop ->
-// install -> stop in any order leaves the iptables nat table identical.
-// Real-world Android networks reset routes constantly; the daemon must be
-// able to tear down and rebuild without leaving leftover rules.
+// non-existent chains/rules. Cleanup also removes legacy nat-table chains
+// from older SSHCustom versions to ensure clean upgrades.
 package iptables
 
 import (
@@ -100,13 +80,6 @@ type Config struct {
 	SocksPort     int
 	Hotspot       bool
 	HotspotIfaces []string
-
-	// Mode selects the transparent proxy mechanism:
-	//   "redirect" — nat-table REDIRECT (IPv4 only, uses SO_ORIGINAL_DST)
-	//   "tproxy"   — mangle-table TPROXY (IPv4 + IPv6, uses IP_TRANSPARENT)
-	//   "auto"     — probe for TPROXY support, fall back to REDIRECT
-	// The caller (daemon) resolves "auto" before passing Config in.
-	Mode string
 
 	// Leak protection toggles. All default to false at the package level
 	// because the daemon's Config decides the defaults; passing them in
@@ -231,12 +204,11 @@ func Apply(cfg Config, bypassIPs []string) error {
 	}
 
 	var err error
-	if cfg.Mode == "tproxy" {
-		err = applyTPROXY(cfg, prefix, port, bypassIPs)
-	} else {
-		err = applyREDIRECT(cfg, prefix, port, bypassIPs)
-	}
+	err = applyTPROXY(cfg, prefix, port, bypassIPs)
 	if err != nil {
+		// Partial apply may have left chains/rules behind. Clean up so
+		// the system isn't left in a broken half-installed state.
+		_ = Cleanup(cfg)
 		return err
 	}
 
@@ -245,7 +217,7 @@ func Apply(cfg Config, bypassIPs []string) error {
 		applyQUICBlock(prefix)
 	}
 	if cfg.BlockIPv6Leaks {
-		applyIPv6Lockdown(prefix, cfg.Mode == "tproxy")
+		applyIPv6Lockdown(prefix, true)
 	}
 
 	// Flush conntrack last.
@@ -253,80 +225,6 @@ func Apply(cfg Config, bypassIPs []string) error {
 		flushConntrack()
 	}
 
-	return nil
-}
-
-// applyREDIRECT installs the original nat-table REDIRECT chains (IPv4 only).
-func applyREDIRECT(cfg Config, prefix string, port int, bypassIPs []string) error {
-	outChain := prefix + "_OUTPUT"
-	preChain := prefix + "_PREROUTING"
-
-	var errs []string
-	run := func(args ...string) {
-		if b, err := exec.Command("iptables", args...).CombinedOutput(); err != nil {
-			errs = append(errs, fmt.Sprintf("iptables %s: %v %s",
-				strings.Join(args, " "), err, strings.TrimSpace(string(b))))
-		}
-	}
-
-	for _, ch := range []string{outChain, preChain} {
-		run("-t", "nat", "-N", ch)
-		run("-t", "nat", "-F", ch)
-	}
-
-	addBypasses := func(ch string, isOutput bool) {
-		if isOutput {
-			run("-t", "nat", "-A", ch, "-m", "owner", "--uid-owner", "0", "-j", "RETURN")
-		}
-		for _, cidr := range privateCIDRs {
-			run("-t", "nat", "-A", ch, "-d", cidr, "-j", "RETURN")
-		}
-		for _, ip := range bypassIPs {
-			ip = strings.TrimSpace(ip)
-			if ip == "" {
-				continue
-			}
-			run("-t", "nat", "-A", ch, "-d", ip, "-j", "RETURN")
-		}
-		for _, p := range []int{cfg.APIPort, cfg.SocksPort, cfg.TCPPort} {
-			if p > 0 {
-				run("-t", "nat", "-A", ch, "-p", "tcp", "--dport", strconv.Itoa(p), "-j", "RETURN")
-			}
-		}
-		run("-t", "nat", "-A", ch, "-p", "tcp", "-j", "REDIRECT", "--to-ports", strconv.Itoa(port))
-	}
-	addBypasses(outChain, true)
-	addBypasses(preChain, false)
-
-	run("-t", "nat", "-I", "OUTPUT", "1", "-p", "tcp", "-j", outChain)
-
-	if cfg.Hotspot {
-		ifaces := cfg.HotspotIfaces
-		if len(ifaces) == 0 {
-			ifaces = DefaultHotspotIfaces
-		}
-		for _, iface := range ifaces {
-			if strings.TrimSpace(iface) == "" {
-				continue
-			}
-			run("-t", "nat", "-I", "PREROUTING", "1", "-i", iface, "-p", "tcp", "-j", preChain)
-		}
-		_ = exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1").Run()
-		_ = exec.Command("iptables", "-I", "FORWARD", "-j", "ACCEPT").Run()
-	}
-
-	var fatal []string
-	for _, e := range errs {
-		if strings.Contains(e, "No chain/target/match") ||
-			strings.Contains(e, "does a matching rule exist") ||
-			strings.Contains(e, "Chain already exists") {
-			continue
-		}
-		fatal = append(fatal, e)
-	}
-	if len(fatal) > 0 {
-		return errors.New(strings.Join(fatal, "; "))
-	}
 	return nil
 }
 
@@ -342,13 +240,15 @@ func applyTPROXY(cfg Config, prefix string, port int, bypassIPs []string) error 
 
 	var errs []string
 	run4 := func(args ...string) {
-		if b, err := exec.Command("iptables", args...).CombinedOutput(); err != nil {
+		full := append([]string{"-w", "5"}, args...)
+		if b, err := exec.Command("iptables", full...).CombinedOutput(); err != nil {
 			errs = append(errs, fmt.Sprintf("iptables %s: %v %s",
 				strings.Join(args, " "), err, strings.TrimSpace(string(b))))
 		}
 	}
 	run6 := func(args ...string) {
-		if b, err := exec.Command("ip6tables", args...).CombinedOutput(); err != nil {
+		full := append([]string{"-w", "5"}, args...)
+		if b, err := exec.Command("ip6tables", full...).CombinedOutput(); err != nil {
 			errs = append(errs, fmt.Sprintf("ip6tables %s: %v %s",
 				strings.Join(args, " "), err, strings.TrimSpace(string(b))))
 		}
@@ -421,7 +321,7 @@ func applyTPROXY(cfg Config, prefix string, port int, bypassIPs []string) error 
 			run4("-t", "mangle", "-I", "PREROUTING", "1", "-i", iface, "-p", "tcp", "-j", preChain4)
 		}
 		_ = exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1").Run()
-		_ = exec.Command("iptables", "-I", "FORWARD", "-j", "ACCEPT").Run()
+		_ = exec.Command("iptables", "-w", "5", "-I", "FORWARD", "-j", "ACCEPT").Run()
 	}
 
 	// --- IPv6 mangle chains ---
@@ -469,7 +369,7 @@ func applyTPROXY(cfg Config, prefix string, port int, bypassIPs []string) error 
 			run6("-t", "mangle", "-I", "PREROUTING", "1", "-i", iface, "-p", "tcp", "-j", preChain6)
 		}
 		_ = exec.Command("sysctl", "-w", "net.ipv6.conf.all.forwarding=1").Run()
-		_ = exec.Command("ip6tables", "-I", "FORWARD", "-j", "ACCEPT").Run()
+		_ = exec.Command("ip6tables", "-w", "5", "-I", "FORWARD", "-j", "ACCEPT").Run()
 	}
 
 	// --- Policy routing for TPROXY ---
@@ -513,57 +413,57 @@ func Cleanup(cfg Config) error {
 
 	// Phase 1: detach hooks from OUTPUT/PREROUTING (nat table).
 	for _, ch := range chains {
-		_ = exec.Command("iptables", "-t", "nat", "-D", "OUTPUT", "-p", "tcp", "-j", ch).Run()
-		_ = exec.Command("iptables", "-t", "nat", "-D", "OUTPUT", "-j", ch).Run()
-		_ = exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-p", "tcp", "-j", ch).Run()
-		_ = exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-j", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "nat", "-D", "OUTPUT", "-p", "tcp", "-j", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "nat", "-D", "OUTPUT", "-j", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "nat", "-D", "PREROUTING", "-p", "tcp", "-j", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "nat", "-D", "PREROUTING", "-j", ch).Run()
 		for _, iface := range ifaces {
 			if strings.TrimSpace(iface) == "" {
 				continue
 			}
-			_ = exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", iface, "-p", "tcp", "-j", ch).Run()
-			_ = exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", iface, "-j", ch).Run()
+			_ = exec.Command("iptables", "-w", "5", "-t", "nat", "-D", "PREROUTING", "-i", iface, "-p", "tcp", "-j", ch).Run()
+			_ = exec.Command("iptables", "-w", "5", "-t", "nat", "-D", "PREROUTING", "-i", iface, "-j", ch).Run()
 		}
 	}
 	// Phase 2: flush and delete nat chains.
 	for _, ch := range chains {
-		_ = exec.Command("iptables", "-t", "nat", "-F", ch).Run()
-		_ = exec.Command("iptables", "-t", "nat", "-X", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "nat", "-F", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "nat", "-X", ch).Run()
 	}
-	_ = exec.Command("iptables", "-D", "FORWARD", "-j", "ACCEPT").Run()
+	_ = exec.Command("iptables", "-w", "5", "-D", "FORWARD", "-j", "ACCEPT").Run()
 
 	// Phase 3: clean TPROXY mangle chains (IPv4).
 	for _, ch := range allLegacyMangleChains(prefix) {
-		_ = exec.Command("iptables", "-t", "mangle", "-D", "OUTPUT", "-p", "tcp", "-j", ch).Run()
-		_ = exec.Command("iptables", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-j", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "mangle", "-D", "OUTPUT", "-p", "tcp", "-j", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-j", ch).Run()
 		// Unconditional fwmark-based PREROUTING hook (v1.2.1+).
-		_ = exec.Command("iptables", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-m", "mark", "--mark", tproxyMark, "-j", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-m", "mark", "--mark", tproxyMark, "-j", ch).Run()
 		for _, iface := range ifaces {
 			if strings.TrimSpace(iface) == "" {
 				continue
 			}
-			_ = exec.Command("iptables", "-t", "mangle", "-D", "PREROUTING", "-i", iface, "-p", "tcp", "-j", ch).Run()
+			_ = exec.Command("iptables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-i", iface, "-p", "tcp", "-j", ch).Run()
 		}
-		_ = exec.Command("iptables", "-t", "mangle", "-F", ch).Run()
-		_ = exec.Command("iptables", "-t", "mangle", "-X", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "mangle", "-F", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "mangle", "-X", ch).Run()
 	}
 
 	// Phase 4: clean TPROXY mangle chains (IPv6).
 	for _, ch := range allLegacyV6MangleChains(prefix) {
-		_ = exec.Command("ip6tables", "-t", "mangle", "-D", "OUTPUT", "-p", "tcp", "-j", ch).Run()
-		_ = exec.Command("ip6tables", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-j", ch).Run()
+		_ = exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-D", "OUTPUT", "-p", "tcp", "-j", ch).Run()
+		_ = exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-j", ch).Run()
 		// Unconditional fwmark-based PREROUTING hook (v1.2.1+).
-		_ = exec.Command("ip6tables", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-m", "mark", "--mark", tproxyMark, "-j", ch).Run()
+		_ = exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-m", "mark", "--mark", tproxyMark, "-j", ch).Run()
 		for _, iface := range ifaces {
 			if strings.TrimSpace(iface) == "" {
 				continue
 			}
-			_ = exec.Command("ip6tables", "-t", "mangle", "-D", "PREROUTING", "-i", iface, "-p", "tcp", "-j", ch).Run()
+			_ = exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-i", iface, "-p", "tcp", "-j", ch).Run()
 		}
-		_ = exec.Command("ip6tables", "-t", "mangle", "-F", ch).Run()
-		_ = exec.Command("ip6tables", "-t", "mangle", "-X", ch).Run()
+		_ = exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-F", ch).Run()
+		_ = exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-X", ch).Run()
 	}
-	_ = exec.Command("ip6tables", "-D", "FORWARD", "-j", "ACCEPT").Run()
+	_ = exec.Command("ip6tables", "-w", "5", "-D", "FORWARD", "-j", "ACCEPT").Run()
 
 	// Phase 5: remove TPROXY policy routes (best-effort).
 	_ = exec.Command("ip", "rule", "del", "fwmark", tproxyMark, "table", tproxyTable).Run()
@@ -595,16 +495,16 @@ func Cleanup(cfg Config) error {
 func applyQUICBlock(prefix string) {
 	chain := prefix + "_FILTER_QUIC"
 	cmds := [][]string{
-		{"iptables", "-t", "filter", "-N", chain},
-		{"iptables", "-t", "filter", "-F", chain},
+		{"iptables", "-w", "5", "-t", "filter", "-N", chain},
+		{"iptables", "-w", "5", "-t", "filter", "-F", chain},
 		// Daemon (UID 0) can speak QUIC freely. We only block app traffic.
-		{"iptables", "-t", "filter", "-A", chain, "-m", "owner", "--uid-owner", "0", "-j", "RETURN"},
+		{"iptables", "-w", "5", "-t", "filter", "-A", chain, "-m", "owner", "--uid-owner", "0", "-j", "RETURN"},
 		// Localhost UDP/443 is sometimes used by mDNS/cast helpers; let it through.
-		{"iptables", "-t", "filter", "-A", chain, "-d", "127.0.0.0/8", "-j", "RETURN"},
-		{"iptables", "-t", "filter", "-A", chain, "-p", "udp", "--dport", "443", "-j", "REJECT", "--reject-with", "icmp-port-unreachable"},
-		{"iptables", "-t", "filter", "-A", chain, "-p", "udp", "--dport", "80", "-j", "REJECT", "--reject-with", "icmp-port-unreachable"},
+		{"iptables", "-w", "5", "-t", "filter", "-A", chain, "-d", "127.0.0.0/8", "-j", "RETURN"},
+		{"iptables", "-w", "5", "-t", "filter", "-A", chain, "-p", "udp", "--dport", "443", "-j", "REJECT", "--reject-with", "icmp-port-unreachable"},
+		{"iptables", "-w", "5", "-t", "filter", "-A", chain, "-p", "udp", "--dport", "80", "-j", "REJECT", "--reject-with", "icmp-port-unreachable"},
 		// Hook into top of OUTPUT.
-		{"iptables", "-t", "filter", "-I", "OUTPUT", "1", "-p", "udp", "-j", chain},
+		{"iptables", "-w", "5", "-t", "filter", "-I", "OUTPUT", "1", "-p", "udp", "-j", chain},
 	}
 	for _, c := range cmds {
 		_ = exec.Command(c[0], c[1:]...).Run()
@@ -614,10 +514,10 @@ func applyQUICBlock(prefix string) {
 // cleanupQUICBlock removes everything applyQUICBlock installed. Idempotent.
 func cleanupQUICBlock(prefix string) {
 	for _, ch := range allLegacyFilterChains(prefix) {
-		_ = exec.Command("iptables", "-t", "filter", "-D", "OUTPUT", "-p", "udp", "-j", ch).Run()
-		_ = exec.Command("iptables", "-t", "filter", "-D", "OUTPUT", "-j", ch).Run()
-		_ = exec.Command("iptables", "-t", "filter", "-F", ch).Run()
-		_ = exec.Command("iptables", "-t", "filter", "-X", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "filter", "-D", "OUTPUT", "-p", "udp", "-j", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "filter", "-D", "OUTPUT", "-j", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "filter", "-F", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "filter", "-X", ch).Run()
 	}
 }
 
@@ -636,36 +536,36 @@ func applyIPv6Lockdown(prefix string, tproxyActive bool) {
 	out := prefix + "_FILTER_OUTPUT6"
 	fwd := prefix + "_FILTER_FORWARD6"
 	cmds := [][]string{
-		{"ip6tables", "-t", "filter", "-N", out},
-		{"ip6tables", "-t", "filter", "-F", out},
-		{"ip6tables", "-t", "filter", "-N", fwd},
-		{"ip6tables", "-t", "filter", "-F", fwd},
+		{"ip6tables", "-w", "5", "-t", "filter", "-N", out},
+		{"ip6tables", "-w", "5", "-t", "filter", "-F", out},
+		{"ip6tables", "-w", "5", "-t", "filter", "-N", fwd},
+		{"ip6tables", "-w", "5", "-t", "filter", "-F", fwd},
 		// Daemon (UID 0) keeps full v6. Loopback is exempt for OS housekeeping.
-		{"ip6tables", "-t", "filter", "-A", out, "-m", "owner", "--uid-owner", "0", "-j", "RETURN"},
-		{"ip6tables", "-t", "filter", "-A", out, "-o", "lo", "-j", "RETURN"},
-		{"ip6tables", "-t", "filter", "-A", out, "-d", "::1/128", "-j", "RETURN"},
+		{"ip6tables", "-w", "5", "-t", "filter", "-A", out, "-m", "owner", "--uid-owner", "0", "-j", "RETURN"},
+		{"ip6tables", "-w", "5", "-t", "filter", "-A", out, "-o", "lo", "-j", "RETURN"},
+		{"ip6tables", "-w", "5", "-t", "filter", "-A", out, "-d", "::1/128", "-j", "RETURN"},
 		// Allow link-local NDP/RA messages so the kernel can keep the v6
 		// default route negotiated.
-		{"ip6tables", "-t", "filter", "-A", out, "-d", "fe80::/10", "-j", "RETURN"},
-		{"ip6tables", "-t", "filter", "-A", out, "-d", "ff00::/8", "-j", "RETURN"},
-		{"ip6tables", "-t", "filter", "-A", out, "-p", "icmpv6", "-j", "RETURN"},
+		{"ip6tables", "-w", "5", "-t", "filter", "-A", out, "-d", "fe80::/10", "-j", "RETURN"},
+		{"ip6tables", "-w", "5", "-t", "filter", "-A", out, "-d", "ff00::/8", "-j", "RETURN"},
+		{"ip6tables", "-w", "5", "-t", "filter", "-A", out, "-p", "icmpv6", "-j", "RETURN"},
 	}
 
 	if tproxyActive {
 		// When TPROXY is active, v6 TCP that carries our fwmark is being
 		// proxied — let it through instead of rejecting it.
-		cmds = append(cmds, []string{"ip6tables", "-t", "filter", "-A", out,
+		cmds = append(cmds, []string{"ip6tables", "-w", "5", "-t", "filter", "-A", out,
 			"-p", "tcp", "-m", "mark", "--mark", tproxyMark, "-j", "RETURN"})
 	}
 
 	cmds = append(cmds,
 		// Catch-all: REJECT anything else.
-		[]string{"ip6tables", "-t", "filter", "-A", out, "-j", "REJECT", "--reject-with", "icmp6-adm-prohibited"},
+		[]string{"ip6tables", "-w", "5", "-t", "filter", "-A", out, "-j", "REJECT", "--reject-with", "icmp6-adm-prohibited"},
 		// Forward chain (hotspot v6 leaks).
-		[]string{"ip6tables", "-t", "filter", "-A", fwd, "-j", "REJECT", "--reject-with", "icmp6-adm-prohibited"},
+		[]string{"ip6tables", "-w", "5", "-t", "filter", "-A", fwd, "-j", "REJECT", "--reject-with", "icmp6-adm-prohibited"},
 		// Hooks at top of builtin chains.
-		[]string{"ip6tables", "-t", "filter", "-I", "OUTPUT", "1", "-j", out},
-		[]string{"ip6tables", "-t", "filter", "-I", "FORWARD", "1", "-j", fwd},
+		[]string{"ip6tables", "-w", "5", "-t", "filter", "-I", "OUTPUT", "1", "-j", out},
+		[]string{"ip6tables", "-w", "5", "-t", "filter", "-I", "FORWARD", "1", "-j", fwd},
 	)
 	for _, c := range cmds {
 		_ = exec.Command(c[0], c[1:]...).Run()
@@ -676,10 +576,10 @@ func applyIPv6Lockdown(prefix string, tproxyActive bool) {
 // Idempotent — safe to call when nothing was installed.
 func cleanupIPv6Lockdown(prefix string) {
 	for _, ch := range allLegacyV6FilterChains(prefix) {
-		_ = exec.Command("ip6tables", "-t", "filter", "-D", "OUTPUT", "-j", ch).Run()
-		_ = exec.Command("ip6tables", "-t", "filter", "-D", "FORWARD", "-j", ch).Run()
-		_ = exec.Command("ip6tables", "-t", "filter", "-F", ch).Run()
-		_ = exec.Command("ip6tables", "-t", "filter", "-X", ch).Run()
+		_ = exec.Command("ip6tables", "-w", "5", "-t", "filter", "-D", "OUTPUT", "-j", ch).Run()
+		_ = exec.Command("ip6tables", "-w", "5", "-t", "filter", "-D", "FORWARD", "-j", ch).Run()
+		_ = exec.Command("ip6tables", "-w", "5", "-t", "filter", "-F", ch).Run()
+		_ = exec.Command("ip6tables", "-w", "5", "-t", "filter", "-X", ch).Run()
 	}
 }
 
@@ -758,15 +658,15 @@ func flushConntrack() {
 func ProbeTPROXY() bool {
 	chain := "_SSHC_PROBE_TPROXY"
 	// Create temporary chain
-	if err := exec.Command("iptables", "-t", "mangle", "-N", chain).Run(); err != nil {
+	if err := exec.Command("iptables", "-w", "5", "-t", "mangle", "-N", chain).Run(); err != nil {
 		return false
 	}
 	// Attempt a TPROXY rule
-	err := exec.Command("iptables", "-t", "mangle", "-A", chain,
+	err := exec.Command("iptables", "-w", "5", "-t", "mangle", "-A", chain,
 		"-p", "tcp", "-j", "TPROXY",
 		"--on-port", "1", "--tproxy-mark", "0x1/0x1").Run()
 	// Cleanup regardless
-	_ = exec.Command("iptables", "-t", "mangle", "-F", chain).Run()
-	_ = exec.Command("iptables", "-t", "mangle", "-X", chain).Run()
+	_ = exec.Command("iptables", "-w", "5", "-t", "mangle", "-F", chain).Run()
+	_ = exec.Command("iptables", "-w", "5", "-t", "mangle", "-X", chain).Run()
 	return err == nil
 }

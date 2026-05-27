@@ -39,18 +39,10 @@ type LeakProtectionSettings struct {
 }
 
 type ConfigPatchRequest struct {
-	DNS              *DNSSettings              `json:"dns,omitempty"`
-	Hotspot          *HotspotSettings          `json:"hotspot,omitempty"`
-	LeakProtection   *LeakProtectionSettings   `json:"leak_protection,omitempty"`
-	TransparentProxy *TransparentProxySettings `json:"transparent_proxy,omitempty"`
-	Restart          bool                      `json:"restart,omitempty"`
-}
-
-// TransparentProxySettings is the patch surface for transparent proxy
-// mode selection (v1.2.0). Pointer-string so omitting the field means
-// "no change".
-type TransparentProxySettings struct {
-	Mode *string `json:"mode,omitempty"`
+	DNS            *DNSSettings            `json:"dns,omitempty"`
+	Hotspot        *HotspotSettings        `json:"hotspot,omitempty"`
+	LeakProtection *LeakProtectionSettings  `json:"leak_protection,omitempty"`
+	Restart        bool                    `json:"restart,omitempty"`
 }
 
 type ConfigUpdateResponse struct {

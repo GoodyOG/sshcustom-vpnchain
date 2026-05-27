@@ -4,42 +4,33 @@ Magisk/KernelSU module providing a transparent SSH tunnel with leak protection, 
 
 ## Features
 
-- **Transparent TCP Proxy** — All device TCP traffic routed through SSH tunnel automatically (TPROXY or REDIRECT mode)
-- **TPROXY Mode (v1.2.0+)** — mangle-table TPROXY with IPv4 + IPv6 support; auto-detected at runtime
+- **Transparent TCP Proxy** — All device TCP traffic routed through SSH tunnel via mangle-table TPROXY (IPv4 + IPv6 dual-stack)
 - **Leak Protection** — IPv6 lockdown, QUIC block, conntrack flush, sysctl hardening (all toggleable)
 - **SSH Tunnel** — Multiplexed SSH connection pool with payload injection for zero-rated exploitation
 - **SOCKS5 Proxy** — Local `127.0.0.1:1080` for apps that support explicit proxy
-- **VPN Chain** — Route traffic through Windscribe OpenVPN, tunneled inside the SSH connection
+- **VPN Chain** — Route traffic through OpenVPN (your own VPS or Windscribe), tunneled inside the SSH connection
 - **WebUI Dashboard** — Full control from `http://127.0.0.1:9190` (settings, profiles, runtime stats)
 - **Hotspot Support** — Tethered clients (Wi-Fi, USB, Bluetooth) share the tunnel automatically
+- **Lock-safe iptables** — All rules use `-w 5` to handle xtables lock contention gracefully
 
 ## How It Works
 
 ```
 Apps TCP
-  -> iptables (TPROXY or REDIRECT)
-  -> sshcustomd (port 10810, transparent proxy)
+  -> iptables mangle TPROXY (IPv4 + IPv6)
+  -> sshcustomd (port 10810, IP_TRANSPARENT dual-stack listener)
   -> SSH tunnel (multiplexed, payload-injected)
   -> Internet
 
 Optional VPN Chain:
-  Apps -> tun0 (OpenVPN) -> SOCKS5 (SSH tunnel) -> Windscribe -> Internet
+  Apps -> tun0 (OpenVPN TCP) -> SOCKS5 (SSH tunnel) -> Your VPS -> Internet
 ```
 
-## Proxy Modes
+## Kernel Requirements
 
-| Mode | Table | IPv4 | IPv6 | How destination is read |
-|------|-------|------|------|------------------------|
-| **TPROXY** | mangle | Yes | Yes | `conn.LocalAddr()` (IP_TRANSPARENT socket) |
-| **REDIRECT** | nat | Yes | No | `SO_ORIGINAL_DST` syscall |
-| **Auto** (default) | — | — | — | Probes kernel; uses TPROXY if available, else REDIRECT |
-
-Set from WebUI → Settings → Proxy Mode, or in `config.json`:
-```json
-"transparent_proxy": {
-  "mode": "auto"
-}
-```
+This build requires `CONFIG_NETFILTER_XT_TARGET_TPROXY` (and the IPv6
+variant `CONFIG_NF_TPROXY_IPV6`). The daemon probes at startup and refuses
+tunnel start with a clear WebUI error if TPROXY is unavailable.
 
 ## Leak Protection
 
@@ -50,7 +41,7 @@ All enabled by default. Toggleable from WebUI → Settings → Leak Protection:
 | Block IPv6 Leaks | `ip6tables` REJECT all outbound v6 except UID 0; apps fall back to v4 instantly |
 | Block QUIC | `iptables` REJECT UDP/443+80 except UID 0; forces TCP fallback in ~50ms |
 | Flush Conntrack | Drops stale flows on rule install/remove so old connections reconnect via tunnel |
-| Sysctl Hardening | `route_localnet=1` + `rp_filter=2` for reliable REDIRECT-through-loopback |
+| Sysctl Hardening | `route_localnet=1` + `rp_filter=2` for reliable TPROXY loopback delivery |
 
 ## VPN Chain
 
