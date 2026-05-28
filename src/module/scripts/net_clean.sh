@@ -44,6 +44,8 @@ clean_nat_v4() {
     run $IPT -t nat -F "$C"
     run $IPT -t nat -X "$C"
   done
+  # v3.1.0: Clean DNS REDIRECT rule (UDP/53 -> 10811)
+  run $IPT -w 5 -t nat -D OUTPUT -p udp --dport 53 -m owner ! --uid-owner 0 -j REDIRECT --to-ports 10811
 }
 
 clean_nat_v6() {

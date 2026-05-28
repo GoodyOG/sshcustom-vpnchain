@@ -59,6 +59,7 @@ import (
 type Config struct {
 	ChainsPrefix  string
 	TCPPort       int
+	DNSPort       int
 	APIPort       int
 	SocksPort     int
 	Hotspot       bool
@@ -184,6 +185,16 @@ func Apply(cfg Config, bypassIPs []string) error {
 	// kernel's default ACCEPT.
 	run("-w", "5", "-t", "nat", "-I", "OUTPUT", "1", "-p", "tcp", "-j", outChain)
 
+	// DNS redirect: send all UDP/53 from non-root processes to our DNS forwarder.
+	// This routes DNS through the SSH tunnel as TCP DNS, ensuring apps get
+	// correct CDN endpoints from the tunnel's perspective.
+	if cfg.DNSPort > 0 {
+		dnsPortStr := strconv.Itoa(cfg.DNSPort)
+		run("-w", "5", "-t", "nat", "-I", "OUTPUT", "1", "-p", "udp", "--dport", "53",
+			"-m", "owner", "!", "--uid-owner", "0",
+			"-j", "REDIRECT", "--to-ports", dnsPortStr)
+	}
+
 	if cfg.Hotspot {
 		ifaces := cfg.HotspotIfaces
 		if len(ifaces) == 0 {
@@ -261,6 +272,15 @@ func Cleanup(cfg Config) error {
 			_ = exec.Command("iptables", "-w", "5", "-t", "nat", "-D", "PREROUTING", "-i", iface, "-p", "tcp", "-j", ch).Run()
 			_ = exec.Command("iptables", "-w", "5", "-t", "nat", "-D", "PREROUTING", "-i", iface, "-j", ch).Run()
 		}
+	}
+
+	// Remove DNS redirect rule
+	if cfg.DNSPort > 0 {
+		dnsPortStr := strconv.Itoa(cfg.DNSPort)
+		_ = exec.Command("iptables", "-w", "5", "-t", "nat", "-D", "OUTPUT",
+			"-p", "udp", "--dport", "53",
+			"-m", "owner", "!", "--uid-owner", "0",
+			"-j", "REDIRECT", "--to-ports", dnsPortStr).Run()
 	}
 
 	// Phase 2: flush and delete the nat chains themselves.

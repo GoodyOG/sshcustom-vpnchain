@@ -681,11 +681,11 @@
 
         <h2 class="section-pill">Proxy Engine</h2>
         <div class="card">
-          <p style="color: var(--text-secondary); padding: 12px;">NAT REDIRECT (IPv4) &mdash; All TCP traffic transparently proxied through SSH tunnel. No kernel TPROXY required.</p>
+          <p style="color: var(--text-secondary); padding: 12px;">NAT REDIRECT (IPv4) &mdash; All TCP traffic transparently proxied through SSH tunnel. DNS forwarder converts UDP queries to TCP DNS-over-tunnel for correct CDN routing.</p>
         </div>
         <h2 class="section-pill">Leak Protection (Always On)</h2>
         <div class="card">
-          <p style="color: var(--text-secondary); padding: 12px;">IPv6 disabled (sysctl) &bull; QUIC blocked (UDP/443 DROP) &bull; Conntrack flushed on connect/disconnect</p>
+          <p style="color: var(--text-secondary); padding: 12px;">IPv6 disabled &bull; QUIC rejected (instant TCP fallback) &bull; DNS through tunnel (1.1.1.1 + 8.8.8.8 via TCP) &bull; Conntrack flushed on connect/disconnect</p>
         </div>
 
         <h2 class="section-pill">About</h2>

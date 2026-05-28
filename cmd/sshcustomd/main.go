@@ -1427,6 +1427,23 @@ func connectionManager(ctx context.Context, cfg Config, p Profile, st *State) {
 
 		stopSocks := startSocksIfEnabled(ctx, cfg, pool, st)
 		stopTransparent := startTransparentIfEnabled(ctx, cfg, pool, st, res)
+
+		// Start DNS forwarder so apps' UDP DNS queries get tunneled as TCP DNS through SSH.
+		// Without this, apps resolve via carrier DNS which gives wrong CDN endpoints.
+		var stopDNS func()
+		if cfg.TransparentProxy.Enabled {
+			dnsPort := cfg.TransparentProxy.DNSPort
+			if dnsPort <= 0 {
+				dnsPort = 10811
+			}
+			upstreams := []string{"1.1.1.1:53", "8.8.8.8:53"}
+			if stop, err := startDNSForwarder(ctx, "127.0.0.1", dnsPort, pool, upstreams, st); err != nil {
+				log.Printf("DNS forwarder failed to start on :%d: %v", dnsPort, err)
+				st.set(func() { st.LastError = "DNS forwarder failed: " + err.Error() })
+			} else {
+				stopDNS = stop
+			}
+		}
 		keepaliveSeconds := secondsDefault(cfg.Performance.KeepAliveSec, 60)
 		keepalive := time.NewTicker(time.Duration(keepaliveSeconds) * time.Second)
 		// 10s route check: halves subprocess overhead vs 3s without hurting reconnect speed.
@@ -1442,6 +1459,10 @@ func connectionManager(ctx context.Context, cfg Config, p Profile, st *State) {
 			if stopSocks != nil {
 				stopSocks()
 				stopSocks = nil
+			}
+			if stopDNS != nil {
+				stopDNS()
+				stopDNS = nil
 			}
 			pool.Close()
 			st.SetPoolSnapshot(pool.Snapshot())
@@ -2987,6 +3008,7 @@ func iptablesCfgFromConfig(cfg Config) iptables.Config {
 	return iptables.Config{
 		ChainsPrefix:  cfg.TransparentProxy.ChainsPrefix,
 		TCPPort:       cfg.TransparentProxy.TCPPort,
+		DNSPort:       cfg.TransparentProxy.DNSPort,
 		APIPort:       cfg.API.Port,
 		SocksPort:     cfg.LocalProxy.SocksPort,
 		Hotspot:       cfg.Hotspot.Enabled && cfg.Hotspot.TCP,
