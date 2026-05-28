@@ -1,8 +1,8 @@
 {
   "module": {
     "name": "SSHCustom-VPNChain",
-    "work_dir": "/data/adb/sshcustom",
-    "log_dir": "/data/adb/sshcustom/run",
+    "work_dir": "/data/adb/sshcustom-vpnchain",
+    "log_dir": "/data/adb/sshcustom-vpnchain/run",
     "manual_start": true
   },
   "api": {

@@ -10,7 +10,7 @@
 
 set -u
 
-WORK_DIR="/data/adb/sshcustom"
+WORK_DIR="/data/adb/sshcustom-vpnchain"
 VPNCHAIN_DIR="$WORK_DIR/vpnchain"
 CONFIGS_DIR="$VPNCHAIN_DIR/configs"
 AUTH_FILE="$VPNCHAIN_DIR/auth.txt"

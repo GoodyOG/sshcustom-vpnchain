@@ -13,7 +13,7 @@
 # The daemon is always running so the WebUI is always accessible. The autostart
 # flag only controls whether the tunnel connects automatically after boot.
 
-WORK_DIR="/data/adb/sshcustom"
+WORK_DIR="/data/adb/sshcustom-vpnchain"
 RUN_DIR="$WORK_DIR/run"
 LOG="$RUN_DIR/boot.log"
 AUTOSTART_MARKER="$RUN_DIR/autostart"

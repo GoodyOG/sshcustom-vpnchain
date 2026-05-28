@@ -4,13 +4,13 @@ PROPFILE=false
 POSTFSDATA=false
 LATESTARTSERVICE=true
 
-WORK_DIR="/data/adb/sshcustom"
+WORK_DIR="/data/adb/sshcustom-vpnchain"
 BIN_DIR="$WORK_DIR/bin"
 RUN_DIR="$WORK_DIR/run"
 CONFIG_DIR="$WORK_DIR/config"
 
 ui_print "****************************************"
-ui_print " SSHCustom-VPNChain v3.0.0"
+ui_print " SSHCustom-VPNChain v2.0.0"
 ui_print " SSH Tunnel + Windscribe VPN Chain"
 ui_print "****************************************"
 
@@ -23,6 +23,13 @@ case "$ABI" in
     abort "SSHCustom requires ARM64 or ARMv7 device"
     ;;
 esac
+
+# Migrate from old v1.0.1 directory if present
+OLD_DIR="/data/adb/sshcustom"
+if [ -d "$OLD_DIR" ] && [ ! -d "$WORK_DIR" ]; then
+  ui_print "Migrating data from $OLD_DIR to $WORK_DIR..."
+  mv "$OLD_DIR" "$WORK_DIR"
+fi
 
 mkdir -p "$WORK_DIR" "$BIN_DIR" "$RUN_DIR" "$CONFIG_DIR"
 

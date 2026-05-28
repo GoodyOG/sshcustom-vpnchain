@@ -1,6 +1,6 @@
 #!/system/bin/sh
 
-WORK_DIR="/data/adb/sshcustom"
+WORK_DIR="/data/adb/sshcustom-vpnchain"
 RUN_DIR="$WORK_DIR/run"
 CONTROL="$WORK_DIR/sshcustom.sh"
 ENABLED_FILE="$RUN_DIR/enabled"

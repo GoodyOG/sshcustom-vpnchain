@@ -275,8 +275,8 @@ func Cleanup(cfg Config) error {
 		prefix + "_TPROXY_PRE",
 	}
 	legacyMangleV6Chains := []string{
-		prefix + "_TPROXY_OUT",
-		prefix + "_TPROXY_PRE",
+		prefix + "_TPROXY_OUT6",
+		prefix + "_TPROXY_PRE6",
 	}
 	for _, ch := range legacyMangleChains {
 		_ = exec.Command("iptables", "-w", "5", "-t", "mangle", "-D", "OUTPUT", "-j", ch).Run()
