@@ -1,5 +1,5 @@
 // Package iptables installs and removes the SSHCustom transparent-proxy
-// chains.
+// chains with hardcoded leak protection.
 //
 // # What this does
 //
@@ -15,6 +15,12 @@
 // REDIRECT --to-ports <transparent_tcp_port>, which the kernel rewrites
 // in-place; the daemon then reads the original destination via the
 // SO_ORIGINAL_DST socket option.
+//
+// # Leak protection (always enabled)
+//
+//   - IPv6 is disabled via /proc sysctl to prevent IPv6 leaks.
+//   - QUIC (UDP/443) is blocked so browsers fall back to TCP through our tunnel.
+//   - Conntrack is flushed to prevent stale connections bypassing the tunnel.
 //
 // # The uid-0 RETURN rule
 //
@@ -43,6 +49,7 @@ package iptables
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -50,11 +57,11 @@ import (
 
 // Config is the subset of daemon config needed to install rules.
 type Config struct {
-	ChainsPrefix string
-	TCPPort      int
-	APIPort      int
-	SocksPort    int
-	Hotspot      bool
+	ChainsPrefix  string
+	TCPPort       int
+	APIPort       int
+	SocksPort     int
+	Hotspot       bool
 	HotspotIfaces []string
 }
 
@@ -96,6 +103,21 @@ func allLegacyChains(prefix string) []string {
 	}
 }
 
+// writeProc writes a value to a /proc or /sys path. Errors are ignored
+// because the path may not exist on all kernels.
+func writeProc(path, value string) {
+	_ = os.WriteFile(path, []byte(value), 0644)
+}
+
+// flushConntrack attempts to flush connection tracking state so that
+// existing connections are forced through the new rules.
+func flushConntrack() {
+	writeProc("/proc/sys/net/netfilter/nf_conntrack_flush", "1")
+	_ = exec.Command("conntrack", "-F").Run()
+	_ = exec.Command("ip", "route", "flush", "cache").Run()
+	_ = exec.Command("ip", "-6", "route", "flush", "cache").Run()
+}
+
 // Apply installs the SSHCustom transparent-proxy chains. bypassIPs are the
 // resolved SSH endpoint IPs that must be excluded from REDIRECT.
 //
@@ -126,8 +148,8 @@ func Apply(cfg Config, bypassIPs []string) error {
 	_ = Cleanup(cfg)
 
 	for _, ch := range []string{outChain, preChain} {
-		run("-t", "nat", "-N", ch)
-		run("-t", "nat", "-F", ch)
+		run("-w", "5", "-t", "nat", "-N", ch)
+		run("-w", "5", "-t", "nat", "-F", ch)
 	}
 
 	addBypasses := func(ch string, isOutput bool) {
@@ -135,24 +157,24 @@ func Apply(cfg Config, bypassIPs []string) error {
 		// before any uid is associated with a packet, so this rule would be
 		// a no-op (and on some kernels, an error) on PREROUTING.
 		if isOutput {
-			run("-t", "nat", "-A", ch, "-m", "owner", "--uid-owner", "0", "-j", "RETURN")
+			run("-w", "5", "-t", "nat", "-A", ch, "-m", "owner", "--uid-owner", "0", "-j", "RETURN")
 		}
 		for _, cidr := range privateCIDRs {
-			run("-t", "nat", "-A", ch, "-d", cidr, "-j", "RETURN")
+			run("-w", "5", "-t", "nat", "-A", ch, "-d", cidr, "-j", "RETURN")
 		}
 		for _, ip := range bypassIPs {
 			ip = strings.TrimSpace(ip)
 			if ip == "" {
 				continue
 			}
-			run("-t", "nat", "-A", ch, "-d", ip, "-j", "RETURN")
+			run("-w", "5", "-t", "nat", "-A", ch, "-d", ip, "-j", "RETURN")
 		}
 		for _, p := range []int{cfg.APIPort, cfg.SocksPort, cfg.TCPPort} {
 			if p > 0 {
-				run("-t", "nat", "-A", ch, "-p", "tcp", "--dport", strconv.Itoa(p), "-j", "RETURN")
+				run("-w", "5", "-t", "nat", "-A", ch, "-p", "tcp", "--dport", strconv.Itoa(p), "-j", "RETURN")
 			}
 		}
-		run("-t", "nat", "-A", ch, "-p", "tcp", "-j", "REDIRECT", "--to-ports", strconv.Itoa(port))
+		run("-w", "5", "-t", "nat", "-A", ch, "-p", "tcp", "-j", "REDIRECT", "--to-ports", strconv.Itoa(port))
 	}
 	addBypasses(outChain, true)
 	addBypasses(preChain, false)
@@ -160,7 +182,7 @@ func Apply(cfg Config, bypassIPs []string) error {
 	// Hook into the top of OUTPUT. -I 1 means "insert at position 1", which
 	// guarantees we run before any other module's rules and before the
 	// kernel's default ACCEPT.
-	run("-t", "nat", "-I", "OUTPUT", "1", "-p", "tcp", "-j", outChain)
+	run("-w", "5", "-t", "nat", "-I", "OUTPUT", "1", "-p", "tcp", "-j", outChain)
 
 	if cfg.Hotspot {
 		ifaces := cfg.HotspotIfaces
@@ -171,14 +193,25 @@ func Apply(cfg Config, bypassIPs []string) error {
 			if strings.TrimSpace(iface) == "" {
 				continue
 			}
-			run("-t", "nat", "-I", "PREROUTING", "1", "-i", iface, "-p", "tcp", "-j", preChain)
+			run("-w", "5", "-t", "nat", "-I", "PREROUTING", "1", "-i", iface, "-p", "tcp", "-j", preChain)
 		}
 		// IP forwarding must be on for tethered TCP to traverse PREROUTING.
-		// Errors are silently ignored — sysctl can fail if the property is
-		// already 1, and we don't want that to fail Apply() overall.
 		_ = exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1").Run()
-		_ = exec.Command("iptables", "-I", "FORWARD", "-j", "ACCEPT").Run()
+		run("-w", "5", "-I", "FORWARD", "-j", "ACCEPT")
 	}
+
+	// --- Leak protection (hardcoded, always applied) ---
+
+	// Disable IPv6 to prevent leaks via IPv6-capable networks.
+	writeProc("/proc/sys/net/ipv6/conf/all/disable_ipv6", "1")
+	writeProc("/proc/sys/net/ipv6/conf/default/disable_ipv6", "1")
+
+	// Block QUIC (UDP/443) so browsers fall back to TCP through our tunnel.
+	// UID 0 is excluded so our own daemon traffic (DNS, etc.) is unaffected.
+	run("-w", "5", "-t", "filter", "-I", "OUTPUT", "1", "-p", "udp", "--dport", "443", "-m", "owner", "!", "--uid-owner", "0", "-j", "DROP")
+
+	// Flush conntrack to ensure stale connections don't bypass new rules.
+	flushConntrack()
 
 	// Filter out errors that genuinely don't matter. "No chain/target/match"
 	// and "does a matching rule exist?" come from the cleanup pre-pass when
@@ -200,9 +233,9 @@ func Apply(cfg Config, bypassIPs []string) error {
 	return nil
 }
 
-// Cleanup removes every SSHCustom chain and the FORWARD ACCEPT rule. Always
-// returns nil; failures here are logged via the caller's discretion but
-// don't propagate because cleanup is best-effort.
+// Cleanup removes every SSHCustom chain and restores leak-protection
+// settings. Always returns nil; failures here are logged via the caller's
+// discretion but don't propagate because cleanup is best-effort.
 func Cleanup(cfg Config) error {
 	prefix := cfg.ChainsPrefix
 	if prefix == "" {
@@ -217,28 +250,82 @@ func Cleanup(cfg Config) error {
 	// Phase 1: detach hooks from OUTPUT/PREROUTING. We run -D against every
 	// shape of rule we have ever installed to handle rolling upgrades.
 	for _, ch := range chains {
-		_ = exec.Command("iptables", "-t", "nat", "-D", "OUTPUT", "-p", "tcp", "-j", ch).Run()
-		_ = exec.Command("iptables", "-t", "nat", "-D", "OUTPUT", "-j", ch).Run()
-		_ = exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-p", "tcp", "-j", ch).Run()
-		_ = exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-j", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "nat", "-D", "OUTPUT", "-p", "tcp", "-j", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "nat", "-D", "OUTPUT", "-j", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "nat", "-D", "PREROUTING", "-p", "tcp", "-j", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "nat", "-D", "PREROUTING", "-j", ch).Run()
 		for _, iface := range ifaces {
 			if strings.TrimSpace(iface) == "" {
 				continue
 			}
-			_ = exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", iface, "-p", "tcp", "-j", ch).Run()
-			_ = exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", iface, "-j", ch).Run()
+			_ = exec.Command("iptables", "-w", "5", "-t", "nat", "-D", "PREROUTING", "-i", iface, "-p", "tcp", "-j", ch).Run()
+			_ = exec.Command("iptables", "-w", "5", "-t", "nat", "-D", "PREROUTING", "-i", iface, "-j", ch).Run()
 		}
 	}
-	// Phase 2: flush and delete the chains themselves. Must come after
-	// phase 1 because iptables refuses to delete a chain still referenced
-	// by a hook.
+
+	// Phase 2: flush and delete the nat chains themselves.
 	for _, ch := range chains {
-		_ = exec.Command("iptables", "-t", "nat", "-F", ch).Run()
-		_ = exec.Command("iptables", "-t", "nat", "-X", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "nat", "-F", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "nat", "-X", ch).Run()
 	}
-	// FORWARD ACCEPT was added unconditionally for hotspot mode; remove it
-	// even when we didn't install it this session, so legacy rules from a
-	// previous module version get cleaned up on first run.
-	_ = exec.Command("iptables", "-D", "FORWARD", "-j", "ACCEPT").Run()
+
+	// Phase 3: remove legacy mangle chains from prior TPROXY versions.
+	legacyMangleChains := []string{
+		prefix + "_TPROXY_OUT",
+		prefix + "_TPROXY_PRE",
+	}
+	legacyMangleV6Chains := []string{
+		prefix + "_TPROXY_OUT",
+		prefix + "_TPROXY_PRE",
+	}
+	for _, ch := range legacyMangleChains {
+		_ = exec.Command("iptables", "-w", "5", "-t", "mangle", "-D", "OUTPUT", "-j", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-j", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "mangle", "-F", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "mangle", "-X", ch).Run()
+	}
+	for _, ch := range legacyMangleV6Chains {
+		_ = exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-D", "OUTPUT", "-j", ch).Run()
+		_ = exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-D", "PREROUTING", "-j", ch).Run()
+		_ = exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-F", ch).Run()
+		_ = exec.Command("ip6tables", "-w", "5", "-t", "mangle", "-X", ch).Run()
+	}
+
+	// Phase 4: remove legacy filter chains from prior versions.
+	legacyFilterChains := []string{
+		prefix + "_FILTER_QUIC",
+		prefix + "_FILTER_OUTPUT6",
+		prefix + "_FILTER_FORWARD6",
+	}
+	for _, ch := range legacyFilterChains {
+		_ = exec.Command("iptables", "-w", "5", "-t", "filter", "-D", "OUTPUT", "-j", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "filter", "-D", "FORWARD", "-j", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "filter", "-F", ch).Run()
+		_ = exec.Command("iptables", "-w", "5", "-t", "filter", "-X", ch).Run()
+		_ = exec.Command("ip6tables", "-w", "5", "-t", "filter", "-D", "OUTPUT", "-j", ch).Run()
+		_ = exec.Command("ip6tables", "-w", "5", "-t", "filter", "-D", "FORWARD", "-j", ch).Run()
+		_ = exec.Command("ip6tables", "-w", "5", "-t", "filter", "-F", ch).Run()
+		_ = exec.Command("ip6tables", "-w", "5", "-t", "filter", "-X", ch).Run()
+	}
+
+	// Phase 5: remove QUIC block rule from filter OUTPUT.
+	_ = exec.Command("iptables", "-w", "5", "-t", "filter", "-D", "OUTPUT", "-p", "udp", "--dport", "443", "-m", "owner", "!", "--uid-owner", "0", "-j", "DROP").Run()
+
+	// Phase 6: restore IPv6.
+	writeProc("/proc/sys/net/ipv6/conf/all/disable_ipv6", "0")
+	writeProc("/proc/sys/net/ipv6/conf/default/disable_ipv6", "0")
+
+	// Phase 7: flush conntrack.
+	flushConntrack()
+
+	// Phase 8: remove FORWARD ACCEPT rule (added for hotspot mode).
+	_ = exec.Command("iptables", "-w", "5", "-D", "FORWARD", "-j", "ACCEPT").Run()
+
+	// Phase 9: remove policy routes from prior TPROXY versions.
+	_ = exec.Command("ip", "rule", "del", "fwmark", "0x1/0x1", "table", "100").Run()
+	_ = exec.Command("ip", "route", "del", "local", "default", "dev", "lo", "table", "100").Run()
+	_ = exec.Command("ip", "-6", "rule", "del", "fwmark", "0x1/0x1", "table", "100").Run()
+	_ = exec.Command("ip", "-6", "route", "del", "local", "default", "dev", "lo", "table", "100").Run()
+
 	return nil
 }
