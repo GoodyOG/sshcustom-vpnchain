@@ -2331,8 +2331,8 @@ func tuneTCPConn(c net.Conn, cfg Config, serverSide bool) {
 	if tc, ok := c.(*net.TCPConn); ok {
 		_ = tc.SetNoDelay(true)
 		_ = tc.SetKeepAlive(true)
-		ka := time.Duration(secondsDefault(cfg.Performance.KeepAliveSec, 60)) * time.Second
-		_ = tc.SetKeepAlivePeriod(ka)
+		// 15s TCP keepalive prevents carrier NAT from killing idle connections
+		_ = tc.SetKeepAlivePeriod(15 * time.Second)
 		if serverSide {
 			// Large buffers for download throughput — the kernel can handle 4MB per conn
 			_ = tc.SetReadBuffer(4 * 1024 * 1024)
@@ -2359,7 +2359,9 @@ func dialTCPResolved(ctx context.Context, cfg Config, host string, port int, fal
 		return c, addr, "literal_ip", []string{ip.String()}, err
 	}
 
-	if normalizeDNSMode(cfg.DNS.Mode) != "device" {
+	// Always try shell/cached DNS first — works reliably on Android
+	// and avoids the 10s timeout from Go's system resolver trying [::1]:53
+	{
 		ips, method := resolveHostSmart(ctx, cfg, host)
 		if len(ips) > 0 {
 			var lastErr error
@@ -2377,7 +2379,7 @@ func dialTCPResolved(ctx context.Context, cfg Config, host string, port int, fal
 			}
 			log.Printf("configured DNS mode=%s resolved host=%s but all dials failed: %v", cfg.DNS.Mode, host, lastErr)
 		} else {
-			log.Printf("configured DNS mode=%s failed for host=%s; falling back to device resolver path", cfg.DNS.Mode, host)
+			log.Printf("shell/cached DNS failed for host=%s; trying system resolver", host)
 		}
 	}
 
@@ -2385,8 +2387,8 @@ func dialTCPResolved(ctx context.Context, cfg Config, host string, port int, fal
 	addr := net.JoinHostPort(host, portStr)
 	log.Printf("dial tcp %s method=device_system_dns", addr)
 	d := baseDialer(cfg)
-	if d.Timeout <= 0 || d.Timeout > 10*time.Second {
-		d.Timeout = 10 * time.Second
+	if d.Timeout <= 0 || d.Timeout > 3*time.Second {
+		d.Timeout = 3 * time.Second
 	}
 	c, err := d.DialContext(ctx, "tcp", addr)
 	if err == nil {
@@ -3526,8 +3528,19 @@ func secondsDefault(v, def int) int {
 
 func baseDialer(cfg Config) net.Dialer {
 	timeout := time.Duration(secondsDefault(cfg.Performance.ConnectTimeoutSec, 20)) * time.Second
-	keepAlive := time.Duration(secondsDefault(cfg.Performance.KeepAliveSec, 30)) * time.Second
-	return net.Dialer{Timeout: timeout, KeepAlive: keepAlive}
+	keepAlive := time.Duration(secondsDefault(cfg.Performance.KeepAliveSec, 25)) * time.Second
+	return net.Dialer{
+		Timeout:   timeout,
+		KeepAlive: keepAlive,
+		Resolver: &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				// Force IPv4 DNS to avoid [::1]:53 failures when IPv6 is disabled
+				nd := net.Dialer{Timeout: 3 * time.Second}
+				return nd.DialContext(ctx, "udp", "127.0.0.1:53")
+			},
+		},
+	}
 }
 
 func makeDialer(cfg Config) net.Dialer {

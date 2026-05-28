@@ -679,6 +679,15 @@
 
         <button class="md3-filled" onclick="saveNetwork()" style="margin-top:8px">Apply &amp; Restart</button>
 
+        <h2 class="section-pill">Proxy Engine</h2>
+        <div class="card">
+          <p style="color: var(--text-secondary); padding: 12px;">NAT REDIRECT (IPv4) &mdash; All TCP traffic transparently proxied through SSH tunnel. No kernel TPROXY required.</p>
+        </div>
+        <h2 class="section-pill">Leak Protection (Always On)</h2>
+        <div class="card">
+          <p style="color: var(--text-secondary); padding: 12px;">IPv6 disabled (sysctl) &bull; QUIC blocked (UDP/443 DROP) &bull; Conntrack flushed on connect/disconnect</p>
+        </div>
+
         <h2 class="section-pill">About</h2>
         <div class="list-container">
           <div class="list-item">
