@@ -45,12 +45,12 @@
   "performance": {
     "buffer_size": 262144,
     "connect_timeout_seconds": 25,
-    "keepalive_seconds": 25,
+    "keepalive_seconds": 10,
     "retry_initial_delay_seconds": 5,
     "retry_max_delay_seconds": 45,
     "read_probe_timeout_seconds": 10,
-    "ssh_pool_size": 4,
-    "max_streams_per_ssh": 64,
+    "ssh_pool_size": 2,
+    "max_streams_per_ssh": 128,
     "verbose_transparent_logs": false,
     "stream_idle_timeout_seconds": 600,
     "stream_acquire_timeout_seconds": 12

@@ -1579,7 +1579,7 @@ func (c *pooledNetConn) Close() error {
 func newSSHPool(ctx context.Context, cfg Config, p Profile, first *xssh.Client, st *State) *SSHPool {
 	size := cfg.Performance.SSHPoolSize
 	if size <= 0 {
-		size = 4
+		size = 2
 	}
 	if usesTLS(p) {
 		// 4 TLS sessions: enough parallelism for sustained download + browsing.
@@ -1590,8 +1590,8 @@ func newSSHPool(ctx context.Context, cfg Config, p Profile, first *xssh.Client, 
 			size = 1
 		}
 	} else {
-		if size < 2 {
-			size = 2
+		if size < 1 {
+			size = 1
 		}
 		if size > 6 {
 			size = 6
@@ -1607,8 +1607,8 @@ func newSSHPool(ctx context.Context, cfg Config, p Profile, first *xssh.Client, 
 	if usesTLS(p) && maxStreams < 64 {
 		maxStreams = 64
 	}
-	if maxStreams > 128 {
-		maxStreams = 128
+	if maxStreams > 256 {
+		maxStreams = 256
 	}
 	// maxStreams is only a balancing target. Do not reject user traffic just because
 	// paused downloads left sockets open; let Dropbear be the real channel limit.
@@ -1711,9 +1711,6 @@ func (p *SSHPool) Close() {
 }
 
 func (p *SSHPool) EnsureAsync() {
-	// Debounce: if another EnsureAsync fired within the last 500ms, skip.
-	// This prevents a burst of missed Dial() calls from launching dozens
-	// of concurrent reconnect goroutines.
 	now := time.Now().UnixMilli()
 	last := atomic.LoadInt64(&p.lastEnsure)
 	if now-last < 500 {
@@ -1727,6 +1724,7 @@ func (p *SSHPool) EnsureAsync() {
 	if closed {
 		return
 	}
+	reconnectIdx := 0
 	for _, it := range items {
 		it.mu.Lock()
 		need := it.client == nil && !it.reconnecting
@@ -1735,7 +1733,14 @@ func (p *SSHPool) EnsureAsync() {
 		}
 		it.mu.Unlock()
 		if need {
-			go p.reconnectSlot(it)
+			delay := time.Duration(reconnectIdx) * 1500 * time.Millisecond
+			reconnectIdx++
+			go func(d time.Duration, slot *pooledSSH) {
+				if d > 0 {
+					sleepCtx(p.ctx, d)
+				}
+				p.reconnectSlot(slot)
+			}(delay, it)
 		}
 	}
 	p.st.SetPoolSnapshot(p.Snapshot())

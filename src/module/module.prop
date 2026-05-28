@@ -1,7 +1,7 @@
 id=sshcustom_vpnchain
 name=SSHCustom-VPNChain
-version=v2.0.1
-versionCode=20100
+version=v2.0.2
+versionCode=20200
 author=GoodyOG
 updateJson=https://raw.githubusercontent.com/GoodyOG/sshcustom-vpnchain/main/src/module/update.json
 description=[ stopped ] SSHCustom-VPNChain - NAT REDIRECT transparent proxy + IPv6/QUIC leak protection. SSH tunnel, SOCKS5, hotspot share, VPN Chain, WebUI. Dashboard at http://127.0.0.1:9190
