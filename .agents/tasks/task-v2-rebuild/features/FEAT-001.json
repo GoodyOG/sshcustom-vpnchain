@@ -1,0 +1,21 @@
+{
+  "id": "FEAT-001",
+  "type": "chore",
+  "description": "Create the v2.0.0-rebuild branch from the v1.0.1 tag as the starting point for the rebuild.",
+  "status": "completed",
+  "steps": [
+    "Run: git checkout v1.0.1",
+    "Run: git checkout -b v2.0.0-rebuild",
+    "Verify the branch is created and HEAD points to v1.0.1 commit"
+  ],
+  "acceptance_criteria": [
+    "Branch v2.0.0-rebuild exists",
+    "HEAD is at the v1.0.1 commit"
+  ],
+  "verification": [
+    "Run: git branch --show-current (should output v2.0.0-rebuild)",
+    "Run: git log --oneline -1 (should show v1.0.1 commit)"
+  ],
+  "blocked_reason": null,
+  "findings": "Branch v2.0.0-rebuild created from v1.0.1 tag (commit d9d3bd4). The .agents/ directory is untracked on this branch."
+}
