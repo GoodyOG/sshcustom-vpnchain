@@ -2,7 +2,7 @@
   "id": "FEAT-002",
   "type": "feat",
   "description": "Rewrite the daemon (cmd/sshcustomd/main.go) to remove transparent proxy, iptables, DNS forwarder, and originalDst code. Add tun2proxy process management, SSH local port forward for udpgw (127.0.0.1:7300), and tun_setup.sh script invocation. Simplify Config struct to match new architecture. Keep all SSH transport chain, SSHPool, SOCKS5, WebUI/API, lifecycle, VPN Chain, and profile management code intact.",
-  "status": "pending",
+  "status": "in_progress",
   "steps": [
     "Delete cmd/sshcustomd/dnsforward.go (DNS forwarder no longer needed - tun2proxy --dns virtual handles DNS)",
     "Delete cmd/sshcustomd/originaldst_linux.go and cmd/sshcustomd/originaldst_unsupported.go (no SO_ORIGINAL_DST needed)",

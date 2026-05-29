@@ -29,7 +29,6 @@ import (
 
 	"github.com/GoodyOG/SSHCustom_Magisk/internal/apiv1"
 	"github.com/GoodyOG/SSHCustom_Magisk/internal/dnsx"
-	"github.com/GoodyOG/SSHCustom_Magisk/internal/iptables"
 	"github.com/GoodyOG/SSHCustom_Magisk/internal/metrics"
 	"github.com/GoodyOG/SSHCustom_Magisk/internal/version"
 	"github.com/GoodyOG/SSHCustom_Magisk/internal/webui"
@@ -77,14 +76,11 @@ type Config struct {
 		SocksHost    string `json:"socks_host"`
 		SocksPort    int    `json:"socks_port"`
 	} `json:"local_proxy"`
-	TransparentProxy struct {
-		Enabled       bool   `json:"enabled"`
-		TCPPort       int    `json:"tcp_port"`
-		DNSPort       int    `json:"dns_port"`
-		UDPMode       string `json:"udp_mode"`
-		ChainsPrefix  string `json:"chains_prefix"`
-		ApplyAfterSSH bool   `json:"apply_after_ssh_connected"`
-	} `json:"transparent_proxy"`
+	Tunnel struct {
+		Enabled   bool   `json:"enabled"`
+		Mode      string `json:"mode"`
+		UDPGWPort int    `json:"udpgw_port"`
+	} `json:"tunnel"`
 	Hotspot struct {
 		Enabled    bool     `json:"enabled"`
 		TCP        bool     `json:"tcp"`
@@ -190,10 +186,8 @@ type State struct {
 	SocksEnabled        bool      `json:"socks_enabled"`
 	SocksAddr           string    `json:"socks_addr"`
 	SocksRunning        bool      `json:"socks_running"`
-	TransparentEnabled  bool      `json:"transparent_enabled"`
-	TransparentAddr     string    `json:"transparent_addr"`
-	TransparentRunning  bool      `json:"transparent_running"`
-	TransparentApplied  bool      `json:"transparent_applied"`
+	TunProxyRunning     bool      `json:"tun_proxy_running"`
+	UDPGWRunning        bool      `json:"udpgw_running"`
 	HotspotRunning      bool      `json:"hotspot_running"`
 	CPUPercent          float64   `json:"cpu_percent"`
 	MemoryRSSBytes      uint64    `json:"memory_rss_bytes"`
@@ -321,10 +315,8 @@ func (s *State) Snapshot() map[string]any {
 		"socks_enabled":           s.SocksEnabled,
 		"socks_addr":              s.SocksAddr,
 		"socks_running":           s.SocksRunning,
-		"transparent_enabled":     s.TransparentEnabled,
-		"transparent_addr":        s.TransparentAddr,
-		"transparent_running":     s.TransparentRunning,
-		"transparent_applied":     s.TransparentApplied,
+		"tun_proxy_running":       s.TunProxyRunning,
+		"udpgw_running":           s.UDPGWRunning,
 		"hotspot_running":         s.HotspotRunning,
 		"cpu_percent":             s.CPUPercent,
 		"memory_rss_bytes":        s.MemoryRSSBytes,
@@ -568,8 +560,6 @@ func run(args []string) {
 		HotspotEnabled:     cfg.Hotspot.Enabled,
 		SocksEnabled:       cfg.LocalProxy.SocksEnabled,
 		SocksAddr:          socksAddr(cfg),
-		TransparentEnabled: cfg.TransparentProxy.Enabled,
-		TransparentAddr:    transparentAddr(cfg),
 		DNSMode:            cfg.DNS.Mode,
 		DNSServers:         append([]string(nil), cfg.DNS.Servers...),
 		Note:               "v1.0.0: unified release line, dual-ABI packaging, UI refresh, packet tuning, circuit breaker, and reconnect hardening.",
@@ -604,8 +594,6 @@ func run(args []string) {
 			state.HotspotEnabled = next.Hotspot.Enabled
 			state.SocksEnabled = next.LocalProxy.SocksEnabled
 			state.SocksAddr = socksAddr(next)
-			state.TransparentEnabled = next.TransparentProxy.Enabled
-			state.TransparentAddr = transparentAddr(next)
 			state.DNSMode = next.DNS.Mode
 			state.DNSServers = append([]string(nil), next.DNS.Servers...)
 			state.LastEvent = "configuration updated; restart may be required"
@@ -1249,12 +1237,13 @@ func run(args []string) {
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
-		// Clean iptables
-		netClean := filepath.Join(*workDir, "net_clean.sh")
+		// Clean iptables / tun device
+		netClean := filepath.Join(*workDir, "scripts", "net_clean.sh")
 		if _, err := os.Stat(netClean); err == nil {
 			cmd := exec.Command("/system/bin/sh", netClean)
 			_ = cmd.Run()
 		}
+		_ = callTunSetup(*workDir, "stop")
 		state.set(func() {
 			state.Running = false
 			state.Connected = false
@@ -1268,6 +1257,8 @@ func run(args []string) {
 			state.PoolHealthy = 0
 			state.PoolReconnecting = 0
 			state.PoolStreams = 0
+			state.TunProxyRunning = false
+			state.UDPGWRunning = false
 		})
 		updateModuleProp("disconnected")
 		log.Printf("tunnel stopped")
@@ -1416,7 +1407,7 @@ func connectionManager(ctx context.Context, cfg Config, p Profile, st *State) {
 			st.Connected = true
 			st.SSHAuthenticated = true
 			st.LastError = ""
-			st.LastEvent = fmt.Sprintf("SSH authenticated; adaptive pool %d/%d ready; SOCKS5 + transparent TCP + hotspot TCP enabled", pool.Healthy(), pool.Size())
+			st.LastEvent = fmt.Sprintf("SSH authenticated; adaptive pool %d/%d ready; SOCKS5 + tun2proxy enabled", pool.Healthy(), pool.Size())
 			st.RemoteBanner = res.Banner
 			st.HTTPStatuses = res.Statuses
 			st.ResolvedDial = res.ResolvedDial
@@ -1426,22 +1417,27 @@ func connectionManager(ctx context.Context, cfg Config, p Profile, st *State) {
 		log.Printf("SSH authenticated: banner=%q http_statuses=%v pool_size=%d max_streams_per_ssh=%d", res.Banner, res.Statuses, pool.Size(), pool.MaxStreams())
 
 		stopSocks := startSocksIfEnabled(ctx, cfg, pool, st)
-		stopTransparent := startTransparentIfEnabled(ctx, cfg, pool, st, res)
 
-		// Start DNS forwarder so apps' UDP DNS queries get tunneled as TCP DNS through SSH.
-		// Without this, apps resolve via carrier DNS which gives wrong CDN endpoints.
-		var stopDNS func()
-		if cfg.TransparentProxy.Enabled {
-			dnsPort := cfg.TransparentProxy.DNSPort
-			if dnsPort <= 0 {
-				dnsPort = 10811
-			}
-			upstreams := []string{"1.1.1.1:53", "8.8.8.8:53"}
-			if stop, err := startDNSForwarder(ctx, "127.0.0.1", dnsPort, pool, upstreams, st); err != nil {
-				log.Printf("DNS forwarder failed to start on :%d: %v", dnsPort, err)
-				st.set(func() { st.LastError = "DNS forwarder failed: " + err.Error() })
+		// Start UDPGW forward (SSH local port forward for badvpn-udpgw)
+		var stopUDPGW func()
+		if cfg.Tunnel.Enabled {
+			if stop, err := startUDPGWForward(ctx, pool, cfg, st); err != nil {
+				log.Printf("udpgw forward failed to start: %v", err)
+				st.set(func() { st.LastError = "udpgw forward failed: " + err.Error() })
 			} else {
-				stopDNS = stop
+				stopUDPGW = stop
+			}
+		}
+
+		// Start tun_setup.sh and tun2proxy
+		var stopTun2Proxy func()
+		if cfg.Tunnel.Enabled {
+			_ = callTunSetup(cfg.Module.WorkDir, "start")
+			if stop, err := startTun2Proxy(ctx, cfg, cfg.Module.WorkDir, st); err != nil {
+				log.Printf("tun2proxy failed to start: %v", err)
+				st.set(func() { st.LastError = "tun2proxy failed: " + err.Error() })
+			} else {
+				stopTun2Proxy = stop
 			}
 		}
 		keepaliveSeconds := secondsDefault(cfg.Performance.KeepAliveSec, 60)
@@ -1452,17 +1448,20 @@ func connectionManager(ctx context.Context, cfg Config, p Profile, st *State) {
 		routeChangeMismatches := 0 // consecutive mismatches before acting
 
 		stopActive := func(reason string) {
-			if stopTransparent != nil {
-				stopTransparent()
-				stopTransparent = nil
+			if stopTun2Proxy != nil {
+				stopTun2Proxy()
+				stopTun2Proxy = nil
+			}
+			if cfg.Tunnel.Enabled {
+				_ = callTunSetup(cfg.Module.WorkDir, "stop")
+			}
+			if stopUDPGW != nil {
+				stopUDPGW()
+				stopUDPGW = nil
 			}
 			if stopSocks != nil {
 				stopSocks()
 				stopSocks = nil
-			}
-			if stopDNS != nil {
-				stopDNS()
-				stopDNS = nil
 			}
 			pool.Close()
 			st.SetPoolSnapshot(pool.Snapshot())
@@ -2861,167 +2860,126 @@ func streamIdleTimeout(cfg Config) time.Duration {
 	return time.Duration(sec) * time.Second
 }
 
-func transparentAddr(cfg Config) string {
-	port := cfg.TransparentProxy.TCPPort
-	if port <= 0 {
-		port = 10810
-	}
-	return net.JoinHostPort("0.0.0.0", strconv.Itoa(port))
-}
 
-func startTransparentIfEnabled(ctx context.Context, cfg Config, pool *SSHPool, st *State, res ProbeResult) func() {
-	if !cfg.TransparentProxy.Enabled {
-		st.set(func() {
-			st.TransparentEnabled = false
-			st.TransparentRunning = false
-			st.TransparentApplied = false
-			st.HotspotRunning = false
-		})
-		return nil
+// startUDPGWForward listens locally and forwards connections through the SSH pool
+// to badvpn-udpgw running on the remote server.
+func startUDPGWForward(ctx context.Context, pool *SSHPool, cfg Config, st *State) (func(), error) {
+	port := cfg.Tunnel.UDPGWPort
+	if port <= 0 {
+		port = 7300
 	}
-	addr := transparentAddr(cfg)
+	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Printf("transparent TCP listen failed on %s: %v", addr, err)
-		st.set(func() {
-			st.TransparentEnabled = true
-			st.TransparentRunning = false
-			st.TransparentApplied = false
-			st.LastError = "transparent TCP listen failed: " + err.Error()
-		})
-		return nil
+		return nil, err
 	}
-	if err := cleanupTransparentRules(cfg); err != nil {
-		log.Printf("transparent cleanup before apply had errors: %v", err)
-	}
-	if err := applyTransparentRules(cfg, res.ResolvedIPs); err != nil {
-		log.Printf("transparent rules apply failed: %v", err)
-		_ = ln.Close()
-		st.set(func() {
-			st.TransparentEnabled = true
-			st.TransparentRunning = false
-			st.TransparentApplied = false
-			st.HotspotRunning = false
-			st.LastError = "transparent rules apply failed: " + err.Error()
-		})
-		_ = cleanupTransparentRules(cfg)
-		return nil
-	}
-
-	done := make(chan struct{})
-	st.set(func() {
-		st.TransparentEnabled = true
-		st.TransparentAddr = addr
-		st.TransparentRunning = true
-		st.TransparentApplied = true
-		st.HotspotRunning = cfg.Hotspot.Enabled && cfg.Hotspot.TCP
-		st.LastEvent = "transparent TCP proxy active on " + addr
-	})
-	log.Printf("transparent TCP listening on %s; iptables applied; hotspot_tcp=%v", addr, cfg.Hotspot.Enabled && cfg.Hotspot.TCP)
+	log.Printf("udpgw forward listening on %s", addr)
+	st.set(func() { st.UDPGWRunning = true })
 	go func() {
-		defer close(done)
 		for {
-			c, err := ln.Accept()
+			conn, err := ln.Accept()
 			if err != nil {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-				}
-				log.Printf("transparent accept error: %v", err)
 				return
 			}
-			tuneTCPConn(c, cfg, false)
-			go handleTransparentConn(ctx, c, pool, cfg, st)
+			go func(c net.Conn) {
+				defer c.Close()
+				remote, err := pool.Dial(ctx, "tcp", addr)
+				if err != nil {
+					return
+				}
+				defer remote.Close()
+				done := make(chan struct{}, 2)
+				go func() { io.Copy(remote, c); done <- struct{}{} }()
+				go func() { io.Copy(c, remote); done <- struct{}{} }()
+				<-done
+			}(conn)
 		}
 	}()
 	return func() {
-		_ = ln.Close()
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
+		ln.Close()
+		st.set(func() { st.UDPGWRunning = false })
+		log.Printf("udpgw forward stopped")
+	}, nil
+}
+
+// startTun2Proxy launches the tun2proxy binary that creates a TUN device and routes traffic.
+func startTun2Proxy(ctx context.Context, cfg Config, workDir string, st *State) (func(), error) {
+	bin := filepath.Join(workDir, "bin", "tun2proxy")
+	if _, err := os.Stat(bin); err != nil {
+		return nil, fmt.Errorf("tun2proxy binary not found: %s", bin)
+	}
+
+	socksPort := cfg.LocalProxy.SocksPort
+	if socksPort <= 0 {
+		socksPort = 1080
+	}
+	udpgwPort := cfg.Tunnel.UDPGWPort
+	if udpgwPort <= 0 {
+		udpgwPort = 7300
+	}
+
+	args := []string{
+		"--device", "tun_sshc",
+		"--proxy", fmt.Sprintf("socks5://127.0.0.1:%d", socksPort),
+		"--dns", "virtual",
+		"--dns-addr", "8.8.8.8",
+		"--udpgw-server", fmt.Sprintf("127.0.0.1:%d", udpgwPort),
+		"--udpgw-keepalive", "25",
+		"--udp-timeout", "30",
+		"--fwmark", "2",
+		"--setup",
+		"--bypass", "10.0.0.0/8",
+		"--bypass", "172.16.0.0/12",
+		"--bypass", "192.168.0.0/16",
+		"--bypass", "127.0.0.0/8",
+		"--daemonize",
+	}
+
+	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("tun2proxy start failed: %w", err)
+	}
+
+	log.Printf("tun2proxy started pid=%d", cmd.Process.Pid)
+	st.set(func() { st.TunProxyRunning = true })
+
+	// Wait for process in background
+	go func() {
+		_ = cmd.Wait()
+		st.set(func() { st.TunProxyRunning = false })
+	}()
+
+	return func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Signal(syscall.SIGTERM)
+			time.Sleep(500 * time.Millisecond)
+			_ = cmd.Process.Kill()
 		}
-		if err := cleanupTransparentRules(cfg); err != nil {
-			log.Printf("transparent cleanup failed: %v", err)
-		}
-		log.Printf("transparent TCP stopped on %s; iptables cleaned", addr)
-		st.set(func() {
-			st.TransparentRunning = false
-			st.TransparentApplied = false
-			st.HotspotRunning = false
-		})
-	}
+		// Clean up TUN device
+		_ = exec.Command("ip", "link", "delete", "tun_sshc").Run()
+		st.set(func() { st.TunProxyRunning = false })
+		log.Printf("tun2proxy stopped")
+	}, nil
 }
 
-func handleTransparentConn(ctx context.Context, c net.Conn, pool *SSHPool, cfg Config, st *State) {
-	defer c.Close()
-	tcp, ok := c.(*net.TCPConn)
-	if !ok {
-		log.Printf("transparent rejected non-TCP conn from %s", c.RemoteAddr())
-		return
+// callTunSetup invokes tun_setup.sh with the given action (start or stop).
+func callTunSetup(workDir string, action string) error {
+	script := filepath.Join(workDir, "scripts", "tun_setup.sh")
+	if _, err := os.Stat(script); err != nil {
+		log.Printf("tun_setup.sh not found at %s, skipping", script)
+		return nil
 	}
-	target, err := originalDst(tcp)
+	cmd := exec.Command("/system/bin/sh", script, action)
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("transparent original-dst failed from %s: %v", c.RemoteAddr(), err)
-		return
+		log.Printf("tun_setup.sh %s failed: %v output=%s", action, err, string(out))
+		return err
 	}
-	if isLocalOrBlockedTarget(target, cfg) {
-		log.Printf("transparent blocked local/self target=%s from=%s", target, c.RemoteAddr())
-		return
-	}
-	if cfg.Performance.VerboseTransparentLogs {
-		log.Printf("transparent connect %s", target)
-	}
-	remote, err := pool.Dial(ctx, "tcp", target)
-	if err != nil {
-		logTunnelOpenError("transparent ssh direct-tcpip", target, err)
-		return
-	}
-	defer remote.Close()
-	bufSize := cfg.Performance.BufferSize
-	if bufSize <= 0 {
-		bufSize = 256 * 1024
-	}
-	pipeBoth(c, remote, bufSize, streamIdleTimeout(cfg))
-}
-
-func isLocalOrBlockedTarget(target string, cfg Config) bool {
-	h, p, err := net.SplitHostPort(target)
-	if err != nil {
-		return true
-	}
-	ip := net.ParseIP(h)
-	if ip == nil {
-		return false
-	}
-	port, _ := strconv.Atoi(p)
-	if port == cfg.API.Port || port == cfg.LocalProxy.SocksPort || port == cfg.TransparentProxy.TCPPort {
-		return true
-	}
-	return ip.IsLoopback() || ip.IsUnspecified() || ip.IsMulticast()
-}
-
-// iptablesCfgFromConfig builds an iptables.Config from the daemon Config.
-// Centralizing the conversion keeps the package boundary clean and means
-// schema changes only touch this one helper.
-func iptablesCfgFromConfig(cfg Config) iptables.Config {
-	return iptables.Config{
-		ChainsPrefix:  cfg.TransparentProxy.ChainsPrefix,
-		TCPPort:       cfg.TransparentProxy.TCPPort,
-		DNSPort:       cfg.TransparentProxy.DNSPort,
-		APIPort:       cfg.API.Port,
-		SocksPort:     cfg.LocalProxy.SocksPort,
-		Hotspot:       cfg.Hotspot.Enabled && cfg.Hotspot.TCP,
-		HotspotIfaces: cfg.Hotspot.Interfaces,
-	}
-}
-
-func applyTransparentRules(cfg Config, bypassIPs []string) error {
-	return iptables.Apply(iptablesCfgFromConfig(cfg), dnsx.SanitizeIPv4List(bypassIPs))
-}
-
-func cleanupTransparentRules(cfg Config) error {
-	return iptables.Cleanup(iptablesCfgFromConfig(cfg))
+	log.Printf("tun_setup.sh %s completed", action)
+	return nil
 }
 
 type SaveProfileRequest struct {
@@ -3742,11 +3700,10 @@ func configSummary(cfg Config) map[string]any {
 			"socks_host":    cfg.LocalProxy.SocksHost,
 			"socks_port":    cfg.LocalProxy.SocksPort,
 		},
-		"transparent_proxy": map[string]any{
-			"enabled":       cfg.TransparentProxy.Enabled,
-			"tcp_port":      cfg.TransparentProxy.TCPPort,
-			"chains_prefix": cfg.TransparentProxy.ChainsPrefix,
-			"ipv4_only":     true,
+		"tunnel": map[string]any{
+			"enabled":    cfg.Tunnel.Enabled,
+			"mode":       cfg.Tunnel.Mode,
+			"udpgw_port": cfg.Tunnel.UDPGWPort,
 		},
 	}
 }
@@ -3754,7 +3711,7 @@ func configSummary(cfg Config) map[string]any {
 func apiCapabilities(cfg Config) []apiv1.Capability {
 	return []apiv1.Capability{
 		{Name: "manual_start", Enabled: cfg.Module.ManualStart, Description: "runtime starts from Magisk/KernelSU action"},
-		{Name: "ipv4_transparent_tcp", Enabled: cfg.TransparentProxy.Enabled, Description: "iptables IPv4 TCP redirect"},
+		{Name: "tun2proxy", Enabled: cfg.Tunnel.Enabled, Description: "TUN device + virtual DNS + UDP gateway via tun2proxy"},
 		{Name: "hotspot_tcp_share", Enabled: cfg.Hotspot.Enabled && cfg.Hotspot.TCP, Description: "TCP sharing for tethered clients"},
 		{Name: "socks5", Enabled: cfg.LocalProxy.SocksEnabled, Description: "local SOCKS5 listener"},
 		{Name: "dns_mode_select", Enabled: true, Description: "device, Google, Cloudflare, and custom resolver modes for SSHCustom endpoints"},
