@@ -184,8 +184,8 @@ jobs:
       - name: Find and rename APK
         run: |
           echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
-          find "$GITHUB_WORKSPACE" -name "*.apk" 2>/dev/null | head -10
-          APK=$(find "$GITHUB_WORKSPACE" -name "app-debug.apk" -type f 2>/dev/null | head -1)
+          find "$GITHUB_WORKSPACE" -name "*debug*.apk" 2>/dev/null | head -10
+          APK=$(find "$GITHUB_WORKSPACE" -name "*debug*.apk" -type f 2>/dev/null | head -1)
           echo "Found APK at: $APK"
           cp "$APK" "$GITHUB_WORKSPACE/SSHCustom-VPNChain-v2.0.0-debug.apk"
 
