@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -31,7 +32,7 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
     object Home     : Screen("home",     "Home",     Icons.Default.Home)
     object Profiles : Screen("profiles", "Profiles", Icons.Default.Person)
     object Settings : Screen("settings", "Settings", Icons.Default.Settings)
-    object Logs     : Screen("logs",     "Logs",     Icons.Default.Settings)
+    object Logs     : Screen("logs",     "Logs",     Icons.Default.List)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

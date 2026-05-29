@@ -1,6 +1,7 @@
 package com.sshcustom.vpnchain.service
 
 import android.content.Intent
+import android.os.IBinder
 import com.topjohnwu.superuser.Shell
 import com.topjohnwu.superuser.ipc.RootService
 
@@ -11,7 +12,7 @@ import com.topjohnwu.superuser.ipc.RootService
  */
 class SSHControlService : RootService() {
 
-    override fun onBind(intent: Intent) = Binder()
+    override fun onBind(intent: Intent): IBinder = Binder()
 
     inner class Binder : android.os.Binder() {
 
