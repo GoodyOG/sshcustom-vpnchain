@@ -1,6 +1,0 @@
-{
-  "version": "v4.0.0",
-  "versionCode": 40000,
-  "zipUrl": "https://github.com/GoodyOG/sshcustom-vpnchain/releases/latest/download/SSHCustom-VPNChain-v4.0.0.zip",
-  "changelog": "v4.0.0: Complete architecture rewrite - tun2proxy TUN + Virtual DNS + UDP Gateway. All traffic routed through SSH tunnel."
-}

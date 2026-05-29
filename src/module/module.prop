@@ -1,7 +1,0 @@
-id=sshcustom_vpnchain
-name=SSHCustom-VPNChain
-version=v4.0.0
-versionCode=40000
-author=GoodyOG
-updateJson=https://raw.githubusercontent.com/GoodyOG/sshcustom-vpnchain/main/src/module/update.json
-description=[ stopped ] SSHCustom-VPNChain v4 - tun2proxy TUN + Virtual DNS + UDP Gateway. All traffic (TCP/UDP/DNS) through SSH tunnel. Dashboard at http://127.0.0.1:9190

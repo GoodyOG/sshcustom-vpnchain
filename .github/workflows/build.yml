@@ -1,75 +1,228 @@
-name: Build SSHCustom-VPNChain
+name: Build
 
 on:
   push:
     branches: [main]
     tags: ["v*"]
   pull_request:
-  workflow_dispatch:
+    branches: [main]
+
+env:
+  GO_VERSION: "1.23"
+  ANDROID_NDK_VERSION: "r26d"
+  RUST_TARGET: "aarch64-linux-android"
 
 jobs:
-  module-and-daemon:
+  # ── 1. Build tun2proxy for Android arm64 ─────────────────────────────────
+  build-tun2proxy:
+    name: Build tun2proxy (arm64-android)
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Go
-        uses: actions/setup-go@v5
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          go-version: "1.23.2"
-          cache: true
+          targets: aarch64-linux-android
 
-      - name: Install cross-compilation tools
+      - name: Install Android NDK
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc-aarch64-linux-gnu
+          wget -q "https://dl.google.com/android/repository/android-ndk-${{ env.ANDROID_NDK_VERSION }}-linux.zip" -O /tmp/ndk.zip
+          unzip -q /tmp/ndk.zip -d /opt
+          echo "ANDROID_NDK_HOME=/opt/android-ndk-${{ env.ANDROID_NDK_VERSION }}" >> "$GITHUB_ENV"
+          echo "TOOLCHAIN=/opt/android-ndk-${{ env.ANDROID_NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64" >> "$GITHUB_ENV"
 
-      - name: Read VERSION
-        id: ver
-        run: echo "version=$(cat VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+      - name: Clone tun2proxy
+        run: git clone --depth 1 https://github.com/tun2proxy/tun2proxy.git /tmp/tun2proxy
 
-      - name: Build flashable module
-        env:
-          OPENVPN_STATIC_URL: ""
+      - name: Build tun2proxy for aarch64-linux-android
         run: |
-          chmod +x build.sh
-          ./build.sh
+          export CC="${TOOLCHAIN}/bin/aarch64-linux-android33-clang"
+          export AR="${TOOLCHAIN}/bin/llvm-ar"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${CC}"
+          cd /tmp/tun2proxy
+          cargo build --release --target aarch64-linux-android 2>&1
+          cp target/aarch64-linux-android/release/tun2proxy-bin \
+             "${{ github.workspace }}/third_party/tun2proxy/tun2proxy"
+          ls -lh "${{ github.workspace }}/third_party/tun2proxy/tun2proxy"
 
-      - name: Upload module artifacts
+      - name: Upload tun2proxy artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SSHCustom-VPNChain-v${{ steps.ver.outputs.version }}
-          path: |
-            dist/SSHCustom-VPNChain-v${{ steps.ver.outputs.version }}.zip
-            src/module/bin/arm64/sshcustomd
-            src/module/vpnchain/bin/tun2socks
+          name: tun2proxy-arm64
+          path: third_party/tun2proxy/tun2proxy
 
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [module-and-daemon]
+  # ── 2. Build Go daemon for Android arm64 ─────────────────────────────────
+  build-daemon:
+    name: Build sshcustomd (arm64-android)
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: daemon/go.sum
+
+      - name: Set VERSION
+        run: |
+          if [ -f VERSION ]; then
+            echo "VERSION=$(cat VERSION | tr -d '[:space:]')" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=0.0.0-dev" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build daemon
+        env:
+          GOOS: android
+          GOARCH: arm64
+          CGO_ENABLED: "0"
+        run: |
+          go build \
+            -trimpath \
+            -buildvcs=false \
+            -ldflags="-s -w -X main.version=${{ env.VERSION }}" \
+            -o module/bin/sshcustomd \
+            ./cmd/sshcustomd/
+        working-directory: daemon
+
+      - name: Verify binary
+        run: |
+          file module/bin/sshcustomd
+          ls -lh module/bin/sshcustomd
+
+      - name: Upload daemon artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sshcustomd-arm64
+          path: module/bin/sshcustomd
+
+  # ── 3. Package Magisk module ZIP ─────────────────────────────────────────
+  package-module:
+    name: Package Magisk module ZIP
+    runs-on: ubuntu-latest
+    needs: [build-tun2proxy, build-daemon]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set VERSION
+        run: |
+          if [ -f VERSION ]; then
+            echo "VERSION=$(cat VERSION | tr -d '[:space:]')" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=0.0.0-dev" >> "$GITHUB_ENV"
+          fi
+
+      - name: Download daemon
+        uses: actions/download-artifact@v4
+        with:
+          name: sshcustomd-arm64
+          path: module/bin/
+
+      - name: Download tun2proxy
+        uses: actions/download-artifact@v4
+        with:
+          name: tun2proxy-arm64
+          path: module/bin/
+
+      - name: Set binary permissions
+        run: |
+          chmod +x module/bin/sshcustomd
+          chmod +x module/bin/tun2proxy
+
+      - name: Stamp module.prop version
+        run: |
+          sed -i "s|^version=.*|version=v${{ env.VERSION }}|" module/module.prop
+          sed -i "s|^versionCode=.*|versionCode=$(echo '${{ env.VERSION }}' | tr -d '.' | sed 's/^//')00|" module/module.prop
+          cat module/module.prop
+
+      - name: Package ZIP
+        run: |
+          mkdir -p dist
+          cd module
+          zip -r9 "../dist/SSHCustom-VPNChain-v${{ env.VERSION }}.zip" . \
+            -x "*.DS_Store" -x "__MACOSX/*" -x "bin/.gitkeep" -x "vpnchain/configs/.gitkeep"
+          ls -lh "../dist/SSHCustom-VPNChain-v${{ env.VERSION }}.zip"
+
+      - name: Upload module ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: module-zip
+          path: dist/SSHCustom-VPNChain-v${{ env.VERSION }}.zip
+
+  # ── 4. Build Android APK ─────────────────────────────────────────────────
+  build-apk:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Make Gradle executable
+        run: chmod +x app/gradlew
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon
+        working-directory: app
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+  # ── 5. Create GitHub Release (on version tags only) ───────────────────────
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [package-module, build-apk]
+    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Read VERSION
-        id: ver
-        run: echo "version=$(cat VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+      - name: Set VERSION from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
       - name: Download module ZIP
         uses: actions/download-artifact@v4
         with:
-          name: SSHCustom-VPNChain-v${{ steps.ver.outputs.version }}
-          path: out/module
+          name: module-zip
+          path: dist/
 
-      - name: Create GitHub Release
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: app-debug-apk
+          path: dist/
+
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
+          name: SSHCustom-VPNChain ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') }}
           files: |
-            out/module/dist/SSHCustom-VPNChain-v${{ steps.ver.outputs.version }}.zip
-          generate_release_notes: true
+            dist/SSHCustom-VPNChain-v${{ env.VERSION }}.zip
+            dist/app-debug.apk
+          body: |
+            ## SSHCustom-VPNChain ${{ github.ref_name }}
+
+            ### Installation
+            1. Flash `SSHCustom-VPNChain-v${{ env.VERSION }}.zip` via Magisk / KernelSU / APatch
+            2. Install `app-debug.apk` companion app
+            3. Open app → configure SSH settings → Start
+
+            ### Changes
+            See [CHANGELOG](https://github.com/GoodyOG/sshcustom-vpnchain/blob/main/docs/CHANGELOG.md)
