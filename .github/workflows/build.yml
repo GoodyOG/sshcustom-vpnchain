@@ -183,7 +183,8 @@ jobs:
 
       - name: Find and rename APK
         run: |
-          APK=$(find . -name "app-debug.apk" -type f | head -1)
+          find /home/runner/work/sshcustom-vpnchain -name "app-debug.apk" 2>/dev/null | head -5
+          APK=$(find /home/runner/work/sshcustom-vpnchain -name "app-debug.apk" -type f 2>/dev/null | head -1)
           echo "Found APK at: $APK"
           cp "$APK" SSHCustom-VPNChain-v2.0.0-debug.apk
 
