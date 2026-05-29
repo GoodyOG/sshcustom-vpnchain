@@ -22,7 +22,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             SSHCustomTheme {
-                SSHCustomApp()
+                MainAppContent()
             }
         }
     }
@@ -37,7 +37,7 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SSHCustomApp() {
+fun MainAppContent() {
     val vm: MainViewModel = viewModel()
     val status by vm.status.collectAsState()
     val tunnelState by vm.tunnelState.collectAsState()

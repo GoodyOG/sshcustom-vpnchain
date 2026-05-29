@@ -6,23 +6,22 @@ import com.topjohnwu.superuser.Shell
 import com.topjohnwu.superuser.ipc.RootService
 
 /**
- * RootService that runs in a root process via libsu.
- * All privileged operations (start/stop/restart, read files, write settings)
- * are executed here. The app process binds to this service.
+ * RootService running in a root process via libsu.
+ * Requires the libsu :service artifact.
  */
 class SSHControlService : RootService() {
 
-    override fun onBind(intent: Intent): IBinder = Binder()
+    override fun onBind(intent: Intent): IBinder {
+        return LocalBinder()
+    }
 
-    inner class Binder : android.os.Binder() {
+    inner class LocalBinder : android.os.Binder() {
 
         private val serviceScript = "/data/adb/sshcustom/scripts/ssh.service"
-        private val settingsPath = "/data/adb/sshcustom/settings.ini"
 
         fun startTunnel(): String = shell("sh $serviceScript start")
         fun stopTunnel(): String = shell("sh $serviceScript stop")
         fun restartTunnel(): String = shell("sh $serviceScript restart")
-        fun reloadConfig(): String = shell("sh $serviceScript restart")
 
         fun isRunning(): Boolean {
             val result = Shell.cmd("sh $serviceScript status").exec()
@@ -30,8 +29,7 @@ class SSHControlService : RootService() {
         }
 
         fun readLog(lines: Int = 200): String {
-            val logFile = "/data/adb/sshcustom/run/sshcustom.log"
-            val result = Shell.cmd("tail -n $lines $logFile 2>/dev/null").exec()
+            val result = Shell.cmd("tail -n $lines /data/adb/sshcustom/run/sshcustom.log 2>/dev/null").exec()
             return result.out.joinToString("\n")
         }
 
@@ -39,16 +37,10 @@ class SSHControlService : RootService() {
             Shell.cmd(": > /data/adb/sshcustom/run/sshcustom.log").exec()
         }
 
-        fun readSettings(): String {
-            val result = Shell.cmd("cat $settingsPath 2>/dev/null").exec()
-            return result.out.joinToString("\n")
-        }
-
         fun writeSetting(key: String, value: String): Boolean {
-            // Escape value for sed
-            val escaped = value.replace("/", "\\/").replace("&", "\\&")
+            val escaped = value.replace("/", "\\/")
             val result = Shell.cmd(
-                "sed -i 's|^${key}=.*|${key}=\"${escaped}\"|' $settingsPath"
+                "sed -i 's|^${key}=.*|${key}=\"${escaped}\"|' /data/adb/sshcustom/settings.ini"
             ).exec()
             return result.isSuccess
         }
@@ -58,17 +50,9 @@ class SSHControlService : RootService() {
 
         fun setAutostart(enabled: Boolean): Boolean {
             val marker = "/data/adb/sshcustom/run/autostart"
-            val result = if (enabled) {
-                Shell.cmd("touch $marker").exec()
-            } else {
-                Shell.cmd("rm -f $marker").exec()
-            }
+            val result = if (enabled) Shell.cmd("touch $marker").exec()
+            else Shell.cmd("rm -f $marker").exec()
             return result.isSuccess
-        }
-
-        fun getAutostart(): Boolean {
-            val result = Shell.cmd("[ -f /data/adb/sshcustom/run/autostart ] && echo 1 || echo 0").exec()
-            return result.out.firstOrNull()?.trim() == "1"
         }
 
         private fun shell(cmd: String): String {

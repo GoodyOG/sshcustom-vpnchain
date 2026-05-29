@@ -50,6 +50,7 @@ dependencies {
 
     // libsu root access
     implementation("com.github.topjohnwu.libsu:core:6.0.0")
+    implementation("com.github.topjohnwu.libsu:service:6.0.0")
     implementation("com.github.topjohnwu.libsu:io:6.0.0")
 
     // AppCompat (for theme)
