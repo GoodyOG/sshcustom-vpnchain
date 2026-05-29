@@ -1433,7 +1433,7 @@ func connectionManager(ctx context.Context, cfg Config, p Profile, st *State) {
 		var stopTun2Proxy func()
 		if cfg.Tunnel.Enabled {
 			_ = callTunSetup(cfg.Module.WorkDir, "start")
-			if stop, err := startTun2Proxy(ctx, cfg, cfg.Module.WorkDir, st); err != nil {
+			if stop, err := startTun2Proxy(ctx, cfg, cfg.Module.WorkDir, st, res.ResolvedIPs); err != nil {
 				log.Printf("tun2proxy failed to start: %v", err)
 				st.set(func() { st.LastError = "tun2proxy failed: " + err.Error() })
 			} else {
@@ -2903,7 +2903,7 @@ func startUDPGWForward(ctx context.Context, pool *SSHPool, cfg Config, st *State
 }
 
 // startTun2Proxy launches the tun2proxy binary that creates a TUN device and routes traffic.
-func startTun2Proxy(ctx context.Context, cfg Config, workDir string, st *State) (func(), error) {
+func startTun2Proxy(ctx context.Context, cfg Config, workDir string, st *State, sshServerIPs []string) (func(), error) {
 	bin := filepath.Join(workDir, "bin", "tun2proxy")
 	if _, err := os.Stat(bin); err != nil {
 		return nil, fmt.Errorf("tun2proxy binary not found: %s", bin)
@@ -2932,7 +2932,15 @@ func startTun2Proxy(ctx context.Context, cfg Config, workDir string, st *State) 
 		"--bypass", "172.16.0.0/12",
 		"--bypass", "192.168.0.0/16",
 		"--bypass", "127.0.0.0/8",
-		"--daemonize",
+	}
+
+	// Add SSH server IPs to bypass list so reconnection attempts are not captured by TUN
+	for _, ip := range sshServerIPs {
+		if ip != "" && !strings.Contains(ip, "/") {
+			args = append(args, "--bypass", ip+"/32")
+		} else if ip != "" {
+			args = append(args, "--bypass", ip)
+		}
 	}
 
 	cmd := exec.CommandContext(ctx, bin, args...)
@@ -3517,6 +3525,13 @@ func baseDialer(cfg Config) net.Dialer {
 	return net.Dialer{
 		Timeout:   timeout,
 		KeepAlive: keepAlive,
+		Control: func(network, address string, c syscall.RawConn) error {
+			// Set SO_MARK=2 so outbound SSH sockets bypass tun2proxy's TUN routing
+			// (matches --fwmark 2 used by tun2proxy for its own bypass rule).
+			return c.Control(func(fd uintptr) {
+				_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_MARK, 2)
+			})
+		},
 		Resolver: &net.Resolver{
 			PreferGo: true,
 			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
