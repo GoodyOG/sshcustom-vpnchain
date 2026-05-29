@@ -1,0 +1,76 @@
+SSHCustom-VPNChain
+connected
+Details
+SSH Pool
+
+2/2
+
+all healthy
+Streams
+
+0
+
+target 128 streams per SSH
+CPU
+
+0.0%
+
+daemon process
+Memory
+
+12.8 MB
+
+system memory 46% used
+Route
+
+rmnet_data1
+
+10.134.211.136
+Resolver
+
+android_shell_dns
+
+104.18.28.120
+Paths
+config_path: /data/adb/sshcustom-vpnchain/config.json
+profiles_path: /data/adb/sshcustom-vpnchain/profiles.json
+run_dir: /data/adb/sshcustom-vpnchain/run
+webroot: /data/adb/sshcustom-vpnchain/webroot
+work_dir: /data/adb/sshcustom-vpnchain
+Logs
+Core
+Control
+Action
+Hide
+Refresh
+Clear
+2026/05/29 09:16:36.031126 SSHCustom daemon 3.1.0 starting (idle=true)
+2026/05/29 09:16:36.031425 profile="Sample SSH Direct" mode=direct payload=false ssh=example.com:22 user=user
+2026/05/29 09:16:36.031435 transport chain=tcp -> ssh
+2026/05/29 09:16:36.031438 dns mode=device servers=[]
+2026/05/29 09:16:36.039384 daemon started in idle mode (WebUI only); tunnel not started
+2026/05/29 09:16:36.040211 API listening on http://127.0.0.1:9190
+2026/05/29 09:20:27.506584 starting tunnel with profile "Sample SSH Direct" (mode=direct)
+2026/05/29 09:20:27.513837 SSH auth attempt #1 starting
+2026/05/29 09:20:30.068189 dnsx: resolved www.bc.game via ping -c 1 -W 2 www.bc.game -> [104.18.28.120]
+2026/05/29 09:20:30.068325 dial tcp 104.18.28.120:80 host=www.bc.game method=android_shell_dns
+2026/05/29 09:20:30.209950 sending payload timing=before_ssh bytes=87
+2026/05/29 09:20:30.981204 server message: http/html banner suppressed (535 bytes)
+2026/05/29 09:20:31.184235 SSH authenticated: banner="SSH-2.0-dropbear_2022.83" http_statuses=[101] pool_size=2 max_streams_per_ssh=128
+2026/05/29 09:20:31.184762 SOCKS5 listening on 127.0.0.1:1080
+2026/05/29 09:20:31.184518 SSH pool slot 2 connecting
+2026/05/29 09:20:31.185791 dnsx: resolved www.bc.game from cache mode=device -> [104.18.28.120]
+2026/05/29 09:20:31.185859 dial tcp 104.18.28.120:80 host=www.bc.game method=dns_cached_android_shell_dns
+2026/05/29 09:20:31.348433 sending payload timing=before_ssh bytes=87
+2026/05/29 09:20:32.048058 server message: http/html banner suppressed (535 bytes)
+2026/05/29 09:20:32.210391 SSH pool slot 2 connected
+
+Home
+
+Profiles
+
+Runtime
+
+VPN
+
+Settings
