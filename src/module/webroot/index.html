@@ -651,13 +651,6 @@
             <button id="hotspotSwitch" class="switch" onclick="toggleHotspot()" aria-label="Toggle hotspot"></button>
           </div>
           <div class="list-item">
-            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
-            <div class="list-item-content">
-              <div class="toggle-text">Transparent IPv4 TCP</div>
-              <span class="supporting-text" id="transparentMeta">iptables REDIRECT status unavailable</span>
-            </div>
-          </div>
-          <div class="list-item">
             <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg></div>
             <div class="list-item-content">
               <div class="toggle-text">SOCKS5 Local Proxy</div>
@@ -679,13 +672,14 @@
 
         <button class="md3-filled" onclick="saveNetwork()" style="margin-top:8px">Apply &amp; Restart</button>
 
-        <h2 class="section-pill">Proxy Engine</h2>
+        <h2 class="section-pill">Tunnel Engine</h2>
         <div class="card">
-          <p style="color: var(--text-secondary); padding: 12px;">NAT REDIRECT (IPv4) &mdash; All TCP traffic transparently proxied through SSH tunnel. DNS forwarder converts UDP queries to TCP DNS-over-tunnel for correct CDN routing.</p>
-        </div>
-        <h2 class="section-pill">Leak Protection (Always On)</h2>
-        <div class="card">
-          <p style="color: var(--text-secondary); padding: 12px;">IPv6 disabled &bull; QUIC rejected (instant TCP fallback) &bull; DNS through tunnel (1.1.1.1 + 8.8.8.8 via TCP) &bull; Conntrack flushed on connect/disconnect</p>
+          <div class="card-title">TUNNEL ENGINE</div>
+          <p style="color: var(--on-variant); padding: 12px 16px; line-height: 1.6;">
+            <strong>tun2proxy</strong> TUN device + Virtual DNS + UDP Gateway<br>
+            All traffic (TCP/UDP/DNS) routed through SSH tunnel automatically.<br>
+            <span style="color: var(--good);">No configuration needed</span> - routing handled by tun2proxy --setup.
+          </p>
         </div>
 
         <h2 class="section-pill">About</h2>
@@ -695,7 +689,7 @@
             <div class="list-item-content">
               <div class="toggle-text">SSHCustom-VPNChain</div>
               <span class="supporting-text" id="aboutVersion">version --</span>
-              <span class="supporting-text">SSH tunnel + Windscribe VPN chain routing for rooted Android. SOCKS5, transparent proxy, and VPN Chain.</span>
+              <span class="supporting-text">SSH tunnel + tun2proxy TUN routing for rooted Android. Virtual DNS, UDP Gateway, SOCKS5, and VPN Chain.</span>
             </div>
           </div>
           <a class="list-item" href="https://github.com/GoodyOG/sshcustom-vpnchain" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;cursor:pointer">
@@ -991,7 +985,6 @@
       $('routeMeta').textContent = s.gateway ? 'gateway ' + s.gateway : (s.source_ip || 'gateway unavailable');
       $('resolverValue').textContent = s.resolver_method ? 'android_shell_dns' : (s.dns_mode || '--');
       $('resolverMeta').textContent = (s.resolved_ips || []).join(', ') || 'no DNS activity yet';
-      $('transparentMeta').textContent = s.transparent_running ? 'listening on ' + (s.transparent_addr || 'transparent port') : 'not running';
       $('socksMeta').textContent = s.socks_running ? 'listening on ' + (s.socks_addr || 'SOCKS port') : 'not running';
       renderNetworkConfig(cfg);
     }

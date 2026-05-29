@@ -1,6 +1,6 @@
 #!/system/bin/sh
 #
-# Comprehensive iptables/network cleanup for SSHCustom-VPNChain v2.0.0.
+# Comprehensive iptables/network cleanup for SSHCustom-VPNChain v4.0.0.
 #
 # Removes all current and legacy chains/rules from any version (including
 # prior TPROXY builds). Safe to run multiple times; errors are silenced
@@ -120,6 +120,9 @@ flush_conntrack() {
 }
 
 log "clean start"
+# v4.0.0: Kill tun2proxy and remove TUN device
+killall tun2proxy 2>/dev/null
+run ip link delete tun_sshc
 clean_nat_v4
 clean_nat_v6
 clean_mangle_v4

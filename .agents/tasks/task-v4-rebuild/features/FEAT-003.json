@@ -2,7 +2,7 @@
   "id": "FEAT-003",
   "type": "feat",
   "description": "Create tun_setup.sh script, update config.json to v4 schema, update module.prop, VERSION, WebUI, customize.sh, net_clean.sh, build.sh, and package the module.",
-  "status": "pending",
+  "status": "in_progress",
   "steps": [
     "Create src/module/scripts/tun_setup.sh with start/stop cases: start disables IPv6 via /proc/sys/net/ipv6/conf/all/disable_ipv6 and /proc/sys/net/ipv6/conf/default/disable_ipv6, adds iptables QUIC REJECT rule (UDP/443, not uid 0, REJECT --reject-with icmp-port-unreachable), flushes conntrack. stop restores IPv6, removes QUIC rule, flushes conntrack. Make it executable (chmod 755).",
     "Replace src/module/config/config.json with the v4 schema: remove transparent_proxy section, add tunnel section {enabled: true, mode: tun2proxy, udpgw_port: 7300}, simplify dns section (no hijack/doh/note), update performance (retry_initial_delay_seconds: 3, retry_max_delay_seconds: 30, remove verbose_transparent_logs and read_probe_timeout_seconds)",

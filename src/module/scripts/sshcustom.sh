@@ -126,11 +126,12 @@ stop_runtime() {
   kill_pid_file "$WATCHDOG_PID_FILE" "watchdog"
   kill_pid_file "$PID_FILE" "daemon"
   kill_named_daemon
+  killall tun2proxy 2>/dev/null
 }
 
 start_module() {
   echo "starting sshcustom module..."
-  log "manual/action start v2.0.0"
+  log "manual/action start v4.0.0"
   mkdir -p "$RUN_DIR"
   : > "$CORE_LOG"
   echo "$(date '+%Y-%m-%d %H:%M:%S') core.log reset for fresh module start" >> "$CORE_LOG"
@@ -155,6 +156,7 @@ stop_module() {
   log "manual/action stop"
   rm -f "$ENABLED_FILE" "$PAUSED_FILE"
   stop_runtime
+  [ -x "$WORK_DIR/scripts/tun_setup.sh" ] && "$WORK_DIR/scripts/tun_setup.sh" stop
   "$WORK_DIR/net_clean.sh" >> "$CONTROL_LOG" 2>&1
   sleep 1
   "$WORK_DIR/net_clean.sh" >> "$CONTROL_LOG" 2>&1

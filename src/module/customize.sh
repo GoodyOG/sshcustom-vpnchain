@@ -10,8 +10,8 @@ RUN_DIR="$WORK_DIR/run"
 CONFIG_DIR="$WORK_DIR/config"
 
 ui_print "****************************************"
-ui_print " SSHCustom-VPNChain v2.0.0"
-ui_print " SSH Tunnel + Windscribe VPN Chain"
+ui_print " SSHCustom-VPNChain v4.0.0"
+ui_print " SSH Tunnel + tun2proxy TUN + VPN Chain"
 ui_print "****************************************"
 
 ABI="$(getprop ro.product.cpu.abi 2>/dev/null)"
@@ -40,6 +40,17 @@ cp -af "$BIN_SRC" "$BIN_DIR/sshcustomd"
 cp -af "$MODPATH/scripts/sshcustom.sh" "$WORK_DIR/sshcustom.sh"
 cp -af "$MODPATH/scripts/sshcustom_watchdog.sh" "$WORK_DIR/sshcustom_watchdog.sh"
 cp -af "$MODPATH/scripts/net_clean.sh" "$WORK_DIR/net_clean.sh"
+
+# Install tun2proxy binary (arm64 only)
+if [ -f "$MODPATH/bin/tun2proxy" ]; then
+  cp -af "$MODPATH/bin/tun2proxy" "$BIN_DIR/tun2proxy"
+  chmod 0755 "$BIN_DIR/tun2proxy"
+fi
+
+# Install tun_setup.sh
+mkdir -p "$WORK_DIR/scripts"
+cp -af "$MODPATH/scripts/tun_setup.sh" "$WORK_DIR/scripts/tun_setup.sh"
+chmod 0755 "$WORK_DIR/scripts/tun_setup.sh"
 
 # Always refresh module runtime config so new performance/network keys are applied.
 cp -af "$MODPATH/config/config.json" "$WORK_DIR/config.json"
@@ -73,6 +84,7 @@ if [ -f "$MODPATH/vpnchain/bin/openvpn" ]; then
 fi
 
 chmod 0755 "$BIN_DIR/sshcustomd" "$WORK_DIR/sshcustom.sh" "$WORK_DIR/sshcustom_watchdog.sh" "$WORK_DIR/net_clean.sh"
+[ -f "$BIN_DIR/tun2proxy" ] && chmod 0755 "$BIN_DIR/tun2proxy"
 [ -f "$BIN_DIR/tun2socks" ] && chmod 0755 "$BIN_DIR/tun2socks"
 [ -f "$BIN_DIR/openvpn" ] && chmod 0755 "$BIN_DIR/openvpn"
 chmod 0755 "$VPNCHAIN_DIR/vpnchain.sh"

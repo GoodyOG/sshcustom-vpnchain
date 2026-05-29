@@ -17,7 +17,7 @@
     "doh": false,
     "servers": [],
     "timeout_seconds": 4,
-    "note": "Device DNS is default. Google, Cloudflare, and custom modes affect SSHCustom endpoint resolution only."
+    "note": "Device DNS is default. tun2proxy --dns virtual handles DNS through the tunnel automatically."
   },
   "transport": {
     "supported_modes": ["direct","http_proxy","tls_sni","http_proxy_tls_sni"],
@@ -28,13 +28,10 @@
     "socks_host": "127.0.0.1",
     "socks_port": 1080
   },
-  "transparent_proxy": {
+  "tunnel": {
     "enabled": true,
-    "tcp_port": 10810,
-    "dns_port": 10811,
-    "udp_mode": "disabled",
-    "chains_prefix": "SSHC",
-    "apply_after_ssh_connected": true
+    "mode": "tun2proxy",
+    "udpgw_port": 7300
   },
   "hotspot": {
     "enabled": true,
@@ -46,8 +43,8 @@
     "buffer_size": 262144,
     "connect_timeout_seconds": 25,
     "keepalive_seconds": 10,
-    "retry_initial_delay_seconds": 5,
-    "retry_max_delay_seconds": 45,
+    "retry_initial_delay_seconds": 3,
+    "retry_max_delay_seconds": 30,
     "read_probe_timeout_seconds": 10,
     "ssh_pool_size": 2,
     "max_streams_per_ssh": 128,
