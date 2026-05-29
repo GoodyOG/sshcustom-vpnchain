@@ -181,11 +181,14 @@ jobs:
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk SSHCustom-VPNChain-v2.0.0-debug.apk
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: SSHCustom-VPNChain-v2.0.0-debug.apk
 
   # ── 5. Create GitHub Release (on version tags only) ───────────────────────
   release:
@@ -228,8 +231,8 @@ jobs:
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') }}
           fail_on_unmatched_files: false
           files: |
-            dist/SSHCustom-VPNChain-v${{ env.VERSION }}.zip
-            dist/app-debug.apk
+            dist/*.zip
+            dist/*.apk
           body: |
             ## SSHCustom-VPNChain ${{ github.ref_name }}
 
