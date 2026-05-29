@@ -181,8 +181,11 @@ jobs:
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
-      - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk SSHCustom-VPNChain-v2.0.0-debug.apk
+      - name: Find and rename APK
+        run: |
+          APK=$(find . -name "app-debug.apk" -type f | head -1)
+          echo "Found APK at: $APK"
+          cp "$APK" SSHCustom-VPNChain-v2.0.0-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
