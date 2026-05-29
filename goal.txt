@@ -1,0 +1,677 @@
+SSHCustom-VPNChain — Complete Rebuild Prompt for Kiro
+Overview
+You are rebuilding the GoodyOG/sshcustom-vpnchain repository completely from scratch. This is a Magisk/KernelSU/APatch module that provides SSH tunneling as a system-wide transparent proxy on rooted Android devices, plus a native Android companion app to manage it. No VpnService is used — everything runs at the kernel/iptables level via root.
+Before writing a single line of code, read and understand the existing codebase thoroughly. Then delete everything except the v1.0.1 release tag and build fresh.
+
+Step 0 — Skills Installation
+Before starting any work, install the following skills from https://github.com/sickn33/antigravity-awesome-skills into .kiro/skills/:
+git clone https://github.com/sickn33/antigravity-awesome-skills.git .kiro/skills
+The skills you must actively use throughout this project:
+
+bash-pro — for all module shell scripts
+posix-shell-pro — for Android/busybox shell compatibility in module scripts
+kotlin-coroutines-expert — for all async operations in the Android app
+Any GitHub Actions / CI skill available — for the build pipeline
+Any Android / Jetpack Compose skill available — for the app
+Any architecture planning skill available — use before writing any code
+Any Go skill available — for the daemon
+
+Read each relevant SKILL.md before starting the corresponding component. Do not skip this.
+
+Step 1 — Read and Understand the Existing Codebase
+Using your GitHub token, clone and thoroughly read the entire existing repository at https://github.com/GoodyOG/sshcustom-vpnchain. Read every file in:
+
+cmd/sshcustomd/ — the Go daemon: SSH client, SOCKS5, transparent proxy, WebUI server
+src/module/ — the Magisk module shell scripts
+scripts/ — helper scripts
+internal/ — internal Go packages
+docs/ — the WebUI HTML/CSS/JS (layout reference for the Android app)
+.kiro/steering/ — existing Kiro steering context
+SESSION_CONTEXT.md — session context
+go.mod — Go module definition
+build.sh — build process
+
+Understand specifically:
+
+How the SSH connection is established and maintained
+How SOCKS5 dynamic port forwarding works in the daemon
+How the transparent proxy intercepts traffic
+How iptables rules are applied and cleaned up
+How the VPN chain (OpenVPN over SSH) was architectured — document this thoroughly in a file called docs/vpnchain-future.md — this will be implemented in a future version, not now
+How the WebUI communicates with the daemon (API endpoints, data structures)
+The payload injection mechanism
+
+After reading, write a docs/architecture-analysis.md file summarizing what you learned and how the new architecture will differ. Get explicit confirmation before proceeding to Step 2.
+
+Step 2 — Wipe and Initialize Fresh Repository
+Delete all existing source files and directories. Keep only:
+
+The .git/ directory (preserve git history)
+The v1.0.1 release tag
+docs/vpnchain-future.md (created in Step 1)
+docs/architecture-analysis.md (created in Step 1)
+LICENSE
+
+Initialize the new monorepo structure:
+sshcustom-vpnchain/
+├── module/                    # Magisk/KSU/APatch module
+│   ├── META-INF/
+│   │   └── com/google/android/
+│   │       ├── update-binary
+│   │       └── updater-script
+│   ├── bin/                   # Compiled binaries (gitignored, added by CI)
+│   ├── scripts/
+│   │   ├── ssh.service        # Daemon start/stop/status manager
+│   │   ├── ssh.iptables       # All iptables routing logic
+│   │   └── ssh.tool           # Helper utilities
+│   ├── settings.ini           # Master config file (template)
+│   ├── module.prop
+│   ├── customize.sh           # Installation script
+│   ├── service.sh             # Boot service entrypoint
+│   └── action.sh              # KSU Action script (start/stop only)
+├── daemon/                    # Go SSH daemon
+│   ├── cmd/sshcustomd/
+│   │   └── main.go
+│   ├── internal/
+│   │   ├── ssh/               # SSH client, channel pool, SNI wrapper
+│   │   ├── proxy/             # SOCKS5 + transparent proxy listeners
+│   │   ├── iptables/          # Iptables capability probe + rule helpers
+│   │   └── config/            # Config file reader/writer
+│   ├── go.mod
+│   └── go.sum
+├── app/                       # Android companion app
+│   ├── src/main/
+│   │   ├── java/com/sshcustom/vpnchain/
+│   │   └── res/
+│   ├── build.gradle.kts
+│   └── AndroidManifest.xml
+├── third_party/
+│   └── tun2proxy/             # tun2proxy arm64 binary (added by CI)
+├── .github/
+│   └── workflows/
+│       ├── build.yml          # Main build: Go daemon + tun2proxy + module zip + APK
+│       └── release.yml        # Release packaging
+├── .kiro/
+│   ├── steering/
+│   └── skills/
+├── docs/
+│   ├── vpnchain-future.md
+│   └── architecture-analysis.md
+├── build.sh                   # Local build script
+├── go.mod                     # Root go.mod (workspace)
+├── .gitignore
+└── README.md
+
+Step 3 — Go Module Setup
+Go version: 1.23
+Go module name: github.com/GoodyOG/SSHCustom_Magisk
+Dependencies (add as needed, vendor in third_party/):
+
+golang.org/x/crypto — SSH protocol, key exchange, cipher suites
+golang.org/x/net — networking utilities
+Any other dependencies must be justified and vendored
+
+Target: arm64 Android (GOOS=android GOARCH=arm64 CGO_ENABLED=0)
+The daemon binary name: sshcustomd
+
+Step 4 — Module Shell Scripts
+Study boxproxy/box at https://github.com/boxproxy/box/tree/master/box thoroughly before writing any shell code. Your module structure and script patterns must follow the same approach. Specifically study:
+
+box.service — service lifecycle management
+box.iptables — the full iptables routing script
+box.tool — helper utilities (cgroup, blkio, user detection, logging)
+settings.ini — config structure
+
+settings.ini — Master Config Template
+ini# SSHCustom Settings
+# Do not edit while service is running
+
+# SSH Connection
+ssh_host=""
+ssh_port="22"
+ssh_user=""
+ssh_password=""
+ssh_mode="direct"           # direct | sni | sni_http_proxy
+ssh_sni_host=""             # SNI hostname (for sni/sni_http_proxy modes)
+http_proxy_host=""          # HTTP proxy host (for sni_http_proxy mode)
+http_proxy_port="3128"      # HTTP proxy port
+payload_enabled="false"
+payload=""                  # Raw payload string (paste from HTTP Injector etc.)
+
+# Traffic Interception
+network_mode="redirect"     # redirect | tproxy | tun | tun_udpgw
+socks_port="1080"           # Local SOCKS5 port
+tproxy_port="9898"
+redir_port="9797"
+tun_device="tun0"
+
+# Proxy Behavior
+proxy_tcp="true"
+proxy_udp="false"
+quic="disable"              # disable = block UDP 443/80, force TCP fallback
+performance_mode="true"
+
+# DNS
+dns_hijack_tcp="true"
+dns_hijack_udp="false"
+dns_hijack_mode="redirect"  # redirect | tproxy | disable
+
+# Speed Boost
+channel_pool="true"         # Pre-warm SSH channel pool for max throughput
+bbr_enabled="true"          # Enable BBR congestion control if kernel supports
+tcp_buffer_tuning="true"    # Tune net.core.rmem_max, tcp_rmem, tcp_wmem
+
+# IPv6
+ipv6="false"
+
+# Paths
+box_data="/data/adb/sshcustom"
+box_run="/data/adb/sshcustom/run"
+box_pid="/data/adb/sshcustom/run/sshcustom.pid"
+box_log="/data/adb/sshcustom/run/sshcustom.log"
+ssh.service — Service Manager
+Implement exactly like box.service. Must handle:
+
+start — probe capabilities, write runtime snapshot, start sshcustomd daemon, apply iptables rules, log each step with timestamps in format HH:MM [Level]: message
+stop — kill daemon cleanly, call ssh.iptables disable, flush all custom chains, remove policy routing rules, restore kernel defaults, log completion. After stop, the device must be in a completely clean state where any other VPN app (Windscribe, etc.) can connect immediately without conflicts.
+restart — stop then start
+status — check if daemon PID is alive
+
+Log format (match box exactly):
+服务正在启动，请稍候...    (starting)
+服务正在关闭...             (stopping)
+HH:MM [Info]: message
+HH:MM [Warning]: message
+HH:MM [Error]: message
+HH:MM [Debug]: message
+Use English for log messages since this is a fresh build.
+ssh.iptables — Routing Script
+This is the most critical script. Model it precisely after box.iptables from boxproxy/box. Implement all infrastructure from that script:
+Capability probe system (cache in run/iptables.cap.env, invalidate on reboot via boot_id):
+
+cap_tproxy4, cap_tproxy6
+cap_socket_match, cap_socket_transparent
+cap_conntrack_match, cap_connmark_match, cap_connmark_target
+cap_ipset
+cap_ip6_nat
+
+Automatic capability downgrade logic:
+
+If TPROXY kernel modules missing → downgrade to redirect, log warning
+If connmark missing → disable performance mode optimization, log warning
+
+Four traffic interception modes:
+Mode 1: redirect (default, most compatible, best for SSH)
+
+nat table only, REDIRECT --to-ports $redir_port
+TCP intercepted, UDP bypasses (SSH can only carry TCP anyway)
+DNS: NAT_DNS_HIJACK chain redirects UDP/53 → daemon for TCP DNS resolution through tunnel
+SSH server IP itself: always RETURN (never intercept — would cause routing loop)
+Intranet subnets: RETURN
+QUIC block rules: when quic=disable, add DROP rules on OUTPUT for UDP 443 and UDP 80
+
+Mode 2: tproxy
+
+mangle table, TPROXY --on-port $tproxy_port
+TCP + UDP intercepted
+Policy routing: ip rule add fwmark $fwmark table $table, ip route add local default dev lo table $table
+Performance optimization when connmark available: DIVERT chain for established connections
+SSH server IP: bypass via fwmark exclusion
+
+Mode 3: tun
+
+Uses tun2proxy binary creating TUN device via ip tuntap add
+No VpnService — pure root-based TUN creation
+Policy routing marks route all traffic into TUN device
+--bypass <ssh_server_ip> to prevent routing loop
+--dns over-tcp since SSH cannot carry UDP DNS
+BOX_TUN_BYPASS_PRE and BOX_TUN_BYPASS_OUT chains for core bypass
+
+Mode 4: tun_udpgw
+
+Same as TUN but with --udpgw-server flag pointing to VPS udpgw server
+Enables real UDP tunneling through SSH via UDP-over-TCP encapsulation
+Requires udpgw_server field in settings.ini
+
+Chain naming convention (prefix all custom chains with SSHC_):
+
+SSHC_EXTERNAL, SSHC_LOCAL, SSHC_DNS_HIJACK, SSHC_DIVERT, etc.
+
+Runtime snapshot (run/runtime.iptables.env): save active config on start, load on stop for targeted cleanup.
+Full cleanup on stop — must handle all four modes:
+shstop_all() {
+  flush all SSHC_* chains from nat, mangle, filter tables
+  remove all SSHC_* chain jumps from PREROUTING, OUTPUT, FORWARD
+  delete all SSHC_* chains
+  delete policy routing rules (ip rule del, ip -6 rule del)
+  flush routing tables (ip route flush table $table)
+  if tun mode: ip link set tun0 down; ip tuntap del tun0 mode tun
+  if bbr enabled: restore original congestion control
+  if tcp buffer tuning: restore original values
+  restore IPv6 if was disabled
+  remove QUIC block rules
+}
+ssh.tool — Helpers
+
+probe_user_group — detect daemon UID/GID from PID
+set_blkio_weight — assign daemon PID to blkio cgroup with IO weight 10 (match box)
+apply_speed_boost — if bbr_enabled=true, check kernel support (sysctl net.ipv4.tcp_available_congestion_control) and set BBR; if tcp_buffer_tuning=true, set net.core.rmem_max=134217728, net.core.wmem_max=134217728, net.ipv4.tcp_rmem="4096 87380 134217728", net.ipv4.tcp_wmem="4096 65536 134217728"
+restore_speed_settings — save originals before applying, restore on stop
+log — timestamped logging function used by all scripts
+current_boot_id — reads /proc/sys/kernel/random/boot_id for cache invalidation
+
+action.sh — KSU Action Script
+sh#!/system/bin/sh
+# SSHCustom KSU Action
+MODDIR="/data/adb/modules/sshcustom-vpnchain"
+SERVICE_SCRIPT="$MODDIR/scripts/ssh.service"
+
+case "$1" in
+  start)  sh "$SERVICE_SCRIPT" start  ;;
+  stop)   sh "$SERVICE_SCRIPT" stop   ;;
+  *)
+    # Default: toggle
+    if sh "$SERVICE_SCRIPT" status; then
+      sh "$SERVICE_SCRIPT" stop
+    else
+      sh "$SERVICE_SCRIPT" start
+    fi
+    ;;
+esac
+The action.sh must produce the same log output style as boxproxy/box's action screen — timestamped lines, service starting/stopping messages visible in KSU's Action UI.
+
+Step 5 — Go Daemon (sshcustomd)
+Build this entirely fresh. The daemon is the core of the module — it handles SSH connectivity, SOCKS5, transparent proxy, and provides a Unix socket API for the Android app.
+SSH Client (internal/ssh/)
+SSH Transport Modes:
+Mode 1: Direct
+go// Plain ssh -D equivalent
+// Dial SSH server directly
+// Open SOCKS5 dynamic forward
+Mode 2: SNI
+go// Wrap SSH inside TLS with SNI hostname spoofing
+// Use Go's crypto/tls — no external binary needed
+// TLS ClientHello carries the SNI hostname (carrier bypass technique)
+// After TLS handshake, SSH runs inside the TLS tunnel
+// Config: sni_host = the SNI hostname to present
+Mode 3: SNI + HTTP Proxy
+go// First: CONNECT through HTTP proxy (http_proxy_host:http_proxy_port)
+// HTTP CONNECT request: "CONNECT ssh_host:ssh_port HTTP/1.1\r\nHost: ssh_host\r\n\r\n"
+// If payload_enabled: inject payload into the CONNECT request headers
+// After proxy tunnel established: apply SNI TLS wrap
+// After TLS: SSH
+Payload Injection:
+go// payload is a raw string pasted by user
+// Support variables: [host] → ssh_host, [port] → ssh_port, [cr] → \r, [lf] → \n, [crlf] → \r\n
+// Inject into HTTP CONNECT headers or as pre-SSH data depending on mode
+// Parse and substitute variables before injection
+Channel Pool (speed boost):
+go// When channel_pool=true:
+// Pre-open N SSH channels (default 8) after connection established
+// Pool goroutine maintains minimum available channels
+// When SOCKS5 request arrives: grab pre-opened channel from pool (no negotiation latency)
+// Pool replenishes in background after each channel consumed
+// Pool size configurable, default 8
+// On connection drop: drain pool, reconnect, rebuild pool
+Connection resilience:
+
+Auto-reconnect with exponential backoff (1s, 2s, 4s, 8s, max 30s)
+ServerAliveInterval=30, ServerAliveCountMax=3
+Reconnect triggers iptables re-apply if rules were lost
+
+SOCKS5 Listener (internal/proxy/socks5.go)
+
+Listen on 127.0.0.1:$socks_port (default 1080)
+Full SOCKS5 protocol (RFC 1928)
+CONNECT command: open SSH channel from pool → forward TCP
+UDP ASSOCIATE: only if proxy_udp=true AND SSH supports it (with OpenSSH it doesn't — return error gracefully)
+No authentication required (local loopback only)
+
+Transparent Proxy Listener (internal/proxy/transparent.go)
+
+Redirect mode: listen on 0.0.0.0:$redir_port, read original dst via SO_ORIGINAL_DST getsockopt
+TPROXY mode: listen with IP_TRANSPARENT socket option on 0.0.0.0:$tproxy_port
+For each intercepted connection: open SSH channel from pool → forward TCP to original destination
+DNS interception: when dst port 53 and dns_hijack_tcp=true → resolve over TCP through SSH channel
+
+Unix Socket API (internal/api/)
+The daemon exposes a Unix domain socket at /data/adb/sshcustom/run/sshcustomd.sock for the Android app to communicate without root for status reads (the app uses root for control commands but uses the socket for real-time data).
+API messages (JSON over Unix socket):
+json// Status request
+{"type": "status"}
+
+// Status response
+{
+  "type": "status",
+  "connected": true,
+  "uptime_seconds": 3661,
+  "ssh_mode": "direct",
+  "network_mode": "redirect",
+  "bytes_sent": 1234567,
+  "bytes_recv": 9876543,
+  "channel_pool_size": 8,
+  "channel_pool_available": 6,
+  "active_connections": 12
+}
+
+// Config reload
+{"type": "reload"}
+
+// Ping
+{"type": "ping"}
+Config Reader (internal/config/)
+
+Parse settings.ini (shell-style key="value" format)
+Hot reload on SIGHUP
+Validate all fields on load
+Write back changes from app
+
+
+Step 6 — Android App
+Project Setup
+
+Package: com.sshcustom.vpnchain
+Min SDK: API 28 (Android 9)
+Target SDK: API 35
+Language: Kotlin
+UI: Jetpack Compose + miuix (top.yukonga.miuix.kmp:miuix:latest)
+Root: com.github.topjohnwu.libsu:core:latest + com.github.topjohnwu.libsu:io:latest
+Architecture: MVVM + Repository pattern
+Async: Kotlin Coroutines + Flow throughout
+
+Dependencies (build.gradle.kts)
+kotlinimplementation("top.yukonga.miuix.kmp:miuix:<latest>")
+implementation("com.github.topjohnwu.libsu:core:<latest>")
+implementation("com.github.topjohnwu.libsu:io:<latest>")
+implementation("com.squareup.okhttp3:okhttp:<latest>")  // for WAN IP lookup
+implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:<latest>")
+implementation("androidx.lifecycle:lifecycle-viewmodel-compose:<latest>")
+implementation("androidx.navigation:navigation-compose:<latest>")
+Theme Setup
+kotlin@Composable
+fun SSHCustomTheme(content: @Composable () -> Unit) {
+    val colors = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
+    MiuixTheme(colors = colors, content = content)
+}
+Use miuix dark color scheme as default — matches the BOX app dark aesthetic exactly.
+Navigation Structure
+Bottom navigation bar with 4 tabs (miuix NavigationBar):
+
+Home (icon: home)
+Profiles (icon: person/account)
+Settings (icon: settings gear)
+Logs (icon: document/list)
+
+Screen 1: Home
+Status Card (full width, rounded miuix card):
+
+Large status indicator: green dot + "Running" or grey dot + "Stopped"
+Uptime timer: < 1 min then HH:MM:SS format, updates every second while running — this is the tunnel time showing how long connected
+Current mode badge: e.g. "Direct · Redirect"
+Profile name currently active
+
+Control Buttons (below status card, full width row):
+
+Three equal buttons: Reload | Stop | Restart (match BOX app screenshot layout exactly)
+When stopped: show single Start button
+Buttons use miuix Button component with appropriate colors
+
+Info Cards (2-column grid below buttons):
+WAN Card:
+
+Label: "WAN"
+IP address (fetched from ip-api.com or ipinfo.io)
+Country flag emoji + country name
+"Details" chip button
+
+Net Speed Card:
+
+Label: "Net Speed"
+Up: XXX KB/s
+Down: XXX KB/s
+Updates every second by reading /proc/net/dev
+
+Resources Card:
+
+Label: "Resources"
+Memory: XX MB (daemon RSS from /proc/$pid/status)
+CPU: X.X% (calculated from /proc/$pid/stat)
+
+Channel Pool Card (when speed boost enabled):
+
+Label: "Pool"
+Available channels: X/8
+Active connections: XX
+
+All data polling via Kotlin Flow with 1-second intervals. Stop polling when app backgrounded.
+Screen 2: Profiles
+Profile list (miuix cards, scrollable):
+
+Each card shows: profile name, server:port, SSH mode badge
+Tap to select as active profile
+Long press or swipe for edit/delete
+FAB button to add new profile
+
+Profile Editor (bottom sheet or new screen):
+Fields using miuix TextField components:
+
+Profile Name
+Server (hostname or IP)
+Port (numeric, default 22)
+Username
+Password (masked, eye toggle)
+
+SSH Mode selector (miuix dropdown/segmented):
+
+Direct
+SSH + SNI → shows SNI Host field
+SSH + SNI + HTTP Proxy → shows SNI Host + HTTP Proxy Host + HTTP Proxy Port fields
+
+Payload section (expandable card):
+
+Toggle: "Enable Payload"
+When enabled: multi-line TextField for raw payload paste
+Helper text: "Paste your payload string here. Variables: [host], [port], [cr], [lf], [crlf]"
+No builder needed — just paste
+
+Save / Cancel buttons.
+Screen 3: Settings
+Model this screen after the BOX "Other Proxy Config" screenshot provided. Use the same card grouping pattern.
+Ports Card:
+
+TPROXY Port (default 9898)
+Redirect Port (default 9797)
+
+Traffic Mode Card:
+
+Selector: Redirect | TPROXY | TUN | TUN+UDPGW
+When TUN+UDPGW selected: show UDPGW Server field (host:port on VPS)
+
+Proxy Behavior Card:
+
+QUIC toggle (default OFF — blocks UDP 443/80 for SSH compatibility, label explains: "Block QUIC — forces apps to use TCP for better tunnel compatibility")
+Performance Mode toggle (default ON)
+Proxy TCP toggle (default ON)
+Proxy UDP toggle (default OFF — SSH cannot carry UDP, toggle disabled with tooltip when in Redirect mode)
+
+Speed Boost Card:
+
+Channel Pool toggle (default ON) — "Pre-warm SSH channels for maximum download speed"
+BBR Congestion Control toggle — "Enable BBR if kernel supports it"
+TCP Buffer Tuning toggle — "Maximize buffer sizes for high throughput"
+
+DNS Hijack Card:
+
+DNS Hijack TCP toggle
+DNS Hijack UDP toggle
+DNS Hijack Mode: Redirect | TPROXY | Disable
+
+Developer Card:
+
+GitHub Token field (masked, paste field) — "Your GitHub personal access token for Kiro autonomous operations" — stored in EncryptedSharedPreferences
+Module data path display (read-only)
+Force cleanup button — runs ssh.iptables disable regardless of daemon state
+
+About Card:
+
+Version, module version, build date
+
+Screen 4: Logs
+
+ScrollableColumn reading /data/adb/sshcustom/run/sshcustom.log via libsu FileInputStream
+Auto-scroll to bottom
+Color-coded lines: Info=white, Warning=yellow, Error=red, Debug=grey
+Refresh button + auto-refresh every 2 seconds
+Clear log button
+Share log button (Android share sheet)
+
+Root Integration via libsu
+kotlin// All root operations go through a RootService
+// App process never needs root — all privileged ops via bound RootService
+
+class SSHControlService : RootService() {
+    // start tunnel: sh ssh.service start
+    // stop tunnel: sh ssh.service stop  
+    // restart: sh ssh.service restart
+    // read settings.ini: parse file via libsu IO
+    // write settings.ini: write file via libsu IO
+    // read log file: tail via libsu IO
+    // check status: read PID file, check /proc/$pid exists
+}
+Unix socket communication (for real-time stats) runs directly from app process — the socket at /data/adb/sshcustom/run/sshcustomd.sock is readable by all after daemon creates it with world-readable permissions.
+
+Step 7 — Build System (GitHub Actions)
+.github/workflows/build.yml
+This workflow must:
+
+Build tun2proxy arm64 binary:
+
+yaml- name: Build tun2proxy for Android arm64
+  run: |
+    git clone https://github.com/tun2proxy/tun2proxy.git
+    cd tun2proxy
+    cargo build --release --target aarch64-linux-android
+    cp target/aarch64-linux-android/release/tun2proxy-bin ../third_party/tun2proxy/tun2proxy
+Set up Android NDK toolchain for Rust cross-compilation.
+
+Build Go daemon for arm64 Android:
+
+yaml- name: Build sshcustomd
+  env:
+    GOOS: android
+    GOARCH: arm64
+    CGO_ENABLED: "0"
+    GOFLAGS: "-trimpath"
+  run: |
+    cd daemon
+    go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" \
+      -o ../module/bin/sshcustomd \
+      ./cmd/sshcustomd
+
+Package module zip:
+
+yaml- name: Package Magisk module
+  run: |
+    cp third_party/tun2proxy/tun2proxy module/bin/tun2proxy
+    cd module
+    zip -r ../sshcustom-vpnchain-${{ github.ref_name }}.zip . \
+      -x "*.DS_Store" -x "__MACOSX/*"
+
+Build Android APK:
+
+yaml- name: Build APK
+  run: |
+    cd app
+    ./gradlew assembleRelease
+
+Trigger on: push to main, pull requests, and version tags (v*).
+
+build.sh — Local Build Script
+For local development — builds daemon for arm64, packages module zip, skips APK (Gradle handles that separately). Documents how to set up Android NDK for local tun2proxy compilation.
+
+Step 8 — Module Installation (customize.sh)
+sh#!/system/bin/sh
+SKIPUNZIP=1
+
+# Extract files
+unzip -o "$ZIPFILE" -d "$MODPATH"
+
+# Set permissions
+set_perm_recursive "$MODPATH/scripts" root root 0755 0755
+set_perm_recursive "$MODPATH/bin" root root 0755 0755
+set_perm "$MODPATH/settings.ini" root root 0600
+
+# Create data directories
+mkdir -p /data/adb/sshcustom/run
+mkdir -p /data/adb/sshcustom/profiles
+chmod 700 /data/adb/sshcustom
+
+# Copy default settings if not exists
+if [ ! -f /data/adb/sshcustom/settings.ini ]; then
+  cp "$MODPATH/settings.ini" /data/adb/sshcustom/settings.ini
+fi
+
+ui_print "SSHCustom-VPNChain installed"
+ui_print "Open the companion app to configure"
+
+Step 9 — VPN Chain Future Documentation
+In docs/vpnchain-future.md, document based on your reading of the v1.0.1 source:
+
+The complete VPN chain architecture (OpenVPN over SSH)
+The iptables routing strategy used
+The vpnchain.sh script logic
+The tun0 → SOCKS5 → SSH flow
+What needs to be added to settings.ini for VPN chain support
+What changes ssh.iptables needs to support VPN chain mode
+The vpnchain start/stop/switch/status command interface to preserve
+Authentication file structure
+
+This document is the handoff for future implementation — must be comprehensive enough that any developer can implement VPN chain from it alone.
+
+Step 10 — README
+Write a clean README.md covering:
+
+What the module does
+Requirements (rooted Android 9+, Magisk/KSU/APatch, arm64)
+Installation steps
+SSH mode explanations (Direct, SNI, SNI+HTTP Proxy)
+Payload explanation and usage
+Traffic mode explanations (Redirect, TPROXY, TUN, TUN+UDPGW)
+Speed boost explanation
+QUIC toggle explanation
+Stop behavior (clean state for other VPN apps)
+App screenshots placeholder
+VPN Chain: "Coming soon"
+
+
+Critical Requirements Summary
+These must be true when done:
+
+ssh.service stop leaves the device in a 100% clean state — no leftover iptables rules, no policy routes, no TUN devices, no fwmarks. Any other VPN app must work immediately after stop.
+The Go daemon compiles to a single static binary with zero shared library dependencies (CGO_ENABLED=0), runs on Android 9+ arm64 without any additional runtime.
+All four traffic modes (Redirect, TPROXY, TUN, TUN+UDPGW) must work independently. Mode selection in settings.ini determines which is applied. Capability probe auto-downgrades gracefully with clear log warnings.
+The Android app never crashes on devices without root — show a clear "Root not found" screen instead.
+QUIC defaulting to disable means on first install, UDP 443 and UDP 80 are blocked on OUTPUT, forcing all traffic through TCP-capable SSH tunnel.
+The channel pool is on by default and measurably improves throughput on high-latency SSH connections by eliminating per-connection channel negotiation overhead.
+The tunnel uptime timer on the Home screen updates every second while connected, showing HH:MM:SS format after the first minute.
+Stop completely before applying new settings — never apply partial config changes while tunnel is active.
+All custom iptables chains use SSHC_ prefix to avoid collisions with other modules (especially other box-based modules).
+The app's Start/Stop/Restart buttons on Home screen are the primary control interface — they call the module's ssh.service script via libsu RootService.
+
+
+Order of Implementation
+Do these in strict order, get confirmation at each milestone before proceeding:
+
+✅ Install antigravity-awesome-skills
+✅ Read and analyze existing codebase → write analysis docs
+✅ Wipe repo, create directory structure
+✅ Write settings.ini template and all module shell scripts
+✅ Write and test Go daemon (daemon compiles cleanly for arm64)
+✅ Write GitHub Actions build workflow (tun2proxy + daemon + module zip)
+✅ Verify module installs and starts/stops cleanly (test iptables logic)
+✅ Build Android app (all 4 screens)
+✅ Integration test: app controls module via libsu
+✅ Write README and vpnchain-future.md
+✅ Push everything, create v2.0.0-alpha release
+
+At each ✅ checkpoint: commit what you have, push to main, report status.
