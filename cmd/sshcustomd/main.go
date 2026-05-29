@@ -1317,6 +1317,14 @@ func run(args []string) {
 }
 
 func connectionManager(ctx context.Context, cfg Config, p Profile, st *State) {
+	// Apply network hardening (IPv6 disable, QUIC block) once for the entire
+	// tunnel lifetime. These rules persist across reconnection attempts so that
+	// no traffic can leak during retry backoff windows. They are only removed
+	// on explicit user-initiated stop (stopTunnel).
+	if cfg.Tunnel.Enabled {
+		_ = callTunSetup(cfg.Module.WorkDir, "start")
+	}
+
 	initial := secondsDefault(cfg.Performance.RetryInitialDelaySec, 5)
 	maxDelay := secondsDefault(cfg.Performance.RetryMaxDelaySec, 60)
 	delay := time.Duration(initial) * time.Second
@@ -1429,10 +1437,9 @@ func connectionManager(ctx context.Context, cfg Config, p Profile, st *State) {
 			}
 		}
 
-		// Start tun_setup.sh and tun2proxy
+		// Start tun2proxy (hardening rules already active from connectionManager init)
 		var stopTun2Proxy func()
 		if cfg.Tunnel.Enabled {
-			_ = callTunSetup(cfg.Module.WorkDir, "start")
 			if stop, err := startTun2Proxy(ctx, cfg, cfg.Module.WorkDir, st, res.ResolvedIPs); err != nil {
 				log.Printf("tun2proxy failed to start: %v", err)
 				st.set(func() { st.LastError = "tun2proxy failed: " + err.Error() })
@@ -1451,9 +1458,6 @@ func connectionManager(ctx context.Context, cfg Config, p Profile, st *State) {
 			if stopTun2Proxy != nil {
 				stopTun2Proxy()
 				stopTun2Proxy = nil
-			}
-			if cfg.Tunnel.Enabled {
-				_ = callTunSetup(cfg.Module.WorkDir, "stop")
 			}
 			if stopUDPGW != nil {
 				stopUDPGW()

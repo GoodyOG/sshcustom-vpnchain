@@ -76,7 +76,9 @@ echo "==> tun2proxy binary (pre-compiled, static arm64)"
 if [ -f "$MODULE/bin/tun2proxy" ]; then
   echo "   tun2proxy found: $(ls -lh "$MODULE/bin/tun2proxy" | awk '{print $5}')"
 else
-  echo "   WARNING: tun2proxy binary not found at $MODULE/bin/tun2proxy"
+  echo "ERROR: tun2proxy binary not found at $MODULE/bin/tun2proxy" >&2
+  echo "Place the pre-compiled arm64 tun2proxy binary there before building." >&2
+  exit 1
 fi
 
 echo "==> Packaging Magisk module"
