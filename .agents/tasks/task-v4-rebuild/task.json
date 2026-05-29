@@ -1,0 +1,7 @@
+{
+  "task_id": "task-v4-rebuild",
+  "task_description": "Complete ground-up rebuild of SSHCustom-VPNChain v4.0.0 with tun2proxy architecture: remove transparent proxy/iptables/DNS forwarder, add tun2proxy process management, SSH port forward for badvpn-udpgw, and tun_setup.sh for IPv6/QUIC protection.",
+  "status": "in_progress",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003"],
+  "blocked_reason": null
+}

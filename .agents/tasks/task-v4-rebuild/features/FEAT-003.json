@@ -1,0 +1,40 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "Create tun_setup.sh script, update config.json to v4 schema, update module.prop, VERSION, WebUI, customize.sh, net_clean.sh, build.sh, and package the module.",
+  "status": "pending",
+  "steps": [
+    "Create src/module/scripts/tun_setup.sh with start/stop cases: start disables IPv6 via /proc/sys/net/ipv6/conf/all/disable_ipv6 and /proc/sys/net/ipv6/conf/default/disable_ipv6, adds iptables QUIC REJECT rule (UDP/443, not uid 0, REJECT --reject-with icmp-port-unreachable), flushes conntrack. stop restores IPv6, removes QUIC rule, flushes conntrack. Make it executable (chmod 755).",
+    "Replace src/module/config/config.json with the v4 schema: remove transparent_proxy section, add tunnel section {enabled: true, mode: tun2proxy, udpgw_port: 7300}, simplify dns section (no hijack/doh/note), update performance (retry_initial_delay_seconds: 3, retry_max_delay_seconds: 30, remove verbose_transparent_logs and read_probe_timeout_seconds)",
+    "Update VERSION file to 4.0.0",
+    "Update src/module/module.prop: version=v4.0.0, versionCode=40000, update description to reference tun2proxy architecture",
+    "Update src/module/webroot/index.html: Find and replace the Settings section that shows PROXY ENGINE / LEAK PROTECTION / TPROXY or transparent proxy toggles with a simple TUNNEL ENGINE card showing 'tun2proxy TUN + Virtual DNS + UDP Gateway' info. Keep all other pages (Home, Profiles, Logs, VPN Chain) intact.",
+    "Copy src/module/webroot/index.html to internal/webui/index.html (the embed source)",
+    "Update src/module/customize.sh: change version string to v4.0.0, add tun2proxy binary copy step (cp -af $MODPATH/bin/tun2proxy $BIN_DIR/tun2proxy and chmod), add tun_setup.sh copy step, remove references to tun2socks/openvpn binaries from the main SSHCustom section (VPN Chain section stays)",
+    "Update src/module/scripts/net_clean.sh: add cleanup for tun2proxy (kill tun2proxy process, remove tun_sshc TUN device via ip link delete), keep existing iptables cleanup for backward compatibility during upgrades",
+    "Update src/module/scripts/sshcustom.sh: update version references, ensure stop_module kills tun2proxy process and calls tun_setup.sh stop",
+    "Update build.sh: change version to 4.0.0, remove the tun2socks build step (no longer needed for main tunnel - VPN Chain still has its own), remove openvpn build step from the main flow, keep the packaging step. Add a note about tun2proxy being pre-compiled.",
+    "Update src/module/update.json with version 4.0.0",
+    "Commit all changes with the specified commit message"
+  ],
+  "acceptance_criteria": [
+    "src/module/scripts/tun_setup.sh exists and has correct start/stop logic",
+    "src/module/config/config.json has tunnel section and no transparent_proxy section",
+    "VERSION contains 4.0.0",
+    "module.prop has version=v4.0.0 and versionCode=40000",
+    "WebUI shows TUNNEL ENGINE card instead of old proxy settings",
+    "go test ./... still passes after all changes",
+    "GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build ./cmd/sshcustomd/ still succeeds",
+    "GOOS=linux GOARCH=arm CGO_ENABLED=0 go build ./cmd/sshcustomd/ still succeeds"
+  ],
+  "verification": [
+    "GOFLAGS=-mod=mod go test ./...",
+    "GOFLAGS=-mod=mod GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w -buildid= -X github.com/GoodyOG/SSHCustom_Magisk/internal/version.Version=4.0.0' -o /tmp/sshcustomd-arm64 ./cmd/sshcustomd/",
+    "GOFLAGS=-mod=mod GOOS=linux GOARCH=arm CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w -buildid= -X github.com/GoodyOG/SSHCustom_Magisk/internal/version.Version=4.0.0' -o /tmp/sshcustomd-arm ./cmd/sshcustomd/",
+    "test -f src/module/scripts/tun_setup.sh && echo OK",
+    "grep -q 'tun2proxy' src/module/config/config.json && echo OK",
+    "grep -q '4.0.0' VERSION && echo OK"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

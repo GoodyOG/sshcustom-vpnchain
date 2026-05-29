@@ -1,0 +1,39 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Rewrite the daemon (cmd/sshcustomd/main.go) to remove transparent proxy, iptables, DNS forwarder, and originalDst code. Add tun2proxy process management, SSH local port forward for udpgw (127.0.0.1:7300), and tun_setup.sh script invocation. Simplify Config struct to match new architecture. Keep all SSH transport chain, SSHPool, SOCKS5, WebUI/API, lifecycle, VPN Chain, and profile management code intact.",
+  "status": "pending",
+  "steps": [
+    "Delete cmd/sshcustomd/dnsforward.go (DNS forwarder no longer needed - tun2proxy --dns virtual handles DNS)",
+    "Delete cmd/sshcustomd/originaldst_linux.go and cmd/sshcustomd/originaldst_unsupported.go (no SO_ORIGINAL_DST needed)",
+    "Delete internal/iptables/iptables.go (the entire package - tun2proxy --setup handles routing)",
+    "In cmd/sshcustomd/main.go: Remove the import of 'github.com/GoodyOG/SSHCustom_Magisk/internal/iptables'",
+    "In cmd/sshcustomd/main.go: Remove the TransparentProxy struct field from Config and all transparent_proxy JSON config fields",
+    "In cmd/sshcustomd/main.go: Add a Tunnel struct to Config: { Enabled bool, Mode string, UDPGWPort int } with json tags tunnel.enabled, tunnel.mode, tunnel.udpgw_port",
+    "In cmd/sshcustomd/main.go: Remove the startTransparentIfEnabled function, handleTransparentConn function, transparentAddr function, applyTransparentRules function, cleanupTransparentRules function, iptablesCfgFromConfig function",
+    "In cmd/sshcustomd/main.go: Remove the startDNSForwarder call and stopDNS variable from connectionManager",
+    "In cmd/sshcustomd/main.go: Remove all State fields related to transparent proxy: TransparentEnabled, TransparentAddr, TransparentRunning, TransparentApplied and their references in Snapshot() and State initialization",
+    "In cmd/sshcustomd/main.go: Add a startUDPGWForward function that listens on 127.0.0.1:7300 (configurable via cfg.Tunnel.UDPGWPort), accepts TCP connections, opens an SSH direct-tcpip channel to 127.0.0.1:7300 on the server via pool.Dial(), and pipes data bidirectionally. Returns a cleanup func",
+    "In cmd/sshcustomd/main.go: Add a tun2proxy process manager: startTun2Proxy(ctx, cfg) (func(), error) that execs the binary at <workdir>/bin/tun2proxy with args: --device tun_sshc --proxy socks5://127.0.0.1:1080 --dns virtual --dns-addr 8.8.8.8 --udpgw-server 127.0.0.1:7300 --udpgw-keepalive 25 --udp-timeout 30 --fwmark 2 --setup --bypass 10.0.0.0/8 --bypass 172.16.0.0/12 --bypass 192.168.0.0/16 --bypass 127.0.0.0/8 --daemonize. Returns stop func that kills the process and cleans up",
+    "In cmd/sshcustomd/main.go: Add a tun_setup.sh caller: callTunSetup(workDir, action string) error that runs <workdir>/scripts/tun_setup.sh start|stop",
+    "In connectionManager: After SSH auth succeeds and SOCKS5 is started, call startUDPGWForward, then callTunSetup(workDir, 'start'), then startTun2Proxy. On cleanup (stopActive), stop tun2proxy, call callTunSetup(workDir, 'stop'), stop udpgw forward",
+    "In stopTunnel: Call net_clean.sh AND tun_setup.sh stop for cleanup",
+    "Update configSummary and apiCapabilities to reflect new tunnel architecture (remove transparent_proxy references, add tunnel info)",
+    "Keep ALL of: SSH transport chain (attemptSSHAuth, openPreparedSSHConn, attemptTransport, dialTCPResolved, etc), SSHPool and all pool methods, SOCKS5 listener and handler, WebUI/API routes, profile management, VPN Chain API endpoints, metrics sampler, lifecycle management (startTunnel/stopTunnel), State and its methods",
+    "Add State fields: TunProxyRunning bool, UDPGWRunning bool (with json tags and Snapshot() entries)"
+  ],
+  "acceptance_criteria": [
+    "go build ./cmd/sshcustomd/ compiles without errors for linux/arm64 and linux/arm",
+    "go test ./... passes (update main_test.go if needed to remove references to deleted functions)",
+    "No references to 'iptables' package import remain in cmd/sshcustomd/",
+    "No references to originalDst, handleTransparentConn, startDNSForwarder remain in cmd/sshcustomd/",
+    "New functions startUDPGWForward, startTun2Proxy, callTunSetup exist and are called in connectionManager"
+  ],
+  "verification": [
+    "GOFLAGS=-mod=mod go test ./...",
+    "GOFLAGS=-mod=mod GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -buildvcs=false ./cmd/sshcustomd/",
+    "GOFLAGS=-mod=mod GOOS=linux GOARCH=arm CGO_ENABLED=0 go build -trimpath -buildvcs=false ./cmd/sshcustomd/"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}
