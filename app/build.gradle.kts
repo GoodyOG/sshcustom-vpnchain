@@ -52,6 +52,9 @@ dependencies {
     implementation("com.github.topjohnwu.libsu:core:6.0.0")
     implementation("com.github.topjohnwu.libsu:io:6.0.0")
 
+    // AppCompat (for theme)
+    implementation("androidx.appcompat:appcompat:1.7.0")
+
     // Networking
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
