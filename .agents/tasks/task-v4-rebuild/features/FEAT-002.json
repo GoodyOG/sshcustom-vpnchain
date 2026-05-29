@@ -2,7 +2,7 @@
   "id": "FEAT-002",
   "type": "feat",
   "description": "Rewrite the daemon (cmd/sshcustomd/main.go) to remove transparent proxy, iptables, DNS forwarder, and originalDst code. Add tun2proxy process management, SSH local port forward for udpgw (127.0.0.1:7300), and tun_setup.sh script invocation. Simplify Config struct to match new architecture. Keep all SSH transport chain, SSHPool, SOCKS5, WebUI/API, lifecycle, VPN Chain, and profile management code intact.",
-  "status": "in_progress",
+  "status": "completed",
   "steps": [
     "Delete cmd/sshcustomd/dnsforward.go (DNS forwarder no longer needed - tun2proxy --dns virtual handles DNS)",
     "Delete cmd/sshcustomd/originaldst_linux.go and cmd/sshcustomd/originaldst_unsupported.go (no SO_ORIGINAL_DST needed)",
@@ -35,5 +35,5 @@
     "GOFLAGS=-mod=mod GOOS=linux GOARCH=arm CGO_ENABLED=0 go build -trimpath -buildvcs=false ./cmd/sshcustomd/"
   ],
   "blocked_reason": null,
-  "findings": ""
+  "findings": "All deletions and additions completed successfully. Build passes for host, linux/arm64, and linux/arm. All tests pass. The VerboseTransparentLogs field was kept in Performance struct since it is also used by the SOCKS5 handler for verbose logging (not just transparent proxy). The net_clean.sh path in stopTunnel was corrected to scripts/net_clean.sh."
 }
