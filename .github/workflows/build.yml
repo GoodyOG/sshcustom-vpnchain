@@ -204,6 +204,9 @@ jobs:
       - name: Accept SDK licenses
         run: yes | sdkmanager --licenses 2>/dev/null || true
 
+      - name: Install Android SDK 37
+        run: sdkmanager "platforms;android-37" "build-tools;35.0.0" 2>/dev/null || true
+
       - name: Make gradlew executable
         run: chmod +x gradlew
         working-directory: app
