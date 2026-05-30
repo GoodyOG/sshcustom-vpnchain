@@ -109,6 +109,8 @@ class DaemonRepository(private val context: Context) {
                 version          = runtime["version"]?.jsonPrimitive?.content ?: "",
                 memRssMb         = runtime["mem_rss_mb"]?.jsonPrimitive?.double ?: 0.0,
                 cpuPercent       = runtime["cpu_percent"]?.jsonPrimitive?.double ?: 0.0,
+                upKbps           = runtime["up_kbps"]?.jsonPrimitive?.double ?: 0.0,
+                downKbps         = runtime["down_kbps"]?.jsonPrimitive?.double ?: 0.0,
                 lastError        = runtime["last_error"]?.jsonPrimitive?.content ?: "",
             )
         } catch (_: Exception) { DaemonStatus() }

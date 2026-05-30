@@ -1,17 +1,17 @@
 package com.sshcustom.vpnchain.ui.screens
 
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.sp
 import com.sshcustom.vpnchain.domain.DaemonStatus
 import com.sshcustom.vpnchain.domain.NetSpeed
 import com.sshcustom.vpnchain.domain.TunnelState
+import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.*
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -29,17 +30,16 @@ fun HomeScreen(
     netSpeed: NetSpeed,
     wanIp: String,
     tunnelState: TunnelState,
+    pendingAction: String?,
     hasRoot: Boolean,
     isLoading: Boolean,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onRestart: () -> Unit,
-    onReload: () -> Unit,
     bottomPadding: PaddingValues,
 ) {
     if (!hasRoot) { NoRootScreen(bottomPadding); return }
 
-    // Each screen owns its scroll behaviour so TopAppBar collapses independently
     val scrollBehavior = MiuixScrollBehavior()
 
     Scaffold(
@@ -62,10 +62,35 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item { StatusCard(status, tunnelState) }
-            item { ControlButtons(tunnelState, isLoading, onStart, onStop, onRestart, onReload) }
+            item { ControlButtons(tunnelState, pendingAction, isLoading, onStart, onStop, onRestart) }
             item { InfoGrid(status, netSpeed, wanIp) }
         }
     }
+}
+
+// ── Status helpers ────────────────────────────────────────────────────────────
+
+private fun statusColor(state: TunnelState): Color = when (state) {
+    is TunnelState.Connected -> Color(0xFF4CAF50)
+    is TunnelState.Starting  -> Color(0xFFFFC107)
+    is TunnelState.Stopping  -> Color(0xFFFF9800)
+    is TunnelState.Error     -> Color(0xFFCF6679)
+    else                     -> Color(0xFF9E9E9E)
+}
+
+private fun statusLabel(state: TunnelState): String = when (state) {
+    is TunnelState.Connected -> "Running"
+    is TunnelState.Starting  -> "Starting"
+    is TunnelState.Stopping  -> "Stopping"
+    is TunnelState.Error     -> "Error"
+    else                     -> "Stopped"
+}
+
+private fun statusSubtitle(state: TunnelState): String = when (state) {
+    is TunnelState.Starting -> "Connecting to server…"
+    is TunnelState.Stopping -> "Shutting down…"
+    is TunnelState.Error    -> "Tap Start to retry"
+    else                    -> "Tunnel is off"
 }
 
 // ── Status card ─────────────────────────────────────────────────────────────
@@ -74,36 +99,39 @@ fun HomeScreen(
 private fun StatusCard(status: DaemonStatus, state: TunnelState) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                StatusDot(state)
-                Text(
-                    text = when (state) {
-                        is TunnelState.Connected -> "Running"
-                        is TunnelState.Starting  -> "Connecting…"
-                        is TunnelState.Stopping  -> "Stopping…"
-                        is TunnelState.Error     -> "Error"
-                        else                     -> "Stopped"
-                    },
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MiuixTheme.colorScheme.onSurface,
-                )
+                StatusIcon(state)
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(
+                        text = statusLabel(state),
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = statusColor(state),
+                    )
+                    if (status.connected) {
+                        Text(
+                            text = "Uptime  ${formatUptime(status.uptimeSeconds)}",
+                            fontSize = 14.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = MiuixTheme.colorScheme.primary,
+                        )
+                    } else {
+                        Text(
+                            text = statusSubtitle(state),
+                            fontSize = 13.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                }
             }
 
             if (status.connected) {
-                // Live uptime — updates every second via the status flow
-                Text(
-                    text = "Uptime  ${formatUptime(status.uptimeSeconds)}",
-                    fontSize = 16.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = MiuixTheme.colorScheme.primary,
-                )
                 Text(
                     text = "${status.sshMode.uppercase()}  ·  ${status.networkMode.uppercase()}  ·  v${status.version}",
                     fontSize = 14.sp,
@@ -122,82 +150,127 @@ private fun StatusCard(status: DaemonStatus, state: TunnelState) {
     }
 }
 
-/** Animated dot: pulses while Starting, solid while Running, grey when Stopped. */
+/**
+ * Box-style status icon. A filled disc when Running, a hollow ring when
+ * Stopped/Error, and a rotating arc (spinner) while Starting/Stopping.
+ */
 @Composable
-private fun StatusDot(state: TunnelState) {
-    val dotColor = when (state) {
-        is TunnelState.Connected -> Color(0xFF4CAF50)
-        is TunnelState.Starting  -> Color(0xFFFFC107)
-        is TunnelState.Stopping  -> Color(0xFFFF9800)
-        is TunnelState.Error     -> Color(0xFFCF6679)
-        else                     -> Color(0xFF757575)
-    }
+private fun StatusIcon(state: TunnelState) {
+    val color = statusColor(state)
+    val spinning = state is TunnelState.Starting || state is TunnelState.Stopping
 
-    val pulse = state is TunnelState.Starting || state is TunnelState.Stopping
-    val infiniteTransition = rememberInfiniteTransition(label = "dot_pulse")
-    val scale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (pulse) 1.35f else 1f,
+    val transition = rememberInfiniteTransition(label = "status_spin")
+    val angle by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(600, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
+            animation = tween(900, easing = LinearEasing),
         ),
-        label = "pulse_scale",
+        label = "angle",
     )
 
-    Box(
-        modifier = Modifier
-            .size(14.dp)
-            .scale(scale)
-            .clip(CircleShape)
-            .background(dotColor),
-    )
+    Canvas(modifier = Modifier.size(34.dp)) {
+        val strokeW = 3.dp.toPx()
+        val d = size.minDimension - strokeW
+        val topLeft = Offset((size.width - d) / 2f, (size.height - d) / 2f)
+        val arcSize = Size(d, d)
+        when {
+            spinning -> {
+                drawArc(color.copy(alpha = 0.25f), 0f, 360f, false, topLeft, arcSize,
+                    style = Stroke(strokeW, cap = StrokeCap.Round))
+                drawArc(color, angle, 100f, false, topLeft, arcSize,
+                    style = Stroke(strokeW, cap = StrokeCap.Round))
+            }
+            state is TunnelState.Connected -> {
+                drawCircle(color, radius = d / 2f, center = Offset(size.width / 2f, size.height / 2f))
+            }
+            else -> {
+                drawArc(color, 0f, 360f, false, topLeft, arcSize, style = Stroke(strokeW))
+            }
+        }
+    }
 }
 
 // ── Control buttons ──────────────────────────────────────────────────────────
 
+/**
+ * A small braille spinner that animates while [active]. Returns a frame char +
+ * spacing, or an empty string when inactive. Always call it unconditionally.
+ */
+@Composable
+private fun spinnerFrame(active: Boolean): String {
+    val frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    var idx by remember { mutableIntStateOf(0) }
+    LaunchedEffect(active) {
+        if (active) {
+            while (true) {
+                delay(90)
+                idx = (idx + 1) % frames.length
+            }
+        }
+    }
+    return if (active) "${frames[idx]}  " else ""
+}
+
 @Composable
 private fun ControlButtons(
     state: TunnelState,
+    pendingAction: String?,
     isLoading: Boolean,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onRestart: () -> Unit,
-    onReload: () -> Unit,
 ) {
-    val stopped = state is TunnelState.Stopped || state is TunnelState.Error
-    if (stopped) {
+    val transitioning = isLoading ||
+        state is TunnelState.Starting || state is TunnelState.Stopping
+
+    if (transitioning) {
+        // Single full-width progress button while an action is in flight (box-style).
+        val label = when {
+            pendingAction == "stop"       -> "Stopping…"
+            pendingAction == "restart"    -> "Restarting…"
+            pendingAction == "start"      -> "Starting…"
+            state is TunnelState.Stopping -> "Stopping…"
+            else                          -> "Starting…"
+        }
+        val spin = spinnerFrame(true)
         TextButton(
-            text = if (isLoading) "Starting…" else "Start",
-            onClick = onStart,
-            enabled = !isLoading,
+            text = "$spin$label",
+            onClick = {},
+            enabled = false,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.textButtonColorsPrimary(),
         )
     } else {
+        // Idle: Start, Stop, Restart are always visible; non-applicable ones grey out.
+        val connected = state is TunnelState.Connected
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             TextButton(
-                text = "Reload", onClick = onReload,
-                enabled = !isLoading, modifier = Modifier.weight(1f),
+                text = "Start",
+                onClick = onStart,
+                enabled = !connected,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.textButtonColorsPrimary(),
             )
             TextButton(
-                text = if (isLoading) "…" else "Stop",
+                text = "Stop",
                 onClick = onStop,
-                enabled = !isLoading,
+                enabled = connected,
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.textButtonColors(
-                    color              = MiuixTheme.colorScheme.error,
-                    textColor          = Color.White,
-                    disabledColor      = MiuixTheme.colorScheme.disabledSecondaryVariant,
-                    disabledTextColor  = MiuixTheme.colorScheme.disabledOnSecondaryVariant,
+                    color             = MiuixTheme.colorScheme.error,
+                    textColor         = Color.White,
+                    disabledColor     = MiuixTheme.colorScheme.disabledSecondaryVariant,
+                    disabledTextColor = MiuixTheme.colorScheme.disabledOnSecondaryVariant,
                 ),
             )
             TextButton(
-                text = "Restart", onClick = onRestart,
-                enabled = !isLoading, modifier = Modifier.weight(1f),
+                text = "Restart",
+                onClick = onRestart,
+                enabled = connected,
+                modifier = Modifier.weight(1f),
             )
         }
     }
@@ -207,7 +280,6 @@ private fun ControlButtons(
 
 @Composable
 private fun InfoGrid(status: DaemonStatus, netSpeed: NetSpeed, wanIp: String) {
-    // Two rows of two equal-height cards
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),

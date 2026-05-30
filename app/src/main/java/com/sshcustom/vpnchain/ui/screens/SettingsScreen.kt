@@ -12,7 +12,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sshcustom.vpnchain.domain.AppSettings
 import top.yukonga.miuix.kmp.basic.*
-import top.yukonga.miuix.kmp.extra.SuperArrow
 import top.yukonga.miuix.kmp.extra.SuperDropdown
 import top.yukonga.miuix.kmp.extra.SuperSwitch
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -40,7 +39,6 @@ private fun indexToDnsMode(i: Int)    = DNS_MODE_VALUES.getOrElse(i) { "disable"
 fun SettingsScreen(
     settings: AppSettings,
     onSettingsChange: (AppSettings) -> Unit,
-    onForceCleanup: () -> Unit,
     needsRestart: Boolean,
     appVersion: String,
     bottomPadding: PaddingValues,
@@ -228,20 +226,6 @@ fun SettingsScreen(
                             onCheckedChange = { onSettingsChange(settings.copy(autostartTunnel = it)) },
                             title           = "Start tunnel on boot",
                             summary         = "OFF = daemon starts in idle mode only (WebUI accessible, no tunnel). ON = tunnel connects automatically after boot.",
-                        )
-                    }
-                }
-            }
-
-            // ── Developer ─────────────────────────────────────────────────────
-            settingsSection("Developer") {
-                item {
-                    Card(Modifier.fillMaxWidth()) {
-                        // Force cleanup IS an action — keep arrow
-                        SuperArrow(
-                            title   = "Force iptables cleanup",
-                            summary = "Runs ssh.iptables disable — clears all rules even if stuck",
-                            onClick = onForceCleanup,
                         )
                     }
                 }

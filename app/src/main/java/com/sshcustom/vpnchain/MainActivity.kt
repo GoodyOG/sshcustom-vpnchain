@@ -48,6 +48,7 @@ fun MainAppContent() {
     val settings        by vm.settings.collectAsState()
     val hasRoot         by vm.hasRoot.collectAsState()
     val isLoading       by vm.isLoading.collectAsState()
+    val pendingAction   by vm.pendingAction.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
 
@@ -73,9 +74,10 @@ fun MainAppContent() {
         when (selectedTab) {
             0 -> HomeScreen(
                 status = status, netSpeed = netSpeed, wanIp = wanIp,
-                tunnelState = tunnelState, hasRoot = hasRoot, isLoading = isLoading,
+                tunnelState = tunnelState, pendingAction = pendingAction,
+                hasRoot = hasRoot, isLoading = isLoading,
                 onStart = vm::startTunnel, onStop = vm::stopTunnel,
-                onRestart = vm::restartTunnel, onReload = vm::reloadConfig,
+                onRestart = vm::restartTunnel,
                 bottomPadding = bottomPadding,
             )
             1 -> ProfilesScreen(
@@ -86,7 +88,6 @@ fun MainAppContent() {
             )
             2 -> SettingsScreen(
                 settings = settings, onSettingsChange = vm::updateSettings,
-                onForceCleanup = vm::forceCleanup,
                 needsRestart = vm.settingsNeedRestart,
                 appVersion = BuildConfig.VERSION_NAME,
                 bottomPadding = bottomPadding,

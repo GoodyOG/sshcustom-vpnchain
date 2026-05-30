@@ -26,6 +26,8 @@ type StatusSnapshot struct {
 	Version          string  `json:"version"`
 	MemRSSMB         float64 `json:"mem_rss_mb"`
 	CPUPercent       float64 `json:"cpu_percent"`
+	UpKbps           float64 `json:"up_kbps"`
+	DownKbps         float64 `json:"down_kbps"`
 	LastError        string  `json:"last_error,omitempty"`
 }
 
