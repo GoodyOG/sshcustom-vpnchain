@@ -100,9 +100,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun checkRoot() = viewModelScope.launch(Dispatchers.IO) {
-        val r = Shell.cmd("id").exec()
-        val hasIt = r.isSuccess && (r.out.firstOrNull()?.contains("uid=0") == true)
-        _hasRoot.value = hasIt
+        try {
+            // Shell.isAppGrantedRoot() checks the KSU/Magisk grant without
+            // running a command. Returns true/false/null (null = unknown).
+            // If unknown, fall back to requesting a root shell and testing it.
+            val granted = Shell.isAppGrantedRoot()
+            if (granted == true) {
+                _hasRoot.value = true
+                return@launch
+            }
+            // Request root shell — this triggers the KSU grant dialog if needed
+            val shell = Shell.getShell()
+            _hasRoot.value = shell.isRoot
+        } catch (_: Exception) {
+            // Last resort: try running id as root directly
+            try {
+                val r = Shell.cmd("id").exec()
+                _hasRoot.value = r.isSuccess &&
+                    r.out.firstOrNull()?.contains("uid=0") == true
+            } catch (_: Exception) {
+                _hasRoot.value = false
+            }
+        }
     }
 
     private fun loadPersistedData() {
