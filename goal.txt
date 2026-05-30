@@ -178,8 +178,8 @@ restart — stop then start
 status — check if daemon PID is alive
 
 Log format (match box exactly):
-服务正在启动，请稍候...    (starting)
-服务正在关闭...             (stopping)
+Service starting, please wait...    (starting)
+Service stopping...                 (stopping)
 HH:MM [Info]: message
 HH:MM [Warning]: message
 HH:MM [Error]: message

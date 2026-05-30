@@ -32,7 +32,7 @@ private fun indexToTraffic(i: Int)    = TRAFFIC_VALUES.getOrElse(i) { "redirect"
 private val DNS_MODE_LABELS = listOf("Redirect", "TPROXY", "Disable")
 private val DNS_MODE_VALUES = listOf("redirect", "tproxy", "disable")
 private fun dnsModeToIndex(v: String) = DNS_MODE_VALUES.indexOf(v).coerceAtLeast(0)
-private fun indexToDnsMode(i: Int)    = DNS_MODE_VALUES.getOrElse(i) { "redirect" }
+private fun indexToDnsMode(i: Int)    = DNS_MODE_VALUES.getOrElse(i) { "disable" }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
@@ -70,34 +70,6 @@ fun SettingsScreen(
                             fontSize = 13.sp,
                             color    = MiuixTheme.colorScheme.error,
                             modifier = Modifier.padding(14.dp),
-                        )
-                    }
-                }
-            }
-
-            // ── Boot behaviour ────────────────────────────────────────────────
-            settingsSection("Boot Behaviour") {
-                item {
-                    Card(Modifier.fillMaxWidth()) {
-                        SuperSwitch(
-                            checked         = settings.autostartTunnel,
-                            onCheckedChange = { onSettingsChange(settings.copy(autostartTunnel = it)) },
-                            title           = "Start tunnel on boot",
-                            summary         = "OFF = daemon starts in idle mode only (WebUI accessible, no tunnel). ON = tunnel connects automatically after boot.",
-                        )
-                    }
-                }
-            }
-
-            // ── Hotspot ───────────────────────────────────────────────────────
-            settingsSection("Hotspot Sharing") {
-                item {
-                    Card(Modifier.fillMaxWidth()) {
-                        SuperSwitch(
-                            checked         = settings.hotspotSharing,
-                            onCheckedChange = { onSettingsChange(settings.copy(hotspotSharing = it)) },
-                            title           = "Share tunnel via hotspot",
-                            summary         = "Forward hotspot clients through the SSH tunnel. Requires restart.",
                         )
                     }
                 }
@@ -167,8 +139,8 @@ fun SettingsScreen(
                 }
             }
 
-            // ── Speed Boost ───────────────────────────────────────────────────
-            settingsSection("Speed Boost") {
+            // ── Performance ───────────────────────────────────────────────────
+            settingsSection("Performance") {
                 item {
                     Card(Modifier.fillMaxWidth()) {
                         SuperSwitch(
@@ -200,15 +172,15 @@ fun SettingsScreen(
                         SuperSwitch(
                             checked         = settings.dnsHijackTcp,
                             onCheckedChange = { onSettingsChange(settings.copy(dnsHijackTcp = it)) },
-                            title           = "Hijack DNS over TCP",
+                            title           = "DNS Hijack TCP",
                         )
                         SuperSwitch(
                             checked         = settings.dnsHijackUdp,
                             onCheckedChange = { onSettingsChange(settings.copy(dnsHijackUdp = it)) },
-                            title           = "Hijack DNS over UDP",
+                            title           = "DNS Hijack UDP",
                         )
                         SuperDropdown(
-                            title               = "DNS Mode",
+                            title               = "DNS Hijack Mode",
                             items               = DNS_MODE_LABELS,
                             selectedIndex       = dnsModeToIndex(settings.dnsHijackMode),
                             onSelectedIndexChange = { i ->
@@ -228,6 +200,34 @@ fun SettingsScreen(
                             onCheckedChange = { onSettingsChange(settings.copy(ipv6 = !it)) },
                             title           = "Disable IPv6",
                             summary         = "Recommended while tunnel is active",
+                        )
+                    }
+                }
+            }
+
+            // ── Hotspot ───────────────────────────────────────────────────────
+            settingsSection("Hotspot Sharing") {
+                item {
+                    Card(Modifier.fillMaxWidth()) {
+                        SuperSwitch(
+                            checked         = settings.hotspotSharing,
+                            onCheckedChange = { onSettingsChange(settings.copy(hotspotSharing = it)) },
+                            title           = "Share tunnel via hotspot",
+                            summary         = "Forward hotspot clients through the SSH tunnel. Requires restart.",
+                        )
+                    }
+                }
+            }
+
+            // ── Boot behaviour ────────────────────────────────────────────────
+            settingsSection("Boot Behaviour") {
+                item {
+                    Card(Modifier.fillMaxWidth()) {
+                        SuperSwitch(
+                            checked         = settings.autostartTunnel,
+                            onCheckedChange = { onSettingsChange(settings.copy(autostartTunnel = it)) },
+                            title           = "Start tunnel on boot",
+                            summary         = "OFF = daemon starts in idle mode only (WebUI accessible, no tunnel). ON = tunnel connects automatically after boot.",
                         )
                     }
                 }

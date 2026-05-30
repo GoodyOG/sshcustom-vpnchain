@@ -7,7 +7,7 @@ MODDIR="${0%/*}"
 WORK_DIR="/data/adb/sshcustom"
 SERVICE="${WORK_DIR}/scripts/ssh.service"
 
-printf '服务正在启动，请稍候...\n'
+printf 'SSHCustom-VPNChain — please wait...\n'
 
 case "${1:-}" in
   start)

@@ -579,6 +579,9 @@ case "${1:-}" in
 
     runtime_save
     [ "${1}" = "renew" ] && log Info "iptables: renew complete"
+    # Explicit success: the preceding test returns non-zero when $1=enable,
+    # which would otherwise leak as a false "iptables enable returned non-zero".
+    exit 0
     ;;
 
   disable)
