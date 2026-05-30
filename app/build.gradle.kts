@@ -7,12 +7,12 @@ plugins {
 
 android {
     namespace = "com.sshcustom.vpnchain"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.sshcustom.vpnchain"
         minSdk = 28
-        targetSdk = 35
+        targetSdk = 37
         versionCode = 20000
         versionName = "2.0.0"
     }
@@ -78,10 +78,10 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     // ── AndroidX ─────────────────────────────────────────────────────────────
-    implementation("androidx.activity:activity-compose:1.9.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.0")
+    implementation("androidx.core:core-ktx:1.16.0")
 
     // NOTE: No material3, no material-icons-extended, no navigation-compose —
     // all navigation and UI is handled by miuix primitives directly.
