@@ -118,25 +118,6 @@ apply_speed_boost() {
   local orig_file="${box_run}/speed_orig.env"
   : > "${orig_file}"
 
-  # BBR congestion control
-  if [ "${bbr_enabled}" = "true" ]; then
-    local avail
-    avail="$(sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null || true)"
-    case " ${avail} " in
-      *" bbr "*)
-        local orig_cc
-        orig_cc="$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo cubic)"
-        printf 'orig_congestion_control="%s"\n' "${orig_cc}" >> "${orig_file}"
-        sysctl -w net.ipv4.tcp_congestion_control=bbr >/dev/null 2>&1 && \
-          log Info "speed_boost: BBR enabled (was ${orig_cc})" || \
-          log Warning "speed_boost: BBR sysctl failed"
-        ;;
-      *)
-        log Warning "speed_boost: BBR not in kernel (available: ${avail})"
-        ;;
-    esac
-  fi
-
   # TCP buffer tuning
   if [ "${tcp_buffer_tuning}" = "true" ]; then
     local orig_rmem orig_wmem orig_core_r orig_core_w
@@ -168,10 +149,6 @@ restore_speed_settings() {
   # shellcheck disable=SC1090
   . "${orig_file}"
 
-  if [ -n "${orig_congestion_control:-}" ]; then
-    sysctl -w net.ipv4.tcp_congestion_control="${orig_congestion_control}" >/dev/null 2>&1 && \
-      log Info "speed_restore: congestion control → ${orig_congestion_control}"
-  fi
   if [ -n "${orig_core_rmem_max:-}" ]; then
     sysctl -w net.core.rmem_max="${orig_core_rmem_max}"    >/dev/null 2>&1 || true
     sysctl -w net.core.wmem_max="${orig_core_wmem_max}"    >/dev/null 2>&1 || true

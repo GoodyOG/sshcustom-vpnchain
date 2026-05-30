@@ -33,9 +33,12 @@ fun HomeScreen(
     pendingAction: String?,
     hasRoot: Boolean,
     isLoading: Boolean,
+    latencyGoogle: Int,
+    latencyCloudflare: Int,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onRestart: () -> Unit,
+    onPingLatency: () -> Unit,
     bottomPadding: PaddingValues,
 ) {
     if (!hasRoot) { NoRootScreen(bottomPadding); return }
@@ -64,6 +67,7 @@ fun HomeScreen(
             item { StatusCard(status, tunnelState) }
             item { ControlButtons(tunnelState, pendingAction, isLoading, onStart, onStop, onRestart) }
             item { InfoGrid(status, netSpeed, wanIp) }
+            item { LatencyCard(latencyGoogle, latencyCloudflare, onPingLatency) }
         }
     }
 }
@@ -364,6 +368,50 @@ private fun NoRootScreen(bottomPadding: PaddingValues) {
                 fontSize = 16.sp,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             )
+        }
+    }
+}
+
+// ── Latency card ─────────────────────────────────────────────────────────────
+
+@Composable
+private fun LatencyCard(latencyGoogle: Int, latencyCloudflare: Int, onPing: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Latency",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                )
+                TextButton(
+                    text = "Ping",
+                    onClick = onPing,
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+            ) {
+                Text(
+                    text = "Google  ${if (latencyGoogle >= 0) "${latencyGoogle} ms" else "—"}",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MiuixTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "Cloudflare  ${if (latencyCloudflare >= 0) "${latencyCloudflare} ms" else "—"}",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MiuixTheme.colorScheme.onSurface,
+                )
+            }
         }
     }
 }

@@ -152,12 +152,6 @@ fun SettingsScreen(
                             summary         = "Pre-warm SSH channels — reduces per-connection latency",
                         )
                         SuperSwitch(
-                            checked         = settings.bbrEnabled,
-                            onCheckedChange = { onSettingsChange(settings.copy(bbrEnabled = it)) },
-                            title           = "BBR Congestion Control",
-                            summary         = "Enable BBR if kernel supports it",
-                        )
-                        SuperSwitch(
                             checked         = settings.tcpBufferTuning,
                             onCheckedChange = { onSettingsChange(settings.copy(tcpBufferTuning = it)) },
                             title           = "TCP Buffer Tuning",
@@ -239,7 +233,22 @@ fun SettingsScreen(
             settingsSection("About") {
                 item {
                     Card(Modifier.fillMaxWidth()) {
-                        // BasicComponent shows no arrow icon — pure info row
+                        BasicComponent(
+                            title        = "Developer",
+                            rightActions = {
+                                Text("GoodyOG",
+                                    color    = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                    fontSize = MiuixTheme.textStyles.body2.fontSize)
+                            },
+                        )
+                        BasicComponent(
+                            title        = "Source",
+                            rightActions = {
+                                Text("github.com/GoodyOG/sshcustom-vpnchain",
+                                    color    = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                    fontSize = 11.sp)
+                            },
+                        )
                         BasicComponent(
                             title        = "App version",
                             rightActions = {

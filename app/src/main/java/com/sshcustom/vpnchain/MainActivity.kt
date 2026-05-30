@@ -75,6 +75,10 @@ fun MainAppContent() {
     val vpnPass         by vm.vpnPass.collectAsState()
     val vpnBusy         by vm.vpnBusy.collectAsState()
 
+    // Latency
+    val latencyGoogle     by vm.latencyGoogle.collectAsState()
+    val latencyCloudflare by vm.latencyCloudflare.collectAsState()
+
     var selectedTab by remember { mutableIntStateOf(0) }
 
     val navItems = listOf(
@@ -100,8 +104,11 @@ fun MainAppContent() {
                 status = status, netSpeed = netSpeed, wanIp = wanIp,
                 tunnelState = tunnelState, pendingAction = pendingAction,
                 hasRoot = hasRoot, isLoading = isLoading,
+                latencyGoogle = latencyGoogle,
+                latencyCloudflare = latencyCloudflare,
                 onStart = vm::startTunnel, onStop = vm::stopTunnel,
                 onRestart = vm::restartTunnel,
+                onPingLatency = vm::pingLatency,
                 bottomPadding = bottomPadding,
             )
             1 -> ProfilesScreen(
