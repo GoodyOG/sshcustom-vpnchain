@@ -85,6 +85,42 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val wanIp: StateFlow<String> = repo.wanIpFlow()
         .stateIn(viewModelScope, SharingStarted.Eagerly, "—")
 
+    // ── Latency ───────────────────────────────────────────────────────────────
+    private val _latencyGoogle = MutableStateFlow(-1)
+    val latencyGoogle: StateFlow<Int> = _latencyGoogle
+
+    private val _latencyCloudflare = MutableStateFlow(-1)
+    val latencyCloudflare: StateFlow<Int> = _latencyCloudflare
+
+    fun pingLatency() = viewModelScope.launch(Dispatchers.IO) {
+        val socksProxy = java.net.Proxy(
+            java.net.Proxy.Type.SOCKS,
+            java.net.InetSocketAddress("127.0.0.1", 1081)
+        )
+        // Ping Google
+        try {
+            val start = System.currentTimeMillis()
+            val sock = java.net.Socket(socksProxy)
+            sock.connect(java.net.InetSocketAddress("google.com", 443), 5000)
+            val elapsed = (System.currentTimeMillis() - start).toInt()
+            sock.close()
+            _latencyGoogle.value = elapsed
+        } catch (_: Exception) {
+            _latencyGoogle.value = -1
+        }
+        // Ping Cloudflare
+        try {
+            val start = System.currentTimeMillis()
+            val sock = java.net.Socket(socksProxy)
+            sock.connect(java.net.InetSocketAddress("1.1.1.1", 443), 5000)
+            val elapsed = (System.currentTimeMillis() - start).toInt()
+            sock.close()
+            _latencyCloudflare.value = elapsed
+        } catch (_: Exception) {
+            _latencyCloudflare.value = -1
+        }
+    }
+
     // ── Logs ──────────────────────────────────────────────────────────────────
     private val _logText = MutableStateFlow("")
     val logText: StateFlow<String> = _logText
@@ -311,7 +347,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ── VPN Chain control ─────────────────────────────────────────────────────
 
     fun refreshVpnConfigs() = viewModelScope.launch(Dispatchers.IO) {
-        val list = try { rootBinder?.listVpnConfigs() } catch (_: Exception) { null } ?: emptyList()
+        val list = try { rootBinder?.listVpnConfigs() } catch (_: Exception) { null }
+            ?: try {
+                // Fallback when rootBinder is null: use Shell.cmd to list configs
+                val r = Shell.cmd("ls -1 /data/adb/sshcustom/vpnchain/configs/ 2>/dev/null").exec()
+                r.out.filter { it.endsWith(".ovpn") }
+            } catch (_: Exception) { emptyList() }
         _vpnConfigs.value = list
         if (_selectedVpnConfig.value.isBlank() && list.isNotEmpty()) {
             _selectedVpnConfig.value = list.first()
@@ -368,6 +409,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun startVpnPolling() {
         viewModelScope.launch {
+            delay(1_000) // give the binder time to connect before first refresh
+            refreshVpnConfigs()
             while (isActive) {
                 withContext(Dispatchers.IO) {
                     val st = try { rootBinder?.vpnChainStatus() } catch (_: Exception) { null } ?: "stopped"
@@ -484,7 +527,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 "dns_hijack_mode"   to s.dnsHijackMode,
                 "channel_pool"      to s.channelPool.toString(),
                 "channel_pool_size" to s.channelPoolSize.toString(),
-                "bbr_enabled"       to s.bbrEnabled.toString(),
                 "tcp_buffer_tuning" to s.tcpBufferTuning.toString(),
                 "ipv6"              to s.ipv6.toString(),
             )

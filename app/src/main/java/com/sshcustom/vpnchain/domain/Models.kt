@@ -54,7 +54,6 @@ data class AppSettings(
     val dnsHijackMode: String = "disable",
     val channelPool: Boolean = true,
     val channelPoolSize: Int = 8,
-    val bbrEnabled: Boolean = true,
     val tcpBufferTuning: Boolean = true,
     val ipv6: Boolean = false,
     // Boot behaviour — default: daemon starts idle at boot, tunnel is manual

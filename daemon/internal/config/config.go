@@ -53,7 +53,6 @@ type Config struct {
 	// Speed boost
 	ChannelPool     bool
 	ChannelPoolSize int
-	BBREnabled      bool
 	TCPBufferTuning bool
 
 	// IPv6
@@ -185,7 +184,6 @@ func (c *Config) apply(key, val string) {
 	case "dns_hijack_mode": c.DNSHijackMode = val
 	case "channel_pool":    c.ChannelPool = b(val)
 	case "channel_pool_size": c.ChannelPoolSize = n(val, 8)
-	case "bbr_enabled":     c.BBREnabled = b(val)
 	case "tcp_buffer_tuning": c.TCPBufferTuning = b(val)
 	case "ipv6":            c.IPv6 = b(val)
 	case "box_dir":         c.BoxDir = val
