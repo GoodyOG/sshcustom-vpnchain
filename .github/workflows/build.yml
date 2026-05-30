@@ -56,13 +56,16 @@ jobs:
             make install >/dev/null )
 
           # --- OpenVPN (links bionic dynamically, openssl/lzo statically) ---
+          # OpenVPN 2.5.x: libcap-ng/pam/etc. are OPTIONAL (2.6 made libcap-ng
+          # mandatory, which isn't available for Android). 2.5.9 still has
+          # socks-proxy + iproute2 + OpenSSL 3 — all we need.
           # --enable-iproute2 + IPROUTE so OpenVPN uses Android's `ip` for
           # interface/route setup instead of the absent ifconfig/route.
-          curl -sSL https://swupdate.openvpn.org/community/releases/openvpn-2.6.12.tar.gz | tar xz -C /tmp
-          ( cd /tmp/openvpn-2.6.12
+          curl -sSL https://swupdate.openvpn.org/community/releases/openvpn-2.5.9.tar.gz | tar xz -C /tmp
+          ( cd /tmp/openvpn-2.5.9
             ./configure --host=aarch64-linux-android \
               --enable-iproute2 IPROUTE=/system/bin/ip \
-              --disable-lz4 --disable-dco --disable-plugins --disable-debug \
+              --disable-lz4 --disable-plugins --disable-debug \
               --disable-management --disable-port-share --disable-unit-tests \
               OPENSSL_CFLAGS="-I${PREFIX}/include" OPENSSL_LIBS="-L${PREFIX}/lib -lssl -lcrypto" \
               LZO_CFLAGS="-I${PREFIX}/include" LZO_LIBS="-L${PREFIX}/lib -llzo2" \
@@ -73,7 +76,7 @@ jobs:
             "${STRIP}" "${BIN}" || true
             file "${BIN}" )
           mkdir -p "${GITHUB_WORKSPACE}/dist-ovpn"
-          cp "$(find /tmp/openvpn-2.6.12/src -name openvpn -type f -perm -u+x | head -1)" "${GITHUB_WORKSPACE}/dist-ovpn/openvpn"
+          cp "$(find /tmp/openvpn-2.5.9/src -name openvpn -type f -perm -u+x | head -1)" "${GITHUB_WORKSPACE}/dist-ovpn/openvpn"
           file "${GITHUB_WORKSPACE}/dist-ovpn/openvpn"
 
       - uses: actions/upload-artifact@v4
