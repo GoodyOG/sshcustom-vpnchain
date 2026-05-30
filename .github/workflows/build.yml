@@ -12,50 +12,74 @@ env:
   ANDROID_NDK_VERSION: "r26d"
 
 jobs:
-  # ── 1. Build tun2proxy for Android arm64 ─────────────────────────────────
-  build-tun2proxy:
-    name: Build tun2proxy (arm64-android)
+  # ── 1. Build OpenVPN for Android arm64 (VPN Chain) ───────────────────────
+  # continue-on-error: the rest of the release must still ship if this fails;
+  # the VPN Chain feature simply won't have its binary until it builds.
+  build-openvpn:
+    name: Build OpenVPN (arm64-android)
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android
 
       - name: Install Android NDK
         run: |
           wget -q "https://dl.google.com/android/repository/android-ndk-${{ env.ANDROID_NDK_VERSION }}-linux.zip" -O /tmp/ndk.zip
           unzip -q /tmp/ndk.zip -d /opt
-          echo "ANDROID_NDK_HOME=/opt/android-ndk-${{ env.ANDROID_NDK_VERSION }}" >> "$GITHUB_ENV"
-          echo "TOOLCHAIN=/opt/android-ndk-${{ env.ANDROID_NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64" >> "$GITHUB_ENV"
+          echo "NDK=/opt/android-ndk-${{ env.ANDROID_NDK_VERSION }}" >> "$GITHUB_ENV"
 
-      - name: Clone tun2proxy
-        run: git clone --depth 1 --branch v0.8.1 https://github.com/tun2proxy/tun2proxy.git /tmp/tun2proxy
-
-      - name: Build tun2proxy for aarch64-linux-android
+      - name: Build OpenSSL + LZO + OpenVPN (static deps, aarch64-android)
         run: |
-          export CC="${TOOLCHAIN}/bin/aarch64-linux-android33-clang"
-          export AR="${TOOLCHAIN}/bin/llvm-ar"
-          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${CC}"
-          cd /tmp/tun2proxy
-          cargo build --release --target aarch64-linux-android 2>&1
-          TARGET_DIR="target/aarch64-linux-android/release"
-          BIN=""
-          for candidate in tun2proxy-bin tun2proxy; do
-            [ -f "${TARGET_DIR}/${candidate}" ] && BIN="${TARGET_DIR}/${candidate}" && break
-          done
-          [ -z "${BIN}" ] && BIN=$(find "${TARGET_DIR}" -maxdepth 1 -type f ! -name '*.d' ! -name '*.rlib' -executable 2>/dev/null | head -1)
-          [ -z "${BIN}" ] && echo "FATAL: no tun2proxy binary" && exit 1
-          cp "${BIN}" "${{ github.workspace }}/third_party/tun2proxy/tun2proxy"
-          chmod +x "${{ github.workspace }}/third_party/tun2proxy/tun2proxy"
-          file "${{ github.workspace }}/third_party/tun2proxy/tun2proxy"
+          set -euo pipefail
+          API=24
+          TC="${NDK}/toolchains/llvm/prebuilt/linux-x86_64"
+          export PATH="${TC}/bin:${PATH}"
+          export CC="aarch64-linux-android${API}-clang"
+          export CXX="aarch64-linux-android${API}-clang++"
+          export AR="llvm-ar" RANLIB="llvm-ranlib" STRIP="llvm-strip"
+          PREFIX=/tmp/deps
+          mkdir -p "${PREFIX}"
+
+          # --- OpenSSL (static) ---
+          curl -sSL https://github.com/openssl/openssl/releases/download/openssl-3.0.16/openssl-3.0.16.tar.gz | tar xz -C /tmp
+          ( cd /tmp/openssl-3.0.16
+            ANDROID_NDK_ROOT="${NDK}" \
+              ./Configure android-arm64 -D__ANDROID_API__=${API} no-shared no-tests no-engine --prefix="${PREFIX}"
+            make -j"$(nproc)" >/dev/null
+            make install_sw >/dev/null )
+
+          # --- LZO (static) ---
+          curl -sSL https://www.oberhumer.com/opensource/lzo/download/lzo-2.10.tar.gz | tar xz -C /tmp
+          ( cd /tmp/lzo-2.10
+            ./configure --host=aarch64-linux-android --prefix="${PREFIX}" --enable-static --disable-shared >/dev/null
+            make -j"$(nproc)" >/dev/null
+            make install >/dev/null )
+
+          # --- OpenVPN (links bionic dynamically, openssl/lzo statically) ---
+          # --enable-iproute2 + IPROUTE so OpenVPN uses Android's `ip` for
+          # interface/route setup instead of the absent ifconfig/route.
+          curl -sSL https://swupdate.openvpn.org/community/releases/openvpn-2.6.12.tar.gz | tar xz -C /tmp
+          ( cd /tmp/openvpn-2.6.12
+            ./configure --host=aarch64-linux-android \
+              --enable-iproute2 IPROUTE=/system/bin/ip \
+              --disable-lz4 --disable-dco --disable-plugins --disable-debug \
+              --disable-management --disable-port-share --disable-unit-tests \
+              OPENSSL_CFLAGS="-I${PREFIX}/include" OPENSSL_LIBS="-L${PREFIX}/lib -lssl -lcrypto" \
+              LZO_CFLAGS="-I${PREFIX}/include" LZO_LIBS="-L${PREFIX}/lib -llzo2" \
+              CFLAGS="-I${PREFIX}/include -O2" LDFLAGS="-L${PREFIX}/lib"
+            make -j"$(nproc)"
+            BIN="$(find src -name openvpn -type f -perm -u+x | head -1)"
+            [ -z "${BIN}" ] && { echo "FATAL: no openvpn binary"; exit 1; }
+            "${STRIP}" "${BIN}" || true
+            file "${BIN}" )
+          mkdir -p "${GITHUB_WORKSPACE}/dist-ovpn"
+          cp "$(find /tmp/openvpn-2.6.12/src -name openvpn -type f -perm -u+x | head -1)" "${GITHUB_WORKSPACE}/dist-ovpn/openvpn"
+          file "${GITHUB_WORKSPACE}/dist-ovpn/openvpn"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: tun2proxy-arm64
-          path: third_party/tun2proxy/tun2proxy
+          name: openvpn-arm64
+          path: dist-ovpn/openvpn
 
   # ── 2. Build Go daemon for Android arm64 ─────────────────────────────────
   build-daemon:
@@ -102,7 +126,7 @@ jobs:
   package-module:
     name: Package module ZIP
     runs-on: ubuntu-latest
-    needs: [build-tun2proxy, build-daemon]
+    needs: [build-openvpn, build-daemon]
     steps:
       - uses: actions/checkout@v4
 
@@ -113,11 +137,13 @@ jobs:
         with: { name: sshcustomd-arm64, path: module/bin/ }
 
       - uses: actions/download-artifact@v4
-        with: { name: tun2proxy-arm64, path: module/bin/ }
+        continue-on-error: true
+        with: { name: openvpn-arm64, path: module/bin/ }
 
       - name: Set permissions and stamp version
         run: |
-          chmod +x module/bin/sshcustomd module/bin/tun2proxy
+          chmod +x module/bin/sshcustomd || true
+          [ -f module/bin/openvpn ] && chmod +x module/bin/openvpn || echo "note: openvpn binary not present (VPN Chain disabled this build)"
           V="${{ env.VERSION }}"
           sed -i "s|^version=.*|version=v${V}|" module/module.prop
           VC="$(echo "${V}" | tr -d '.' | sed 's/[^0-9]//g')00"

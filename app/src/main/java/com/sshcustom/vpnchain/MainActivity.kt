@@ -5,6 +5,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.*
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sshcustom.vpnchain.ui.screens.*
 import com.sshcustom.vpnchain.ui.theme.SSHCustomTheme
@@ -25,15 +30,26 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/**
- * Root composable.
- *
- * Architecture note:
- * - Each screen owns its own MiuixScrollBehavior + TopAppBar.
- * - The Scaffold here only hosts the shared NavigationBar at the bottom.
- * - This lets every screen have independent collapsing-header behaviour
- *   and avoids the nestedScroll connection needing to cross screen boundaries.
- */
+// Custom shield icon for the VPN Chain tab (avoids depending on a specific
+// miuix icon name). The NavigationBar tints it per selected state.
+private val ShieldIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "shield", defaultWidth = 24.dp, defaultHeight = 24.dp,
+        viewportWidth = 24f, viewportHeight = 24f,
+    ).apply {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(12f, 1f)
+            lineTo(3f, 5f)
+            verticalLineToRelative(6f)
+            curveTo(3f, 16.55f, 6.84f, 21.74f, 12f, 23f)
+            curveTo(17.16f, 21.74f, 21f, 16.55f, 21f, 11f)
+            verticalLineTo(5f)
+            lineTo(12f, 1f)
+            close()
+        }
+    }.build()
+}
+
 @Composable
 fun MainAppContent() {
     val vm: MainViewModel = viewModel()
@@ -44,25 +60,33 @@ fun MainAppContent() {
     val logText         by vm.logText.collectAsState()
     val activeLog       by vm.activeLog.collectAsState()
     val profiles        by vm.profiles.collectAsState()
-    val activeProfileId by vm.activeProfileId.collectAsState()   // now a StateFlow
+    val activeProfileId by vm.activeProfileId.collectAsState()
     val settings        by vm.settings.collectAsState()
     val hasRoot         by vm.hasRoot.collectAsState()
     val isLoading       by vm.isLoading.collectAsState()
     val pendingAction   by vm.pendingAction.collectAsState()
 
+    // VPN Chain
+    val vpnConfigs      by vm.vpnConfigs.collectAsState()
+    val selectedVpnCfg  by vm.selectedVpnConfig.collectAsState()
+    val vpnChainState   by vm.vpnChainState.collectAsState()
+    val chainExitIp     by vm.chainExitIp.collectAsState()
+    val vpnUser         by vm.vpnUser.collectAsState()
+    val vpnPass         by vm.vpnPass.collectAsState()
+    val vpnBusy         by vm.vpnBusy.collectAsState()
+
     var selectedTab by remember { mutableIntStateOf(0) }
 
     val navItems = listOf(
-        NavigationItem(label = "Home",     icon = MiuixIcons.Useful.NavigatorSwitch),
-        NavigationItem(label = "Profiles", icon = MiuixIcons.Useful.Personal),
-        NavigationItem(label = "Settings", icon = MiuixIcons.Useful.Settings),
-        NavigationItem(label = "Logs",     icon = MiuixIcons.Useful.Order),
+        NavigationItem(label = "Home",      icon = MiuixIcons.Useful.NavigatorSwitch),
+        NavigationItem(label = "Profiles",  icon = MiuixIcons.Useful.Personal),
+        NavigationItem(label = "VPN Chain", icon = ShieldIcon),
+        NavigationItem(label = "Logs",      icon = MiuixIcons.Useful.Order),
+        NavigationItem(label = "Settings",  icon = MiuixIcons.Useful.Settings),
     )
 
-    // Scaffold here only provides the bottom NavigationBar + popup host.
-    // Each screen composable is responsible for its own TopAppBar + Scaffold.
     Scaffold(
-        topBar = {}, // screens own their TopAppBar
+        topBar = {},
         bottomBar = {
             NavigationBar(
                 items = navItems,
@@ -86,10 +110,20 @@ fun MainAppContent() {
                 onDeleteProfile = vm::deleteProfile,
                 bottomPadding = bottomPadding,
             )
-            2 -> SettingsScreen(
-                settings = settings, onSettingsChange = vm::updateSettings,
-                needsRestart = vm.settingsNeedRestart,
-                appVersion = BuildConfig.VERSION_NAME,
+            2 -> VpnChainScreen(
+                sshConnected = status.connected,
+                configs = vpnConfigs,
+                selectedConfig = selectedVpnCfg,
+                state = vpnChainState,
+                exitIp = chainExitIp,
+                vpnUser = vpnUser,
+                vpnPass = vpnPass,
+                busy = vpnBusy,
+                onSelectConfig = vm::selectVpnConfig,
+                onSaveCreds = vm::saveVpnCreds,
+                onRefreshConfigs = vm::refreshVpnConfigs,
+                onConnect = vm::startVpnChain,
+                onDisconnect = vm::stopVpnChain,
                 bottomPadding = bottomPadding,
             )
             3 -> LogsScreen(
@@ -97,6 +131,12 @@ fun MainAppContent() {
                 onSwitchLog = vm::switchLog,
                 onClear = vm::clearLog,
                 onRefresh = vm::refreshLog,
+                bottomPadding = bottomPadding,
+            )
+            4 -> SettingsScreen(
+                settings = settings, onSettingsChange = vm::updateSettings,
+                needsRestart = vm.settingsNeedRestart,
+                appVersion = BuildConfig.VERSION_NAME,
                 bottomPadding = bottomPadding,
             )
         }

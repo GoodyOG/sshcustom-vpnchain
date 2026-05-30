@@ -1,0 +1,140 @@
+#!/system/bin/sh
+# ovpn.service — VPN Chain lifecycle.
+#
+# Runs OpenVPN (Windscribe config) tunneled THROUGH SSHCustom: OpenVPN's
+# connection to the Windscribe server is routed via the SSH daemon's SOCKS5
+# proxy (so it rides the free bug-host path), and OpenVPN becomes the device
+# default route so the exit IP is Windscribe's.
+#
+# Requires: SSHCustom already connected, and a TCP Windscribe .ovpn config in
+# /data/adb/sshcustom/vpnchain/configs/  (SSH carries TCP only).
+#
+# Usage: ovpn.service {start <config-filename>|stop|status}
+
+scripts_dir="${0%/*}"
+. /data/adb/sshcustom/settings.ini
+
+OVPN_BIN="${bin_dir}/openvpn"
+VPN_DIR="${box_dir}/vpnchain"
+CONFIG_DIR="${VPN_DIR}/configs"
+AUTH_FILE="${VPN_DIR}/auth.txt"
+OVPN_PID="${box_run}/openvpn.pid"
+OVPN_LOG="${box_run}/openvpn.log"
+MARKER="${box_run}/vpnchain.active"
+VPNCHAIN_IPT="${scripts_dir}/vpnchain.iptables"
+SSH_IPT="${scripts_dir}/ssh.iptables"
+
+ovpn_alive() {
+  local p
+  p="$(cat "${OVPN_PID}" 2>/dev/null)"
+  [ -n "${p}" ] && kill -0 "${p}" 2>/dev/null
+}
+
+start_ovpn() {
+  local cfg_name="$1"
+  [ -n "${cfg_name}" ] || { log Error "vpnchain: no config specified"; return 1; }
+  local cfg="${CONFIG_DIR}/${cfg_name}"
+  if [ ! -f "${cfg}" ]; then
+    log Error "vpnchain: config not found: ${cfg_name}"
+    return 1
+  fi
+  if [ ! -x "${OVPN_BIN}" ]; then
+    log Error "vpnchain: openvpn binary missing (${OVPN_BIN}) — reflash the module ZIP"
+    return 1
+  fi
+  if ovpn_alive; then
+    log Warning "vpnchain: already running"
+    return 0
+  fi
+
+  mkdir -p "${box_run}" >/dev/null 2>&1 || true
+  : > "${OVPN_LOG}"
+
+  # Mark VPN Chain active → ssh.iptables goes socks-only; drop SSH device redirect.
+  touch "${MARKER}"
+  sh "${SSH_IPT}" disable >> "${box_log}" 2>&1 || true
+
+  local auth_arg=""
+  [ -f "${AUTH_FILE}" ] && auth_arg="--auth-user-pass ${AUTH_FILE}"
+
+  # OpenVPN reaches the Windscribe server through the SSH SOCKS5 proxy (free
+  # bug-host path). --dev is forced so vpnchain.iptables and OpenVPN agree.
+  # shellcheck disable=SC2086
+  nohup "${OVPN_BIN}" \
+    --config "${cfg}" \
+    --dev "${tun_device}" \
+    --socks-proxy 127.0.0.1 "${socks_port}" \
+    ${auth_arg} \
+    --auth-nocache \
+    --persist-tun \
+    --mute-replay-warnings \
+    --log "${OVPN_LOG}" \
+    --verb 3 \
+    >> "${OVPN_LOG}" 2>&1 &
+  echo "$!" > "${OVPN_PID}"
+  log Info "vpnchain: openvpn started (config=${cfg_name}) via SOCKS 127.0.0.1:${socks_port}"
+
+  # Wait up to ~30s for the connection to come up.
+  local i=0
+  while [ "${i}" -lt 30 ]; do
+    if busybox grep -q "Initialization Sequence Completed" "${OVPN_LOG}" 2>/dev/null; then
+      sh "${VPNCHAIN_IPT}" enable >> "${box_log}" 2>&1 || true
+      log Info "vpnchain: connected — exit via OpenVPN/Windscribe"
+      return 0
+    fi
+    if busybox grep -q "AUTH_FAILED" "${OVPN_LOG}" 2>/dev/null; then
+      log Error "vpnchain: authentication failed — check Windscribe OpenVPN credentials"
+      stop_ovpn
+      return 1
+    fi
+    if ! ovpn_alive; then
+      log Error "vpnchain: openvpn exited during startup — check ${OVPN_LOG}"
+      rm -f "${MARKER}"
+      sh "${SSH_IPT}" enable >> "${box_log}" 2>&1 || true
+      return 1
+    fi
+    sleep 1
+    i=$((i + 1))
+  done
+
+  log Warning "vpnchain: not connected after 30s — check ${OVPN_LOG}"
+  return 1
+}
+
+stop_ovpn() {
+  sh "${VPNCHAIN_IPT}" disable >> "${box_log}" 2>&1 || true
+  local p
+  p="$(cat "${OVPN_PID}" 2>/dev/null)"
+  if [ -n "${p}" ] && kill -0 "${p}" 2>/dev/null; then
+    kill -TERM "${p}" 2>/dev/null || true
+    local i=0
+    while [ "${i}" -lt 5 ]; do
+      kill -0 "${p}" 2>/dev/null || break
+      sleep 1; i=$((i + 1))
+    done
+    kill -0 "${p}" 2>/dev/null && kill -KILL "${p}" 2>/dev/null || true
+  fi
+  killall openvpn 2>/dev/null || true
+  rm -f "${OVPN_PID}" "${MARKER}"
+  # Restore SSH-only device redirect.
+  sh "${SSH_IPT}" enable >> "${box_log}" 2>&1 || true
+  log Info "vpnchain: stopped — SSH-only routing restored"
+  return 0
+}
+
+status_ovpn() {
+  if ovpn_alive && busybox grep -q "Initialization Sequence Completed" "${OVPN_LOG}" 2>/dev/null; then
+    printf 'connected\n'
+  elif ovpn_alive; then
+    printf 'connecting\n'
+  else
+    printf 'stopped\n'
+  fi
+}
+
+case "${1:-}" in
+  start)  start_ovpn "$2" ;;
+  stop)   stop_ovpn ;;
+  status) status_ovpn ;;
+  *) printf 'Usage: %s {start <config>|stop|status}\n' "$0" >&2; exit 1 ;;
+esac

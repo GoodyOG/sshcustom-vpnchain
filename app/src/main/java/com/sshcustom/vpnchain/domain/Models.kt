@@ -73,3 +73,11 @@ sealed class TunnelState {
 }
 
 data class NetSpeed(val upKbs: Float = 0f, val downKbs: Float = 0f)
+
+/** VPN Chain (OpenVPN over SSHCustom) lifecycle state. */
+sealed class VpnChainState {
+    object Stopped    : VpnChainState()
+    object Connecting : VpnChainState()
+    object Connected  : VpnChainState()
+    data class Error(val message: String) : VpnChainState()
+}

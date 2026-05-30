@@ -308,9 +308,9 @@ private fun InfoGrid(status: DaemonStatus, netSpeed: NetSpeed, wanIp: String) {
                 Text("Mem  ${"%.1f".format(status.memRssMb)} MB", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
                 Text("CPU  ${"%.1f".format(status.cpuPercent)}%",  fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
             }
-            InfoCard("Pool", Modifier.weight(1f)) {
-                Text("${status.channelPoolAvail}/${status.channelPoolSize} channels", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
-                Text("${status.activeConnections} active",                            fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
+            InfoCard("Connections", Modifier.weight(1f)) {
+                Text("${status.activeConnections} active", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
+                Text(if (status.connected) "tunnel up" else "tunnel down", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
             }
         }
     }

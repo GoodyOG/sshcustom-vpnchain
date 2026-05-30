@@ -54,6 +54,22 @@ func setLocalTimezone() {
 	}
 }
 
+// whitelistApp uses our root to exempt the companion app from Doze/battery
+// optimization so the OS is less likely to kill its UI process in the
+// background (which otherwise causes a brief "Stopped" flash on return).
+// Best-effort; errors are ignored.
+func whitelistApp() {
+	const pkg = "com.sshcustom.vpnchain"
+	cmds := []string{
+		"dumpsys deviceidle whitelist +" + pkg,
+		"cmd appops set " + pkg + " RUN_ANY_IN_BACKGROUND allow",
+		"cmd appops set " + pkg + " RUN_IN_BACKGROUND allow",
+	}
+	for _, c := range cmds {
+		_ = exec.Command("/system/bin/sh", "-c", c).Run()
+	}
+}
+
 func main() {
 	// Align daemon log timestamps with device local time (see setLocalTimezone).
 	setLocalTimezone()
@@ -92,8 +108,6 @@ type State struct {
 	lastEvent    string
 	sshMode      string
 	netMode      string
-	poolSize     int
-	poolAvail    int
 	activeConns  int
 	memRSS       uint64
 	cpuPct       float64
@@ -129,8 +143,6 @@ func (s *State) snapshot() api.StatusSnapshot {
 		UptimeSeconds:    uptime,
 		SSHMode:          s.sshMode,
 		NetworkMode:      s.netMode,
-		ChannelPoolSize:  s.poolSize,
-		ChannelPoolAvail: s.poolAvail,
 		ActiveConns:      s.activeConns,
 		Version:          s.version,
 		MemRSSMB:         float64(s.memRSS) / 1024 / 1024,
@@ -162,6 +174,9 @@ func runCmd() {
 	pidFile := runDir + "/sshcustom.pid"
 	os.WriteFile(pidFile, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0644)
 	defer os.Remove(pidFile)
+
+	// Exempt the companion app from battery optimization (root, best-effort).
+	go whitelistApp()
 
 	st := &State{
 		startedAt: time.Now(),
@@ -291,9 +306,9 @@ func tunnelLoop(
 			PayloadEnabled:    cfg.PayloadEnabled,
 			Payload:           cfg.Payload,
 			ConnectTimeout:    25 * time.Second,
-			KeepAliveInterval: 30 * time.Second,
+			KeepAliveInterval: 10 * time.Second,
 			KeepAliveMax:      3,
-		}, cfg.ChannelPoolSize)
+		})
 		dialCancel()
 
 		if err != nil {
@@ -314,17 +329,14 @@ func tunnelLoop(
 		}
 
 		clientPtr.Store(c)
-		sz, av := c.PoolStats()
 		st.set(func(s *State) {
 			s.connected = true
 			s.tunnelStart = time.Now()
 			s.sshMode = cfg.SSHMode
 			s.netMode = cfg.NetworkMode
-			s.poolSize = sz
-			s.poolAvail = av
 			s.lastEvent = "connected"
 		})
-		log.Printf("[tunnel] connected pool_size=%d", cfg.ChannelPoolSize)
+		log.Printf("[tunnel] connected")
 
 		// Bring up the local listeners FIRST so the redirect/tproxy target is
 		// already accepting before iptables starts steering traffic to it.
@@ -352,8 +364,6 @@ func tunnelLoop(
 					log.Printf("[tproxy] %v", err)
 				}
 			}()
-		case "tun", "tun_udpgw":
-			// tun2proxy owns the data path; no transparent/tproxy listener.
 		default: // redirect
 			trans := &proxy.TransparentServer{
 				Addr:    fmt.Sprintf("0.0.0.0:%d", cfg.RedirPort),
@@ -367,16 +377,8 @@ func tunnelLoop(
 			}()
 		}
 
-		// For TUN modes, start tun2proxy and wait for the device to exist before
-		// applying iptables (the tun routing rules reference the device).
-		var tun2proxyCmd *exec.Cmd
-		if cfg.NetworkMode == "tun" || cfg.NetworkMode == "tun_udpgw" {
-			tun2proxyCmd = startTun2proxy(cfg)
-			waitForDevice(cfg.TunDevice, 5*time.Second)
-		} else {
-			// Give the listener a brief moment to bind before steering traffic.
-			time.Sleep(150 * time.Millisecond)
-		}
+		// Give the listener a brief moment to bind before steering traffic.
+		time.Sleep(150 * time.Millisecond)
 
 		// Daemon owns iptables: applied only once the tunnel is up and listeners
 		// are ready (ssh.service no longer applies them).
@@ -412,15 +414,10 @@ func tunnelLoop(
 		// Teardown
 		log.Println("[tunnel] tearing down")
 		listenerCancel()
-		if tun2proxyCmd != nil && tun2proxyCmd.Process != nil {
-			tun2proxyCmd.Process.Kill()
-		}
 		c.Close()
 		clientPtr.Store(nil)
 		st.set(func(s *State) {
 			s.connected = false
-			s.poolSize = 0
-			s.poolAvail = 0
 			s.wanIP = ""
 			s.wanCountry = ""
 			s.lastEvent = "disconnected"
@@ -433,42 +430,6 @@ func tunnelLoop(
 		// Reconnect attempt is immediate after an unexpected drop.
 		delay = 0
 	}
-}
-
-// waitForDevice blocks until a network interface named dev appears, or timeout.
-func waitForDevice(dev string, timeout time.Duration) {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat("/sys/class/net/" + dev); err == nil {
-			return
-		}
-		time.Sleep(150 * time.Millisecond)
-	}
-}
-
-// startTun2proxy launches the tun2proxy binary (pinned to v0.8.1 in CI).
-// We pass --tun (not --setup) and let ssh.iptables own the routing, so the
-// daemon's own SSH connection to the server is exempted via owner-match rules.
-func startTun2proxy(cfg *config.Config) *exec.Cmd {
-	bin := cfg.BinDir + "/tun2proxy"
-	args := []string{
-		"--tun", cfg.TunDevice,
-		"--proxy", fmt.Sprintf("socks5://127.0.0.1:%d", cfg.SocksPort),
-		"--dns", "over-tcp",
-		"--verbosity", "warn",
-	}
-	if cfg.NetworkMode == "tun_udpgw" && cfg.UDPGWServer != "" {
-		args = append(args, "--udpgw-server", cfg.UDPGWServer)
-	}
-	cmd := exec.Command(bin, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		log.Printf("[tun2proxy] failed to start: %v", err)
-		return nil
-	}
-	log.Printf("[tun2proxy] started pid=%d (tun=%s)", cmd.Process.Pid, cfg.TunDevice)
-	return cmd
 }
 
 // runScriptTimeout executes a module shell script with a timeout.
@@ -691,9 +652,8 @@ func metricsLoop(ctx context.Context, st *State, clientPtr *atomic.Pointer[issh.
 			prevRx, prevTx = rx, tx
 			prevT = now
 
-			ps, pa, ac := 0, 0, 0
+			ac := 0
 			if c := clientPtr.Load(); c != nil {
-				ps, pa = c.PoolStats()
 				ac = c.ActiveConns()
 			}
 
@@ -702,8 +662,6 @@ func metricsLoop(ctx context.Context, st *State, clientPtr *atomic.Pointer[issh.
 				s.cpuPct = cpu
 				s.upBps = up
 				s.downBps = down
-				s.poolSize = ps
-				s.poolAvail = pa
 				s.activeConns = ac
 			})
 		}

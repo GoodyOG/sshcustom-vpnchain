@@ -28,6 +28,13 @@ private const val PREFS_NAME   = "sshcustom_prefs"
 private const val KEY_PROFILES = "profiles_json"
 private const val KEY_ACTIVE   = "active_profile_id"
 private const val KEY_SETTINGS = "app_settings_json"
+private const val KEY_VPN_CONFIG = "vpn_selected_config"
+private const val KEY_VPN_USER   = "vpn_user"
+private const val KEY_VPN_PASS   = "vpn_pass"
+private const val KEY_LAST_CONN    = "last_connected"
+private const val KEY_LAST_SSHMODE = "last_ssh_mode"
+private const val KEY_LAST_NETMODE = "last_net_mode"
+private const val KEY_LAST_VER     = "last_version"
 
 /**
  * Repository for daemon data and local persistence.
@@ -50,6 +57,13 @@ class DaemonRepository(private val context: Context) {
         .build()
 
     private val baseUrl = "http://127.0.0.1:9190"
+
+    // Longer-timeout client for the chained exit-IP lookup (goes through the
+    // full SSH+OpenVPN chain, so it can be slower than a loopback call).
+    private val longHttp = OkHttpClient.Builder()
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS)
+        .build()
 
     // ── Polling flows ─────────────────────────────────────────────────────────
 
@@ -159,6 +173,50 @@ class DaemonRepository(private val context: Context) {
     fun saveSettings(settings: AppSettings) {
         prefs.edit().putString(KEY_SETTINGS, json.encodeToString(settings)).apply()
     }
+
+    // ── VPN Chain persistence ─────────────────────────────────────────────────
+
+    fun loadVpnConfig(): String = prefs.getString(KEY_VPN_CONFIG, "") ?: ""
+    fun saveVpnConfig(name: String) { prefs.edit().putString(KEY_VPN_CONFIG, name).apply() }
+    fun loadVpnUser(): String = prefs.getString(KEY_VPN_USER, "") ?: ""
+    fun loadVpnPass(): String = prefs.getString(KEY_VPN_PASS, "") ?: ""
+    fun saveVpnCreds(user: String, pass: String) {
+        prefs.edit().putString(KEY_VPN_USER, user).putString(KEY_VPN_PASS, pass).apply()
+    }
+
+    /**
+     * The exit IP as seen through the full chain. When the VPN Chain is up the
+     * app's own traffic routes through OpenVPN, so this returns the Windscribe
+     * IP/country. Uses HTTPS so Android's cleartext policy doesn't block it.
+     */
+    fun fetchChainExitIp(): String {
+        return try {
+            val req = Request.Builder().url("https://ipinfo.io/json").build()
+            val body = longHttp.newCall(req).execute().use { it.body?.string() } ?: return "—"
+            val root = json.parseToJsonElement(body).jsonObject
+            val ip = root["ip"]?.jsonPrimitive?.content ?: ""
+            val country = root["country"]?.jsonPrimitive?.content ?: ""
+            if (ip.isNotEmpty()) (if (country.isNotEmpty()) "$ip  $country" else ip) else "—"
+        } catch (_: Exception) { "—" }
+    }
+
+    // ── Last-known state (seed on cold start to avoid the "Stopped" flash) ────
+
+    fun saveLastState(s: DaemonStatus) {
+        prefs.edit()
+            .putBoolean(KEY_LAST_CONN, s.connected)
+            .putString(KEY_LAST_SSHMODE, s.sshMode)
+            .putString(KEY_LAST_NETMODE, s.networkMode)
+            .putString(KEY_LAST_VER, s.version)
+            .apply()
+    }
+
+    fun loadLastState(): DaemonStatus = DaemonStatus(
+        connected   = prefs.getBoolean(KEY_LAST_CONN, false),
+        sshMode     = prefs.getString(KEY_LAST_SSHMODE, "direct") ?: "direct",
+        networkMode = prefs.getString(KEY_LAST_NETMODE, "redirect") ?: "redirect",
+        version     = prefs.getString(KEY_LAST_VER, "") ?: "",
+    )
 
     // ── Net speed helper ──────────────────────────────────────────────────────
 

@@ -20,11 +20,9 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private val TRAFFIC_LABELS = listOf(
     "Redirect  —  TCP, most compatible",
-    "TPROXY  —  TCP + UDP, needs kernel",
-    "TUN  —  via tun2proxy",
-    "TUN + UDPGW  —  real UDP tunneling",
+    "TPROXY  —  TCP, kernel transparent proxy",
 )
-private val TRAFFIC_VALUES = listOf("redirect", "tproxy", "tun", "tun_udpgw")
+private val TRAFFIC_VALUES = listOf("redirect", "tproxy")
 private fun trafficToIndex(v: String) = TRAFFIC_VALUES.indexOf(v).coerceAtLeast(0)
 private fun indexToTraffic(i: Int)    = TRAFFIC_VALUES.getOrElse(i) { "redirect" }
 
@@ -77,11 +75,13 @@ fun SettingsScreen(
             settingsSection("Ports") {
                 item {
                     Card(Modifier.fillMaxWidth()) {
-                        PortField("Redirect Port", settings.redirPort.toString()) { v ->
+                        PortField("Redirect Port", settings.redirPort.toString(),
+                            enabled = settings.networkMode == "redirect") { v ->
                             v.toIntOrNull()?.takeIf { it in 1024..65535 }
                                 ?.let { onSettingsChange(settings.copy(redirPort = it)) }
                         }
-                        PortField("TPROXY Port", settings.tproxyPort.toString()) { v ->
+                        PortField("TPROXY Port", settings.tproxyPort.toString(),
+                            enabled = settings.networkMode == "tproxy") { v ->
                             v.toIntOrNull()?.takeIf { it in 1024..65535 }
                                 ?.let { onSettingsChange(settings.copy(tproxyPort = it)) }
                         }
@@ -130,8 +130,12 @@ fun SettingsScreen(
                         SuperSwitch(
                             checked         = settings.proxyUdp,
                             onCheckedChange = { onSettingsChange(settings.copy(proxyUdp = it)) },
+                            enabled         = settings.networkMode == "tproxy",
                             title           = "Proxy UDP",
-                            summary         = "Only available in TPROXY / TUN modes",
+                            summary         = if (settings.networkMode == "tproxy")
+                                                  "Tunnel UDP via TPROXY"
+                                              else
+                                                  "Not available in REDIRECT mode",
                         )
                     }
                 }
@@ -252,14 +256,6 @@ fun SettingsScreen(
                                     fontSize = 11.sp)
                             },
                         )
-                        BasicComponent(
-                            title        = "VPN Chain",
-                            rightActions = {
-                                Text("Coming soon",
-                                    color    = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                                    fontSize = MiuixTheme.textStyles.body2.fontSize)
-                            },
-                        )
                     }
                 }
             }
@@ -279,12 +275,13 @@ private fun LazyListScope.settingsSection(
 }
 
 @Composable
-private fun PortField(label: String, value: String, onDone: (String) -> Unit) {
+private fun PortField(label: String, value: String, enabled: Boolean = true, onDone: (String) -> Unit) {
     var text by remember(value) { mutableStateOf(value) }
     TextField(
         value           = text,
         onValueChange   = { text = it.filter { c -> c.isDigit() }; onDone(text) },
         label           = label,
+        enabled         = enabled,
         singleLine      = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         modifier        = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
