@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- No VpnService — all routing done via root iptables -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!-- Needed for cleartext HTTP to loopback (127.0.0.1:9190) -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
     <application
         android:name=".SSHCustomApp"
@@ -11,19 +13,21 @@
         android:icon="@drawable/ic_launcher"
         android:theme="@style/Theme.SSHCustom"
         android:allowBackup="false"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- libsu RootService -->
+        <!-- libsu RootService — runs in privileged :root process -->
         <service
             android:name=".service.SSHControlService"
             android:exported="false"

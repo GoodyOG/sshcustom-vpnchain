@@ -2,7 +2,7 @@ package com.sshcustom.vpnchain.domain
 
 import kotlinx.serialization.Serializable
 
-/** Runtime state snapshot from the daemon. */
+/** Runtime state snapshot from the daemon HTTP API. */
 @Serializable
 data class DaemonStatus(
     val connected: Boolean = false,
@@ -17,9 +17,10 @@ data class DaemonStatus(
     val version: String = "",
     val memRssMb: Double = 0.0,
     val cpuPercent: Double = 0.0,
+    val lastError: String = "",
 )
 
-/** SSH connection profile. */
+/** SSH connection profile — persisted to SharedPreferences as JSON. */
 @Serializable
 data class Profile(
     val id: String,
@@ -28,7 +29,7 @@ data class Profile(
     val port: Int = 22,
     val user: String,
     val password: String,
-    val mode: String = "direct",   // direct | sni | sni_http_proxy
+    val mode: String = "direct",         // direct | sni | sni_http_proxy
     val sniHost: String = "",
     val proxyHost: String = "",
     val proxyPort: Int = 3128,
@@ -36,7 +37,7 @@ data class Profile(
     val payload: String = "",
 )
 
-/** App-side settings (mirrors settings.ini for non-SSH options). */
+/** App-side settings (mirrors settings.ini non-SSH options). */
 @Serializable
 data class AppSettings(
     val networkMode: String = "redirect",
@@ -56,10 +57,11 @@ data class AppSettings(
     val ipv6: Boolean = false,
 )
 
+/** Tunnel lifecycle state — all states used in ViewModel. */
 sealed class TunnelState {
-    object Stopped : TunnelState()
+    object Stopped  : TunnelState()
     object Starting : TunnelState()
-    object Connected : TunnelState()
+    object Connected: TunnelState()
     object Stopping : TunnelState()
     data class Error(val message: String) : TunnelState()
 }

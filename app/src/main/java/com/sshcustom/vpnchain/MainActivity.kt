@@ -3,23 +3,30 @@ package com.sshcustom.vpnchain
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material3.*
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sshcustom.vpnchain.ui.screens.*
 import com.sshcustom.vpnchain.ui.theme.SSHCustomTheme
+import top.yukonga.miuix.kmp.basic.NavigationBar
+import top.yukonga.miuix.kmp.basic.NavigationItem
+import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Display
+import top.yukonga.miuix.kmp.icon.extended.KeyboardCn
+import top.yukonga.miuix.kmp.icon.extended.Settings
+import top.yukonga.miuix.kmp.icon.extended.Terminal
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         setContent {
             SSHCustomTheme {
                 MainAppContent()
@@ -28,14 +35,13 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-sealed class Screen(val route: String, val label: String, val icon: ImageVector) {
-    object Home     : Screen("home",     "Home",     Icons.Default.Home)
-    object Profiles : Screen("profiles", "Profiles", Icons.Default.Person)
-    object Settings : Screen("settings", "Settings", Icons.Default.Settings)
-    object Logs     : Screen("logs",     "Logs",     Icons.Default.List)
-}
+private val NAV_ITEMS = listOf(
+    NavigationItem(label = "Home",     icon = MiuixIcons.Display),
+    NavigationItem(label = "Profiles", icon = MiuixIcons.KeyboardCn),
+    NavigationItem(label = "Settings", icon = MiuixIcons.Settings),
+    NavigationItem(label = "Logs",     icon = MiuixIcons.Terminal),
+)
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainAppContent() {
     val vm: MainViewModel = viewModel()
@@ -47,57 +53,61 @@ fun MainAppContent() {
     val profiles by vm.profiles.collectAsState()
     val settings by vm.settings.collectAsState()
     val hasRoot by vm.hasRoot.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
 
-    var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
+    var selectedTab by remember { mutableIntStateOf(0) }
 
-    val navItems = listOf(Screen.Home, Screen.Profiles, Screen.Settings, Screen.Logs)
+    val tabTitles = listOf("Home", "Profiles", "Settings", "Logs")
 
     Scaffold(
+        topBar = {
+            TopAppBar(title = tabTitles[selectedTab])
+        },
         bottomBar = {
-            NavigationBar {
-                navItems.forEach { screen ->
-                    NavigationBarItem(
-                        selected = currentScreen == screen,
-                        onClick = { currentScreen = screen },
-                        icon = { Icon(screen.icon, contentDescription = screen.label) },
-                        label = { Text(screen.label) }
-                    )
-                }
-            }
+            NavigationBar(
+                items = NAV_ITEMS,
+                selected = selectedTab,
+                onClick = { selectedTab = it },
+                modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)
+            )
         }
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            when (currentScreen) {
-                Screen.Home -> HomeScreen(
-                    status = status,
-                    netSpeed = netSpeed,
-                    wanIp = wanIp,
-                    tunnelState = tunnelState,
-                    hasRoot = hasRoot,
-                    onStart = vm::startTunnel,
-                    onStop = vm::stopTunnel,
-                    onRestart = vm::restartTunnel,
-                    onReload = vm::reloadConfig,
-                )
-                Screen.Profiles -> ProfilesScreen(
-                    profiles = profiles,
-                    activeProfileId = vm.activeProfileId,
-                    onSelectProfile = vm::selectProfile,
-                    onSaveProfile = vm::saveProfile,
-                    onDeleteProfile = vm::deleteProfile,
-                )
-                Screen.Settings -> SettingsScreen(
-                    settings = settings,
-                    onSettingsChange = vm::updateSettings,
-                    onForceCleanup = vm::forceCleanup,
-                    appVersion = "2.0.0",
-                )
-                Screen.Logs -> LogsScreen(
-                    logText = logText,
-                    onClear = vm::clearLog,
-                    onRefresh = vm::refreshLog,
-                )
-            }
+    ) { paddingValues ->
+        when (selectedTab) {
+            0 -> HomeScreen(
+                status = status,
+                netSpeed = netSpeed,
+                wanIp = wanIp,
+                tunnelState = tunnelState,
+                hasRoot = hasRoot,
+                isLoading = isLoading,
+                onStart = vm::startTunnel,
+                onStop = vm::stopTunnel,
+                onRestart = vm::restartTunnel,
+                onReload = vm::reloadConfig,
+                paddingValues = paddingValues,
+            )
+            1 -> ProfilesScreen(
+                profiles = profiles,
+                activeProfileId = vm.activeProfileId,
+                onSelectProfile = vm::selectProfile,
+                onSaveProfile = vm::saveProfile,
+                onDeleteProfile = vm::deleteProfile,
+                paddingValues = paddingValues,
+            )
+            2 -> SettingsScreen(
+                settings = settings,
+                onSettingsChange = vm::updateSettings,
+                onForceCleanup = vm::forceCleanup,
+                needsRestart = vm.settingsNeedRestart,
+                appVersion = BuildConfig.VERSION_NAME,
+                paddingValues = paddingValues,
+            )
+            3 -> LogsScreen(
+                logText = logText,
+                onClear = vm::clearLog,
+                onRefresh = vm::refreshLog,
+                paddingValues = paddingValues,
+            )
         }
     }
 }

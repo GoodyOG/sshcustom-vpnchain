@@ -13,56 +13,57 @@ import (
 
 // StatusSnapshot is the payload returned for "status" requests.
 type StatusSnapshot struct {
-	Type              string  `json:"type"`
-	Connected         bool    `json:"connected"`
-	UptimeSeconds     int64   `json:"uptime_seconds"`
-	SSHMode           string  `json:"ssh_mode"`
-	NetworkMode       string  `json:"network_mode"`
-	BytesSent         int64   `json:"bytes_sent"`
-	BytesRecv         int64   `json:"bytes_recv"`
-	ChannelPoolSize   int     `json:"channel_pool_size"`
-	ChannelPoolAvail  int     `json:"channel_pool_available"`
-	ActiveConnections int     `json:"active_connections"`
-	Version           string  `json:"version"`
-	MemRSSMB          float64 `json:"mem_rss_mb"`
-	CPUPercent        float64 `json:"cpu_percent"`
+	Type             string  `json:"type"`
+	Connected        bool    `json:"connected"`
+	UptimeSeconds    int64   `json:"uptime_seconds"`
+	SSHMode          string  `json:"ssh_mode"`
+	NetworkMode      string  `json:"network_mode"`
+	BytesSent        int64   `json:"bytes_sent"`
+	BytesRecv        int64   `json:"bytes_recv"`
+	ChannelPoolSize  int     `json:"channel_pool_size"`
+	ChannelPoolAvail int     `json:"channel_pool_available"`
+	ActiveConns      int     `json:"active_connections"`
+	Version          string  `json:"version"`
+	MemRSSMB         float64 `json:"mem_rss_mb"`
+	CPUPercent       float64 `json:"cpu_percent"`
+	LastError        string  `json:"last_error,omitempty"`
 }
 
-// ControlRequest is a request from the app to control the daemon.
+// ControlRequest is a request from the Android app.
 type ControlRequest struct {
-	Type   string `json:"type"`   // ping | status | reload | start | stop | restart
-	Action string `json:"action"` // used for "control" type
+	Type   string `json:"type"`   // ping | status | reload | control
+	Action string `json:"action"` // used when type="control": start|stop|restart
 }
 
 // ControlResponse is the reply to a ControlRequest.
 type ControlResponse struct {
-	Type    string      `json:"type"`
-	OK      bool        `json:"ok"`
-	Data    interface{} `json:"data,omitempty"`
-	Error   string      `json:"error,omitempty"`
+	Type  string      `json:"type"`
+	OK    bool        `json:"ok"`
+	Data  interface{} `json:"data,omitempty"`
+	Error string      `json:"error,omitempty"`
 }
 
-// StatusProvider is a callback used by UnixServer to get current state.
+// StatusProvider is called to get the current runtime state.
 type StatusProvider func() StatusSnapshot
 
 // ControlHandler is called when the app sends a control command.
 type ControlHandler func(action string) error
 
-// UnixServer listens on a Unix domain socket for the Android app.
+// UnixServer listens on a Unix domain socket for the Android companion app.
 type UnixServer struct {
 	SocketPath    string
 	GetStatus     StatusProvider
 	HandleControl ControlHandler
 }
 
-// ListenAndServe starts the Unix socket server.
+// ListenAndServe starts the Unix socket server and blocks until ctx is cancelled.
 func (u *UnixServer) ListenAndServe(ctx context.Context) error {
 	os.Remove(u.SocketPath)
 	ln, err := net.Listen("unix", u.SocketPath)
 	if err != nil {
 		return fmt.Errorf("unix socket listen %s: %w", u.SocketPath, err)
 	}
-	// World-readable so app process can connect without root
+	// World-readable so the app process (non-root) can connect
 	os.Chmod(u.SocketPath, 0666)
 	log.Printf("[unix-api] listening on %s", u.SocketPath)
 
@@ -97,9 +98,7 @@ func (u *UnixServer) handleConn(conn net.Conn) {
 		return
 	}
 
-	var resp ControlResponse
-	resp.Type = req.Type
-	resp.OK = true
+	resp := ControlResponse{Type: req.Type, OK: true}
 
 	switch req.Type {
 	case "ping":
@@ -109,14 +108,6 @@ func (u *UnixServer) handleConn(conn net.Conn) {
 		snap := u.GetStatus()
 		snap.Type = "status"
 		resp.Data = snap
-
-	case "reload":
-		if u.HandleControl != nil {
-			if err := u.HandleControl("reload"); err != nil {
-				resp.OK = false
-				resp.Error = err.Error()
-			}
-		}
 
 	case "control":
 		if u.HandleControl != nil {

@@ -1,5 +1,5 @@
 // sshcustomd — SSHCustom-VPNChain daemon
-// Single static binary; zero CGO; target: GOOS=android GOARCH=arm64.
+// Single static binary, GOOS=android GOARCH=arm64 CGO_ENABLED=0.
 //
 // Usage:
 //   sshcustomd run -c /data/adb/sshcustom/settings.ini -w /data/adb/sshcustom [--idle]
@@ -11,9 +11,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -34,7 +32,7 @@ import (
 var version = "2.0.0"
 
 func main() {
-	// GC tuning for high-throughput TCP copying on Android
+	// GC tuning: allow more heap before GC, cap RSS at 192 MB
 	debug.SetGCPercent(200)
 	debug.SetMemoryLimit(192 * 1024 * 1024)
 
@@ -42,7 +40,6 @@ func main() {
 		usage()
 		os.Exit(1)
 	}
-
 	switch os.Args[1] {
 	case "version", "-version", "--version":
 		fmt.Printf("sshcustomd v%s %s/%s\n", version, runtime.GOOS, runtime.GOARCH)
@@ -58,22 +55,23 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "Usage:\n  sshcustomd run -c <settings.ini> -w <workdir> [--idle]\n  sshcustomd version\n")
 }
 
-// ── State ────────────────────────────────────────────────────────────────────
+// ── State ─────────────────────────────────────────────────────────────────────
 
 type State struct {
-	mu          sync.RWMutex
-	connected   bool
-	startedAt   time.Time
-	tunnelStart time.Time
-	lastError   string
-	sshMode     string
-	netMode     string
-	poolSize    int
-	poolAvail   int
-	activeConns int32
-	memRSS      uint64
-	cpuPct      float64
-	version     string
+	mu           sync.RWMutex
+	connected    bool
+	tunnelStart  time.Time
+	startedAt    time.Time
+	lastError    string
+	lastEvent    string
+	sshMode      string
+	netMode      string
+	poolSize     int
+	poolAvail    int
+	activeConns  int32
+	memRSS       uint64
+	cpuPct       float64
+	version      string
 }
 
 func (s *State) set(fn func(*State)) {
@@ -89,7 +87,6 @@ func (s *State) snapshot() api.StatusSnapshot {
 	if s.connected && !s.tunnelStart.IsZero() {
 		uptime = int64(time.Since(s.tunnelStart).Seconds())
 	}
-	memMB := float64(s.memRSS) / 1024 / 1024
 	return api.StatusSnapshot{
 		Connected:        s.connected,
 		UptimeSeconds:    uptime,
@@ -97,13 +94,15 @@ func (s *State) snapshot() api.StatusSnapshot {
 		NetworkMode:      s.netMode,
 		ChannelPoolSize:  s.poolSize,
 		ChannelPoolAvail: s.poolAvail,
+		ActiveConns:      int(atomic.LoadInt32(&s.activeConns)),
 		Version:          s.version,
-		MemRSSMB:         memMB,
+		MemRSSMB:         float64(s.memRSS) / 1024 / 1024,
 		CPUPercent:       s.cpuPct,
+		LastError:        s.lastError,
 	}
 }
 
-// ── runCmd ───────────────────────────────────────────────────────────────────
+// ── runCmd ────────────────────────────────────────────────────────────────────
 
 func runCmd() {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
@@ -116,13 +115,12 @@ func runCmd() {
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
+	atomicCfg := config.NewAtomic(cfg)
 
 	// Write PID file
-	pidFile := cfg.BoxPID
-	if pidFile == "" {
-		pidFile = *workDir + "/run/sshcustom.pid"
-	}
-	os.MkdirAll(*workDir+"/run", 0700)
+	runDir := *workDir + "/run"
+	os.MkdirAll(runDir, 0700)
+	pidFile := runDir + "/sshcustom.pid"
 	os.WriteFile(pidFile, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0644)
 	defer os.Remove(pidFile)
 
@@ -138,34 +136,41 @@ func runCmd() {
 
 	var sshClient atomic.Pointer[issh.Client]
 
-	// Unix socket API
-	sockPath := *workDir + "/run/sshcustomd.sock"
+	// Unix socket API for Android app
+	sockPath := runDir + "/sshcustomd.sock"
 	unixSrv := &api.UnixServer{
 		SocketPath: sockPath,
 		GetStatus:  st.snapshot,
 		HandleControl: func(action string) error {
-			return handleControl(action, *workDir, cfg, &sshClient, st)
+			return handleControl(action, *workDir)
 		},
 	}
 	go func() {
 		if err := unixSrv.ListenAndServe(ctx); err != nil {
-			log.Printf("unix-api: %v", err)
+			log.Printf("[unix-api] %v", err)
 		}
 	}()
 
-	// HTTP API + WebUI
-	mux := buildHTTPMux(cfg, *workDir, st, &sshClient)
-	httpAddr := fmt.Sprintf("127.0.0.1:%d", 9190)
-	httpSrv := &http.Server{Addr: httpAddr, Handler: mux}
+	// HTTP API + WebUI — with timeouts
+	mux := buildHTTPMux(atomicCfg, *workDir, *cfgPath, st, &sshClient)
+	httpSrv := &http.Server{
+		Addr:         "127.0.0.1:9190",
+		Handler:      mux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 60 * time.Second, // SSE streams need a longer write timeout
+		IdleTimeout:  120 * time.Second,
+	}
 	go func() {
-		log.Printf("http: listening on %s", httpAddr)
+		log.Printf("[http] listening on 127.0.0.1:9190")
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("http: %v", err)
+			log.Printf("[http] %v", err)
 		}
 	}()
 	go func() {
 		<-ctx.Done()
-		httpSrv.Shutdown(context.Background())
+		shutCtx, shutCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer shutCancel()
+		httpSrv.Shutdown(shutCtx)
 	}()
 
 	// Metrics ticker
@@ -173,7 +178,7 @@ func runCmd() {
 
 	// Start tunnel unless idle
 	if !*idle {
-		go tunnelLoop(ctx, cfg, st, &sshClient)
+		go tunnelLoop(ctx, atomicCfg, *cfgPath, *workDir, st, &sshClient)
 	}
 
 	// Signal handling
@@ -183,18 +188,18 @@ func runCmd() {
 		s := <-sig
 		switch s {
 		case syscall.SIGHUP:
-			log.Println("main: SIGHUP — reloading config")
+			log.Println("[main] SIGHUP — reloading config")
 			newCfg, err := config.Load(*cfgPath)
 			if err != nil {
-				log.Printf("config reload: %v", err)
+				log.Printf("[main] config reload failed: %v", err)
 			} else {
-				*cfg = *newCfg
-				log.Println("main: config reloaded")
+				atomicCfg.Store(newCfg)
+				log.Println("[main] config reloaded")
 			}
 		default:
-			log.Printf("main: signal %v — shutting down", s)
+			log.Printf("[main] signal %v — shutting down", s)
 			cancel()
-			time.Sleep(300 * time.Millisecond)
+			time.Sleep(500 * time.Millisecond)
 			return
 		}
 	}
@@ -202,9 +207,15 @@ func runCmd() {
 
 // ── Tunnel loop ───────────────────────────────────────────────────────────────
 
-func tunnelLoop(ctx context.Context, cfg *config.Config, st *State, clientPtr *atomic.Pointer[issh.Client]) {
-	delay := time.Duration(3) * time.Second
-	maxDelay := time.Duration(30) * time.Second
+func tunnelLoop(
+	ctx context.Context,
+	atomicCfg *config.AtomicConfig,
+	cfgPath, workDir string,
+	st *State,
+	clientPtr *atomic.Pointer[issh.Client],
+) {
+	delay := 3 * time.Second
+	maxDelay := 30 * time.Second
 
 	for {
 		select {
@@ -213,56 +224,64 @@ func tunnelLoop(ctx context.Context, cfg *config.Config, st *State, clientPtr *a
 		case <-time.After(delay):
 		}
 
+		cfg := atomicCfg.Get()
+
 		if cfg.SSHHost == "" || cfg.SSHUser == "" {
-			log.Println("tunnel: ssh_host or ssh_user not configured — waiting")
+			log.Println("[tunnel] ssh_host/ssh_user not configured — waiting")
 			delay = 10 * time.Second
 			continue
 		}
 
-		log.Printf("tunnel: connecting to %s:%d mode=%s", cfg.SSHHost, cfg.SSHPort, cfg.SSHMode)
-		st.set(func(s *State) { s.lastError = "" })
+		log.Printf("[tunnel] connecting to %s:%d mode=%s", cfg.SSHHost, cfg.SSHPort, cfg.SSHMode)
+		st.set(func(s *State) { s.lastError = ""; s.lastEvent = "connecting" })
 
-		c, err := issh.Dial(ctx, issh.ConnectConfig{
-			Host:           cfg.SSHHost,
-			Port:           cfg.SSHPort,
-			User:           cfg.SSHUser,
-			Password:       cfg.SSHPassword,
-			Mode:           issh.TransportMode(cfg.SSHMode),
-			SNIHost:        cfg.SSHSNIHost,
-			HTTPProxyHost:  cfg.HTTPProxyHost,
-			HTTPProxyPort:  cfg.HTTPProxyPort,
-			PayloadEnabled: cfg.PayloadEnabled,
-			Payload:        cfg.Payload,
-			ConnectTimeout: 25 * time.Second,
-			KeepAlive:      10 * time.Second,
+		dialCtx, dialCancel := context.WithTimeout(ctx, 30*time.Second)
+		c, err := issh.Dial(dialCtx, issh.ConnectConfig{
+			Host:              cfg.SSHHost,
+			Port:              cfg.SSHPort,
+			User:              cfg.SSHUser,
+			Password:          cfg.SSHPassword,
+			Mode:              issh.TransportMode(cfg.SSHMode),
+			SNIHost:           cfg.SSHSNIHost,
+			HTTPProxyHost:     cfg.HTTPProxyHost,
+			HTTPProxyPort:     cfg.HTTPProxyPort,
+			PayloadEnabled:    cfg.PayloadEnabled,
+			Payload:           cfg.Payload,
+			ConnectTimeout:    25 * time.Second,
+			KeepAliveInterval: 30 * time.Second,
+			KeepAliveMax:      3,
 		}, cfg.ChannelPoolSize)
+		dialCancel()
 
 		if err != nil {
-			log.Printf("tunnel: connect failed: %v", err)
+			log.Printf("[tunnel] connect failed: %v", err)
 			st.set(func(s *State) {
 				s.connected = false
 				s.lastError = err.Error()
+				s.lastEvent = "connect_failed"
 			})
-			delay = min(delay*2, maxDelay)
+			delay = minDuration(delay*2, maxDelay)
 			continue
 		}
 
 		delay = 3 * time.Second
 		clientPtr.Store(c)
+		sz, av := c.PoolStats()
 		st.set(func(s *State) {
 			s.connected = true
 			s.tunnelStart = time.Now()
 			s.sshMode = cfg.SSHMode
-			sz, av := c.PoolStats()
+			s.netMode = cfg.NetworkMode
 			s.poolSize = sz
 			s.poolAvail = av
+			s.lastEvent = "connected"
 		})
-		log.Printf("tunnel: connected (pool_size=%d)", cfg.ChannelPoolSize)
+		log.Printf("[tunnel] connected pool_size=%d", cfg.ChannelPoolSize)
 
-		// Apply iptables if not in idle mode
-		go runScript("/data/adb/sshcustom/scripts/ssh.iptables", "enable")
+		// Apply iptables with timeout
+		runScriptTimeout(workDir+"/scripts/ssh.iptables", 30*time.Second, "enable")
 
-		// Start SOCKS5 listener
+		// SOCKS5 listener
 		socksCtx, socksCancel := context.WithCancel(ctx)
 		socks := &proxy.SOCKS5Server{
 			Addr:   fmt.Sprintf("127.0.0.1:%d", cfg.SocksPort),
@@ -270,33 +289,43 @@ func tunnelLoop(ctx context.Context, cfg *config.Config, st *State, clientPtr *a
 		}
 		go func() {
 			if err := socks.ListenAndServe(socksCtx); err != nil {
-				log.Printf("socks5: %v", err)
+				log.Printf("[socks5] %v", err)
 			}
 		}()
 
-		// Start transparent proxy listener
+		// Transparent proxy listener
 		transCtx, transCancel := context.WithCancel(ctx)
 		trans := &proxy.TransparentServer{
-			Addr:   fmt.Sprintf("0.0.0.0:%d", cfg.RedirPort),
-			Client: c,
+			Addr:    fmt.Sprintf("0.0.0.0:%d", cfg.RedirPort),
+			Client:  c,
+			Timeout: 25 * time.Second,
 		}
 		go func() {
 			if err := trans.ListenAndServe(transCtx); err != nil {
-				log.Printf("transparent: %v", err)
+				log.Printf("[transparent] %v", err)
 			}
 		}()
 
-		// Launch tun2proxy if mode is tun/tun_udpgw
+		// Launch tun2proxy if mode requires it
 		var tun2proxyCmd *exec.Cmd
 		if cfg.NetworkMode == "tun" || cfg.NetworkMode == "tun_udpgw" {
 			tun2proxyCmd = startTun2proxy(cfg)
 		}
 
-		// Wait for SSH connection to drop
-		waitSSHDrop(ctx, c)
+		// Wait for SSH to die using the proper Wait() method
+		waitDone := make(chan error, 1)
+		go func() { waitDone <- c.Wait() }()
+
+		select {
+		case <-ctx.Done():
+		case err := <-waitDone:
+			if err != nil {
+				log.Printf("[tunnel] SSH connection lost: %v", err)
+			}
+		}
 
 		// Teardown
-		log.Println("tunnel: connection lost — tearing down")
+		log.Println("[tunnel] tearing down")
 		socksCancel()
 		transCancel()
 		if tun2proxyCmd != nil && tun2proxyCmd.Process != nil {
@@ -304,26 +333,16 @@ func tunnelLoop(ctx context.Context, cfg *config.Config, st *State, clientPtr *a
 		}
 		c.Close()
 		clientPtr.Store(nil)
-		st.set(func(s *State) { s.connected = false })
-		runScript("/data/adb/sshcustom/scripts/ssh.iptables", "disable")
-	}
-}
+		st.set(func(s *State) {
+			s.connected = false
+			s.poolSize = 0
+			s.poolAvail = 0
+			s.lastEvent = "disconnected"
+		})
+		runScriptTimeout(workDir+"/scripts/ssh.iptables", 15*time.Second, "disable")
 
-// waitSSHDrop blocks until the SSH connection drops or ctx is cancelled.
-func waitSSHDrop(ctx context.Context, c *issh.Client) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			return
-		case <-ticker.C:
-			// Try opening a channel; if it fails the connection is dead
-			conn, err := c.DialTCP(ctx, "tcp", "127.0.0.1:1")
-			if err != nil {
-				return
-			}
-			conn.Close()
 		}
 	}
 }
@@ -344,43 +363,46 @@ func startTun2proxy(cfg *config.Config) *exec.Cmd {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
-		log.Printf("tun2proxy: failed to start: %v", err)
+		log.Printf("[tun2proxy] failed to start: %v", err)
 		return nil
 	}
-	log.Printf("tun2proxy: started pid=%d", cmd.Process.Pid)
+	log.Printf("[tun2proxy] started pid=%d", cmd.Process.Pid)
 	return cmd
 }
 
-// runScript executes a module shell script.
-func runScript(path string, args ...string) {
-	cmd := exec.Command("/system/bin/sh", append([]string{path}, args...)...)
+// runScriptTimeout executes a module shell script with a timeout.
+func runScriptTimeout(path string, timeout time.Duration, args ...string) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/system/bin/sh", append([]string{path}, args...)...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("script %s %v: %v\n%s", path, args, err, out)
+		log.Printf("[script] %s %v: %v\n%s", path, args, err, out)
 	}
 }
 
-// ── Control handler ───────────────────────────────────────────────────────────
-
-func handleControl(action, workDir string, cfg *config.Config, clientPtr *atomic.Pointer[issh.Client], st *State) error {
+// handleControl dispatches control actions to the module script.
+func handleControl(action, workDir string) error {
+	script := workDir + "/scripts/ssh.service"
 	switch action {
-	case "start":
-		runScript("/data/adb/sshcustom/scripts/ssh.service", "start")
-	case "stop":
-		runScript("/data/adb/sshcustom/scripts/ssh.service", "stop")
-	case "restart":
-		runScript("/data/adb/sshcustom/scripts/ssh.service", "restart")
+	case "start", "stop", "restart", "start-idle":
+		runScriptTimeout(script, 30*time.Second, action)
 	case "reload":
-		// handled in signal loop
+		// SIGHUP to self handled in signal loop
 	}
 	return nil
 }
 
-// ── HTTP API ─────────────────────────────────────────────────────────────────
+// ── HTTP API ──────────────────────────────────────────────────────────────────
 
-func buildHTTPMux(cfg *config.Config, workDir string, st *State, clientPtr *atomic.Pointer[issh.Client]) *http.ServeMux {
+func buildHTTPMux(
+	atomicCfg *config.AtomicConfig,
+	workDir, cfgPath string,
+	st *State,
+	clientPtr *atomic.Pointer[issh.Client],
+) *http.ServeMux {
 	mux := http.NewServeMux()
 
-	envelope := func(w http.ResponseWriter, ok bool, data interface{}, errMsg string) {
+	env := func(w http.ResponseWriter, ok bool, data interface{}, errMsg string) {
 		w.Header().Set("Content-Type", "application/json")
 		resp := map[string]interface{}{"api_version": "v1", "ok": ok}
 		if ok {
@@ -392,32 +414,41 @@ func buildHTTPMux(cfg *config.Config, workDir string, st *State, clientPtr *atom
 	}
 
 	mux.HandleFunc("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {
-		envelope(w, true, map[string]string{"status": "ok", "version": version}, "")
+		env(w, true, map[string]string{"status": "ok", "version": version}, "")
 	})
 
 	mux.HandleFunc("/api/v1/status", func(w http.ResponseWriter, r *http.Request) {
+		cfg := atomicCfg.Get()
 		snap := st.snapshot()
-		envelope(w, true, map[string]interface{}{
+		env(w, true, map[string]interface{}{
 			"runtime": snap,
 			"config": map[string]interface{}{
 				"network_mode": cfg.NetworkMode,
 				"ssh_mode":     cfg.SSHMode,
 				"socks_port":   cfg.SocksPort,
+				"redir_port":   cfg.RedirPort,
+				"tproxy_port":  cfg.TProxyPort,
+				"quic":         cfg.QUIC,
+				"channel_pool": cfg.ChannelPool,
 			},
 		}, "")
 	})
 
 	mux.HandleFunc("/api/v1/control", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", 405)
+			w.WriteHeader(405)
 			return
 		}
-		var req struct{ Action string `json:"action"` }
+		var req struct {
+			Action string `json:"action"`
+		}
 		json.NewDecoder(r.Body).Decode(&req)
-		go time.AfterFunc(300*time.Millisecond, func() {
-			handleControl(req.Action, workDir, cfg, clientPtr, st)
-		})
-		envelope(w, true, map[string]string{"scheduled": req.Action}, "")
+		// Schedule 300ms later so HTTP response returns before daemon restarts
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			handleControl(req.Action, workDir)
+		}()
+		env(w, true, map[string]string{"scheduled": req.Action}, "")
 	})
 
 	mux.HandleFunc("/api/v1/autostart", func(w http.ResponseWriter, r *http.Request) {
@@ -425,34 +456,43 @@ func buildHTTPMux(cfg *config.Config, workDir string, st *State, clientPtr *atom
 		switch r.Method {
 		case http.MethodGet:
 			_, err := os.Stat(marker)
-			envelope(w, true, map[string]bool{"enabled": err == nil}, "")
+			env(w, true, map[string]bool{"enabled": err == nil}, "")
 		case http.MethodPost, http.MethodPut:
-			var req struct{ Enabled bool `json:"enabled"` }
+			var req struct {
+				Enabled bool `json:"enabled"`
+			}
 			json.NewDecoder(r.Body).Decode(&req)
 			if req.Enabled {
 				os.WriteFile(marker, []byte("1"), 0644)
 			} else {
 				os.Remove(marker)
 			}
-			envelope(w, true, map[string]bool{"enabled": req.Enabled}, "")
+			env(w, true, map[string]bool{"enabled": req.Enabled}, "")
+		default:
+			w.WriteHeader(405)
 		}
 	})
 
-	// Serve embedded WebUI at root
+	// Config read endpoint
+	mux.HandleFunc("/api/v1/config", func(w http.ResponseWriter, r *http.Request) {
+		cfg := atomicCfg.Get()
+		env(w, true, cfg, "")
+	})
+
+	// Serve on-disk WebUI at root (no embedded — companion app is the primary UI)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// Prefer on-disk webroot for hot-editing
 		webrootIndex := workDir + "/webroot/index.html"
 		if _, err := os.Stat(webrootIndex); err == nil {
 			http.ServeFile(w, r, webrootIndex)
 			return
 		}
-		http.Error(w, "WebUI not found. Install the companion app.", 404)
+		http.Error(w, "WebUI not installed", 404)
 	})
 
 	return mux
 }
 
-// ── Metrics ──────────────────────────────────────────────────────────────────
+// ── Metrics ───────────────────────────────────────────────────────────────────
 
 func metricsLoop(ctx context.Context, st *State) {
 	ticker := time.NewTicker(20 * time.Second)
@@ -495,24 +535,11 @@ func splitLines(b []byte) []string {
 	return lines
 }
 
-// ── relay helper (used by proxy packages via shared copy) ────────────────────
-
-func relayConns(a, b net.Conn) {
-	done := make(chan struct{}, 2)
-	cp := func(dst, src io.ReadWriteCloser) {
-		buf := make([]byte, 128*1024)
-		io.CopyBuffer(dst, src, buf)
-		done <- struct{}{}
-	}
-	go cp(a, b)
-	go cp(b, a)
-	<-done
-	<-done
-}
-
-func min(a, b time.Duration) time.Duration {
+func minDuration(a, b time.Duration) time.Duration {
 	if a < b {
 		return a
 	}
 	return b
 }
+
+

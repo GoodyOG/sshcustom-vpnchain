@@ -60,10 +60,10 @@ func (s *SOCKS5Server) handle(ctx context.Context, conn net.Conn) {
 	if _, err := io.ReadFull(conn, methods); err != nil {
 		return
 	}
-	// No authentication
+	// No authentication required
 	conn.Write([]byte{5, 0})
 
-	// Request
+	// Request header
 	req := make([]byte, 4)
 	if _, err := io.ReadFull(conn, req); err != nil || req[0] != 5 || req[1] != 1 {
 		conn.Write([]byte{5, 7, 0, 1, 0, 0, 0, 0, 0, 0})
@@ -76,7 +76,7 @@ func (s *SOCKS5Server) handle(ctx context.Context, conn net.Conn) {
 		addr := make([]byte, 4)
 		io.ReadFull(conn, addr)
 		host = net.IP(addr).String()
-	case 3: // Domain
+	case 3: // Domain name
 		lenb := make([]byte, 1)
 		io.ReadFull(conn, lenb)
 		dom := make([]byte, lenb[0])
@@ -96,7 +96,7 @@ func (s *SOCKS5Server) handle(ctx context.Context, conn net.Conn) {
 	port := binary.BigEndian.Uint16(portBuf)
 	target := fmt.Sprintf("%s:%d", host, port)
 
-	conn.SetDeadline(time.Time{}) // reset deadline
+	conn.SetDeadline(time.Time{}) // reset deadline for data transfer
 
 	remote, err := s.Client.DialTCP(ctx, "tcp", target)
 	if err != nil {
@@ -105,19 +105,31 @@ func (s *SOCKS5Server) handle(ctx context.Context, conn net.Conn) {
 	}
 	defer remote.Close()
 
+	// Success reply
 	conn.Write([]byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0})
 
+	// Bidirectional relay — no type assertion, works with any net.Conn
 	relay(conn, remote)
 }
 
-// relay bidirectionally copies between two conns.
+// relay bidirectionally copies between two net.Conn without type assertions.
+// Each side gets its own goroutine; we wait for both to finish.
 func relay(a, b net.Conn) {
 	done := make(chan struct{}, 2)
 	cp := func(dst, src net.Conn) {
+		defer func() { done <- struct{}{} }()
 		buf := make([]byte, copyBuf)
 		io.CopyBuffer(dst, src, buf)
-		dst.(*net.TCPConn).CloseWrite()
-		done <- struct{}{}
+		// Half-close: signal EOF to the other side if possible.
+		// Use interface check — SSH channels implement io.Closer but not CloseWrite.
+		type halfCloser interface {
+			CloseWrite() error
+		}
+		if hc, ok := dst.(halfCloser); ok {
+			hc.CloseWrite()
+		} else {
+			dst.Close()
+		}
 	}
 	go cp(a, b)
 	go cp(b, a)

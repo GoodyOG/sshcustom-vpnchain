@@ -1,15 +1,9 @@
 package com.sshcustom.vpnchain.ui.screens
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.*
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -20,6 +14,10 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sshcustom.vpnchain.domain.Profile
+import top.yukonga.miuix.kmp.basic.*
+import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.util.UUID
 
 @Composable
@@ -29,51 +27,62 @@ fun ProfilesScreen(
     onSelectProfile: (String) -> Unit,
     onSaveProfile: (Profile) -> Unit,
     onDeleteProfile: (String) -> Unit,
+    paddingValues: PaddingValues,
 ) {
     var showEditor by remember { mutableStateOf(false) }
     var editingProfile by remember { mutableStateOf<Profile?>(null) }
 
-    Box(Modifier.fillMaxSize()) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(profiles) { profile ->
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(paddingValues)
+            .padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Spacer(Modifier.height(4.dp))
+
+        // Add profile button
+        TextButton(
+            text = "+ Add Profile",
+            onClick = { editingProfile = null; showEditor = true },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.textButtonColorsPrimary(),
+        )
+
+        if (profiles.isEmpty()) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No profiles yet.\nTap '+ Add Profile' to create one.",
+                        color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                        fontSize = 14.sp,
+                    )
+                }
+            }
+        } else {
+            profiles.forEach { profile ->
                 ProfileCard(
                     profile = profile,
                     isActive = profile.id == activeProfileId,
                     onSelect = { onSelectProfile(profile.id) },
                     onEdit = { editingProfile = profile; showEditor = true },
-                    onDelete = { onDeleteProfile(profile.id) }
+                    onDelete = { onDeleteProfile(profile.id) },
                 )
-            }
-            if (profiles.isEmpty()) {
-                item {
-                    Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
-                        Text("No profiles yet.\nTap + to add one.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-                    }
-                }
             }
         }
 
-        FloatingActionButton(
-            onClick = { editingProfile = null; showEditor = true },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-            containerColor = MaterialTheme.colorScheme.primary
-        ) {
-            Icon(Icons.Default.Add, contentDescription = "Add profile")
-        }
+        Spacer(Modifier.height(8.dp))
     }
 
     if (showEditor) {
         ProfileEditorSheet(
             initial = editingProfile,
-            onSave = { profile ->
-                onSaveProfile(profile)
-                showEditor = false
-            },
-            onDismiss = { showEditor = false }
+            onSave = { profile -> onSaveProfile(profile); showEditor = false },
+            onDismiss = { showEditor = false },
         )
     }
 }
@@ -86,39 +95,69 @@ private fun ProfileCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    val border = if (isActive) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        border = border,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(profile.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                Text("${profile.host}:${profile.port}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                Text(profile.mode.uppercase(), fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = profile.name,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                        color = MiuixTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = "${profile.host}:${profile.port}",
+                        fontSize = 12.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                    )
+                    Text(
+                        text = profile.mode.uppercase(),
+                        fontSize = 11.sp,
+                        color = MiuixTheme.colorScheme.primary,
+                    )
+                }
+                if (isActive) {
+                    Text(
+                        text = "Active",
+                        fontSize = 12.sp,
+                        color = MiuixTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
+                }
             }
-            if (!isActive) {
-                TextButton(onClick = onSelect) { Text("Select") }
-            } else {
-                Text("✓ Active", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
-            }
-            IconButton(onClick = onEdit) { Text("✏️") }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!isActive) {
+                    TextButton(
+                        text = "Select",
+                        onClick = onSelect,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                    )
+                }
+                TextButton(
+                    text = "Edit",
+                    onClick = onEdit,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    text = "Delete",
+                    onClick = onDelete,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColorsDanger(),
+                )
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProfileEditorSheet(
     initial: Profile?,
     onSave: (Profile) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    // Mutable state for every field
     var name     by remember { mutableStateOf(initial?.name ?: "") }
     var host     by remember { mutableStateOf(initial?.host ?: "") }
     var port     by remember { mutableStateOf(initial?.port?.toString() ?: "22") }
@@ -132,70 +171,170 @@ private fun ProfileEditorSheet(
     var payload  by remember { mutableStateOf(initial?.payload ?: "") }
     var showPassword by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(if (initial == null) "New Profile" else "Edit Profile", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+    // Validation errors
+    var nameError by remember { mutableStateOf(false) }
+    var hostError by remember { mutableStateOf(false) }
 
-            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Profile Name") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = host, onValueChange = { host = it }, label = { Text("Server Host") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = port, onValueChange = { port = it }, label = { Text("Port") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = user, onValueChange = { user = it }, label = { Text("Username") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(
-                value = password, onValueChange = { password = it }, label = { Text("Password") },
-                visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = { TextButton(onClick = { showPassword = !showPassword }) { Text(if (showPassword) "Hide" else "Show") } },
-                modifier = Modifier.fillMaxWidth()
-            )
+    var error by remember { mutableStateOf("") }
 
-            // SSH Mode selector
-            Text("SSH Mode", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("direct" to "Direct", "sni" to "SNI", "sni_http_proxy" to "SNI+Proxy").forEach { (value, label) ->
-                    FilterChip(selected = mode == value, onClick = { mode = value }, label = { Text(label) })
-                }
-            }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = if (initial == null) "New Profile" else "Edit Profile",
+            fontSize = 18.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MiuixTheme.colorScheme.onSurface,
+        )
 
-            if (mode == "sni" || mode == "sni_http_proxy") {
-                OutlinedTextField(value = sniHost, onValueChange = { sniHost = it }, label = { Text("SNI Host") }, modifier = Modifier.fillMaxWidth())
-            }
-            if (mode == "sni_http_proxy") {
-                OutlinedTextField(value = proxyHost, onValueChange = { proxyHost = it }, label = { Text("HTTP Proxy Host") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = proxyPort, onValueChange = { proxyPort = it }, label = { Text("HTTP Proxy Port") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
-            }
-
-            // Payload
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = payloadEnabled, onCheckedChange = { payloadEnabled = it })
-                Text("Enable Payload Injection")
-            }
-            if (payloadEnabled) {
-                OutlinedTextField(
-                    value = payload, onValueChange = { payload = it },
-                    label = { Text("Payload") },
-                    supportingText = { Text("Variables: [host] [port] [crlf] [cr] [lf]") },
-                    minLines = 3, modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
-                Button(
-                    onClick = {
-                        onSave(Profile(
-                            id = initial?.id ?: UUID.randomUUID().toString(),
-                            name = name, host = host, port = port.toIntOrNull() ?: 22,
-                            user = user, password = password, mode = mode,
-                            sniHost = sniHost, proxyHost = proxyHost,
-                            proxyPort = proxyPort.toIntOrNull() ?: 3128,
-                            payloadEnabled = payloadEnabled, payload = payload
-                        ))
-                    },
-                    modifier = Modifier.weight(1f)
-                ) { Text("Save") }
-            }
+        if (error.isNotEmpty()) {
+            Text(text = error, color = MiuixTheme.colorScheme.error, fontSize = 13.sp)
         }
+
+        TextField(
+            value = name,
+            onValueChange = { name = it; nameError = false; error = "" },
+            label = "Profile Name *",
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (nameError) Text("Profile name is required", color = MiuixTheme.colorScheme.error, fontSize = 11.sp)
+
+        TextField(
+            value = host,
+            onValueChange = { host = it.trim(); hostError = false; error = "" },
+            label = "Server Host *",
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (hostError) Text("Server host is required", color = MiuixTheme.colorScheme.error, fontSize = 11.sp)
+
+        TextField(
+            value = port,
+            onValueChange = { port = it.filter { c -> c.isDigit() }.take(5) },
+            label = "Port (1024–65535)",
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        TextField(
+            value = user,
+            onValueChange = { user = it },
+            label = "Username",
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        TextField(
+            value = password,
+            onValueChange = { password = it },
+            label = "Password",
+            singleLine = true,
+            visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        TextButton(
+            text = if (showPassword) "Hide password" else "Show password",
+            onClick = { showPassword = !showPassword },
+            modifier = Modifier.wrapContentWidth(),
+        )
+
+        // SSH Mode
+        SmallTitle(text = "SSH Mode", modifier = Modifier.padding(0.dp))
+        Card(modifier = Modifier.fillMaxWidth()) {
+            listOf("direct" to "Direct", "sni" to "SNI", "sni_http_proxy" to "SNI + HTTP Proxy")
+                .forEach { (m, l) ->
+                    ArrowPreference(
+                        title = l,
+                        endActions = {
+                            if (mode == m) Text("✓", color = MiuixTheme.colorScheme.primary,
+                                fontSize = MiuixTheme.textStyles.body2.fontSize)
+                        },
+                        onClick = { mode = m },
+                    )
+                }
+        }
+
+        if (mode == "sni" || mode == "sni_http_proxy") {
+            TextField(
+                value = sniHost,
+                onValueChange = { sniHost = it },
+                label = "SNI Host",
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (mode == "sni_http_proxy") {
+            TextField(
+                value = proxyHost,
+                onValueChange = { proxyHost = it },
+                label = "HTTP Proxy Host",
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            TextField(
+                value = proxyPort,
+                onValueChange = { proxyPort = it.filter { c -> c.isDigit() }.take(5) },
+                label = "HTTP Proxy Port",
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        // Payload
+        SwitchPreference(
+            title = "Enable Payload Injection",
+            checked = payloadEnabled,
+            onCheckedChange = { payloadEnabled = it },
+        )
+        if (payloadEnabled) {
+            TextField(
+                value = payload,
+                onValueChange = { payload = it },
+                label = "Payload (vars: [host] [port] [crlf] [cr] [lf])",
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+            )
+        }
+
+        // Save / Cancel
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            TextButton(text = "Cancel", onClick = onDismiss, modifier = Modifier.weight(1f))
+            TextButton(
+                text = "Save",
+                onClick = {
+                    nameError = name.isBlank()
+                    hostError = host.isBlank()
+                    val portVal = port.toIntOrNull()
+                    if (nameError || hostError) { error = "Please fill required fields"; return@TextButton }
+                    if (portVal == null || portVal !in 1024..65535) { error = "Port must be 1024–65535"; return@TextButton }
+                    onSave(Profile(
+                        id            = initial?.id ?: UUID.randomUUID().toString(),
+                        name          = name.trim(),
+                        host          = host.trim(),
+                        port          = portVal,
+                        user          = user.trim(),
+                        password      = password,
+                        mode          = mode,
+                        sniHost       = sniHost.trim(),
+                        proxyHost     = proxyHost.trim(),
+                        proxyPort     = proxyPort.toIntOrNull() ?: 3128,
+                        payloadEnabled = payloadEnabled,
+                        payload       = payload,
+                    ))
+                },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.textButtonColorsPrimary(),
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
     }
 }

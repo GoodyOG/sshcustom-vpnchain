@@ -16,8 +16,9 @@ import (
 // TransparentServer intercepts TCP connections redirected by iptables REDIRECT.
 // It reads the original destination via SO_ORIGINAL_DST and forwards through SSH.
 type TransparentServer struct {
-	Addr   string
-	Client *issh.Client
+	Addr    string
+	Client  *issh.Client
+	Timeout time.Duration // per-connection dial timeout; 0 = 25s
 }
 
 // ListenAndServe starts the transparent proxy listener.
@@ -47,22 +48,28 @@ func (t *TransparentServer) ListenAndServe(ctx context.Context) error {
 
 func (t *TransparentServer) handle(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(30 * time.Second))
 
-	// Recover original destination via SO_ORIGINAL_DST
+	dialTimeout := t.Timeout
+	if dialTimeout == 0 {
+		dialTimeout = 25 * time.Second
+	}
+
+	// Read original destination before setting the transfer deadline
 	target, err := originalDst(conn)
 	if err != nil {
 		return
 	}
 
-	conn.SetDeadline(time.Time{})
+	dialCtx, cancel := context.WithTimeout(ctx, dialTimeout)
+	defer cancel()
 
-	remote, err := t.Client.DialTCP(ctx, "tcp", target)
+	remote, err := t.Client.DialTCP(dialCtx, "tcp", target)
 	if err != nil {
 		return
 	}
 	defer remote.Close()
 
+	// relay uses interface check for half-close — safe for SSH channels
 	relay(conn, remote)
 }
 

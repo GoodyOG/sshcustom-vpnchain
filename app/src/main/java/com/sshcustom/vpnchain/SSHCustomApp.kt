@@ -11,8 +11,9 @@ class SSHCustomApp : Application() {
     }
 
     private fun configureShell() {
-        val builder = Shell.Builder.create()
-            .setTimeout(10)
-        Shell.setDefaultBuilder(builder)
+        Shell.setDefaultBuilder(
+            Shell.Builder.create()
+                .setTimeout(15)
+        )
     }
 }
