@@ -308,6 +308,8 @@ push/tag → 5 parallel jobs:
 | `v2.0.0` | 2026-05-30 | Complete monorepo rebuild: new module scripts, Go daemon v2, Android app from scratch |
 | `v2.0.1` | 2026-05-30 | Profile editor scroll bug (SuperBottomSheet), collapsing TopAppBar, home icon, settings selection indicator, release APK (<8MB), R8 full mode |
 | `v2.0.2` | 2026-05-30 | Profile editor fully scrollable (Column→LazyColumn inside sheet, fixes toggle-payload-then-can't-save), SSH Mode SuperDropdown, Settings Traffic Mode SuperDropdown, Settings DNS Mode SuperDropdown |
+| `v2.0.3` | 2026-05-30 | Fix root detection: Shell.isAppGrantedRoot() + Shell.getShell().isRoot + FLAG_MOUNT_MASTER for KSU |
+| `v2.0.4` | 2026-05-30 | Fix daemon idle→tunnel mode on Start; activeProfileId as StateFlow (instant select); multi-log tabs (Core/Control/Boot); nav bar inset on profile sheet; ports changed to 9799/9899/1081 (no box conflict); BasicComponent for non-nav About rows; boot-on-startup toggle; hotspot sharing toggle; bold info card values |
 
 ---
 
