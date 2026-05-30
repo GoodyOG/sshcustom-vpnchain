@@ -7,12 +7,12 @@ plugins {
 
 android {
     namespace = "com.sshcustom.vpnchain"
-    compileSdk = 37
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.sshcustom.vpnchain"
         minSdk = 28
-        targetSdk = 37
+        targetSdk = 35
         versionCode = 20000
         versionName = "2.0.0"
     }
@@ -60,10 +60,9 @@ android {
 }
 
 dependencies {
-    // ── miuix UI (replaces ALL Material 3) ───────────────────────────────────
-    implementation("top.yukonga.miuix.kmp:miuix-ui:0.9.1")
-    implementation("top.yukonga.miuix.kmp:miuix-preference:0.9.1")
-    implementation("top.yukonga.miuix.kmp:miuix-icons:0.9.1")
+    // ── miuix UI 0.7.2 — targets compileSdk 35, no SDK 37 / navigationevent deps
+    // Use top.yukonga.miuix.kmp:miuix (monolithic) which bundles UI + preference + icons
+    implementation("top.yukonga.miuix.kmp:miuix:0.7.2")
 
     // ── libsu root access ─────────────────────────────────────────────────────
     implementation("com.github.topjohnwu.libsu:core:6.0.0")
@@ -77,11 +76,11 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    // ── AndroidX ─────────────────────────────────────────────────────────────
-    implementation("androidx.activity:activity-compose:1.10.1")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.0")
-    implementation("androidx.core:core-ktx:1.16.0")
+    // ── AndroidX (pinned to stable SDK-35-compatible versions) ───────────────
+    implementation("androidx.activity:activity-compose:1.9.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
 
     // NOTE: No material3, no material-icons-extended, no navigation-compose —

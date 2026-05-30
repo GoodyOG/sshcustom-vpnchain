@@ -6,18 +6,13 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.darkColorScheme
 import top.yukonga.miuix.kmp.theme.lightColorScheme
 
-/**
- * SSHCustom app theme — wraps MiuixTheme.
- * Uses system dark/light mode. No Material3 anywhere.
- */
 @Composable
 fun SSHCustomTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val colors = if (darkTheme) darkColorScheme() else lightColorScheme()
     MiuixTheme(
-        colors = colors,
+        colors = if (darkTheme) darkColorScheme() else lightColorScheme(),
         content = content
     )
 }

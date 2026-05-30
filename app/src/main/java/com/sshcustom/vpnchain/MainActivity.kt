@@ -4,7 +4,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -18,54 +17,47 @@ import top.yukonga.miuix.kmp.basic.NavigationItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Display
-import top.yukonga.miuix.kmp.icon.extended.KeyboardCn
-import top.yukonga.miuix.kmp.icon.extended.Settings
-import top.yukonga.miuix.kmp.icon.extended.Terminal
+import top.yukonga.miuix.kmp.icon.icons.useful.Info
+import top.yukonga.miuix.kmp.icon.icons.useful.Personal
+import top.yukonga.miuix.kmp.icon.icons.useful.Settings
+import top.yukonga.miuix.kmp.icon.icons.useful.Order
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent {
-            SSHCustomTheme {
-                MainAppContent()
-            }
-        }
+        setContent { SSHCustomTheme { MainAppContent() } }
     }
 }
-
-private val NAV_ITEMS = listOf(
-    NavigationItem(label = "Home",     icon = MiuixIcons.Display),
-    NavigationItem(label = "Profiles", icon = MiuixIcons.KeyboardCn),
-    NavigationItem(label = "Settings", icon = MiuixIcons.Settings),
-    NavigationItem(label = "Logs",     icon = MiuixIcons.Terminal),
-)
 
 @Composable
 fun MainAppContent() {
     val vm: MainViewModel = viewModel()
-    val status by vm.status.collectAsState()
-    val tunnelState by vm.tunnelState.collectAsState()
-    val netSpeed by vm.netSpeed.collectAsState()
-    val wanIp by vm.wanIp.collectAsState()
-    val logText by vm.logText.collectAsState()
-    val profiles by vm.profiles.collectAsState()
-    val settings by vm.settings.collectAsState()
-    val hasRoot by vm.hasRoot.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
+    val status        by vm.status.collectAsState()
+    val tunnelState   by vm.tunnelState.collectAsState()
+    val netSpeed      by vm.netSpeed.collectAsState()
+    val wanIp         by vm.wanIp.collectAsState()
+    val logText       by vm.logText.collectAsState()
+    val profiles      by vm.profiles.collectAsState()
+    val settings      by vm.settings.collectAsState()
+    val hasRoot       by vm.hasRoot.collectAsState()
+    val isLoading     by vm.isLoading.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
 
-    val tabTitles = listOf("Home", "Profiles", "Settings", "Logs")
+    val tabs = listOf("Home", "Profiles", "Settings", "Logs")
+    val navItems = listOf(
+        NavigationItem(label = "Home",     icon = MiuixIcons.Useful.Info),
+        NavigationItem(label = "Profiles", icon = MiuixIcons.Useful.Personal),
+        NavigationItem(label = "Settings", icon = MiuixIcons.Useful.Settings),
+        NavigationItem(label = "Logs",     icon = MiuixIcons.Useful.Order),
+    )
 
     Scaffold(
-        topBar = {
-            TopAppBar(title = tabTitles[selectedTab])
-        },
+        topBar = { TopAppBar(title = tabs[selectedTab]) },
         bottomBar = {
             NavigationBar(
-                items = NAV_ITEMS,
+                items = navItems,
                 selected = selectedTab,
                 onClick = { selectedTab = it },
                 modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)
@@ -74,39 +66,27 @@ fun MainAppContent() {
     ) { paddingValues ->
         when (selectedTab) {
             0 -> HomeScreen(
-                status = status,
-                netSpeed = netSpeed,
-                wanIp = wanIp,
-                tunnelState = tunnelState,
-                hasRoot = hasRoot,
-                isLoading = isLoading,
-                onStart = vm::startTunnel,
-                onStop = vm::stopTunnel,
-                onRestart = vm::restartTunnel,
-                onReload = vm::reloadConfig,
+                status = status, netSpeed = netSpeed, wanIp = wanIp,
+                tunnelState = tunnelState, hasRoot = hasRoot, isLoading = isLoading,
+                onStart = vm::startTunnel, onStop = vm::stopTunnel,
+                onRestart = vm::restartTunnel, onReload = vm::reloadConfig,
                 paddingValues = paddingValues,
             )
             1 -> ProfilesScreen(
-                profiles = profiles,
-                activeProfileId = vm.activeProfileId,
-                onSelectProfile = vm::selectProfile,
-                onSaveProfile = vm::saveProfile,
-                onDeleteProfile = vm::deleteProfile,
-                paddingValues = paddingValues,
+                profiles = profiles, activeProfileId = vm.activeProfileId,
+                onSelectProfile = vm::selectProfile, onSaveProfile = vm::saveProfile,
+                onDeleteProfile = vm::deleteProfile, paddingValues = paddingValues,
             )
             2 -> SettingsScreen(
-                settings = settings,
-                onSettingsChange = vm::updateSettings,
+                settings = settings, onSettingsChange = vm::updateSettings,
                 onForceCleanup = vm::forceCleanup,
                 needsRestart = vm.settingsNeedRestart,
                 appVersion = BuildConfig.VERSION_NAME,
                 paddingValues = paddingValues,
             )
             3 -> LogsScreen(
-                logText = logText,
-                onClear = vm::clearLog,
-                onRefresh = vm::refreshLog,
-                paddingValues = paddingValues,
+                logText = logText, onClear = vm::clearLog,
+                onRefresh = vm::refreshLog, paddingValues = paddingValues,
             )
         }
     }

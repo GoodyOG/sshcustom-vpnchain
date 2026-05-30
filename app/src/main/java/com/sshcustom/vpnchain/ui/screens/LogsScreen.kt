@@ -29,64 +29,30 @@ fun LogsScreen(
     var autoScroll by remember { mutableStateOf(true) }
 
     LaunchedEffect(lines.size) {
-        if (autoScroll && lines.isNotEmpty()) {
-            listState.animateScrollToItem(lines.size - 1)
-        }
+        if (autoScroll && lines.isNotEmpty()) listState.animateScrollToItem(lines.size - 1)
     }
 
     Column(Modifier.fillMaxSize().padding(paddingValues)) {
-        // Toolbar
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().padding(12.dp, 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                text = "${lines.size} lines",
-                fontSize = 12.sp,
-                color = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(
-                text = if (autoScroll) "📌 Auto" else "Auto",
-                onClick = { autoScroll = !autoScroll },
-                modifier = Modifier.wrapContentWidth(),
-            )
-            TextButton(
-                text = "Refresh",
-                onClick = onRefresh,
-                modifier = Modifier.wrapContentWidth(),
-            )
-            TextButton(
-                text = "Clear",
-                onClick = onClear,
-                modifier = Modifier.wrapContentWidth(),
-                colors = ButtonDefaults.textButtonColorsDanger(),
-            )
+            Text("${lines.size} lines", fontSize = 12.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantActions, modifier = Modifier.weight(1f))
+            TextButton(if (autoScroll) "📌 Auto" else "Auto", { autoScroll = !autoScroll }, modifier = Modifier.wrapContentWidth())
+            TextButton("Refresh", onRefresh, modifier = Modifier.wrapContentWidth())
+            TextButton("Clear", onClear, modifier = Modifier.wrapContentWidth(),
+                colors = ButtonDefaults.textButtonColors(color = MiuixTheme.colorScheme.error, textColor = Color.White,
+                    disabledColor = MiuixTheme.colorScheme.disabledSecondaryVariant,
+                    disabledTextColor = MiuixTheme.colorScheme.disabledOnSecondaryVariant))
         }
-
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Color(0xFF0D0D0D))
-                .padding(horizontal = 8.dp)
-        ) {
+        Box(Modifier.fillMaxSize().background(Color(0xFF0D0D0D)).padding(horizontal = 8.dp)) {
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                 if (lines.isEmpty()) {
-                    item {
-                        Text(
-                            text = "(no logs yet)",
-                            fontSize = 12.sp,
-                            color = Color(0xFF555555),
-                            modifier = Modifier.padding(16.dp)
-                        )
-                    }
+                    item { Text("(no logs yet)", fontSize = 12.sp, color = Color(0xFF555555), modifier = Modifier.padding(16.dp)) }
                 } else {
-                    items(lines, key = { it.hashCode().toString() + lines.indexOf(it) }) { line ->
-                        LogLine(line)
-                    }
+                    items(lines) { line -> LogLine(line) }
                 }
             }
         }
@@ -95,17 +61,16 @@ fun LogsScreen(
 
 @Composable
 private fun LogLine(line: String) {
-    val color = when {
-        line.contains("[Error]", ignoreCase = true)   -> Color(0xFFCF6679)
-        line.contains("[Warning]", ignoreCase = true) -> Color(0xFFFFC107)
-        line.contains("[Debug]", ignoreCase = true)   -> Color(0xFF757575)
-        else                                           -> Color(0xFFDDDDDD)
-    }
     Text(
         text = line,
-        color = color,
+        color = when {
+            line.contains("[Error]",   ignoreCase = true) -> Color(0xFFCF6679)
+            line.contains("[Warning]", ignoreCase = true) -> Color(0xFFFFC107)
+            line.contains("[Debug]",   ignoreCase = true) -> Color(0xFF757575)
+            else                                           -> Color(0xFFDDDDDD)
+        },
         fontSize = 11.sp,
         fontFamily = FontFamily.Monospace,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp)
+        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
     )
 }

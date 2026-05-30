@@ -204,13 +204,6 @@ jobs:
       - name: Accept SDK licenses
         run: yes | sdkmanager --licenses 2>/dev/null || true
 
-      - name: Install Android SDK 37 and build tools
-        run: |
-          # Install SDK 37 — required by miuix 0.9.1 (compileSdk = 37)
-          sdkmanager "platforms;android-37" "build-tools;35.0.0"
-          # Verify installation
-          ls "$ANDROID_HOME/platforms/" || true
-
       - name: Make gradlew executable
         run: chmod +x gradlew
         working-directory: app
