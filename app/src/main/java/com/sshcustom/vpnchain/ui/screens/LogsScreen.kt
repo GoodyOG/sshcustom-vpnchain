@@ -14,14 +14,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import top.yukonga.miuix.kmp.basic.*
+import top.yukonga.miuix.kmp.extra.SuperDropdown
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-// Log file selector options — matches ViewModel.LOG_PATHS keys
-private val LOG_TABS = listOf(
-    "core"    to "Core",
-    "control" to "Control",
-    "action"  to "Boot",
-)
+// Log file selector — keys match ViewModel.LOG_PATHS, labels shown in the dropdown
+private val LOG_KEYS   = listOf("core", "boot", "tool")
+private val LOG_LABELS = listOf("Core", "Boot", "Tool")
 
 @Composable
 fun LogsScreen(
@@ -87,28 +85,20 @@ fun LogsScreen(
     ) { innerPadding ->
         Column(Modifier.fillMaxSize()) {
 
-            // ── Log file selector tabs ─────────────────────────────────────────
-            // Matches box app style: row of tappable chips below the TopAppBar
+            // ── Log file selector ──────────────────────────────────────────────
+            // Dropdown below the TopAppBar — pick Core / Boot / Tool.
             Spacer(Modifier.height(innerPadding.calculateTopPadding()))
-            Row(
+            Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MiuixTheme.colorScheme.surface)
                     .padding(horizontal = 12.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                LOG_TABS.forEach { (key, label) ->
-                    val selected = activeLog == key
-                    TextButton(
-                        text     = label,
-                        onClick  = { onSwitchLog(key) },
-                        modifier = Modifier.wrapContentWidth(),
-                        colors   = if (selected)
-                            ButtonDefaults.textButtonColorsPrimary()
-                        else
-                            ButtonDefaults.textButtonColors(),
-                    )
-                }
+                SuperDropdown(
+                    title                 = "Log",
+                    items                 = LOG_LABELS,
+                    selectedIndex         = LOG_KEYS.indexOf(activeLog).coerceAtLeast(0),
+                    onSelectedIndexChange = { onSwitchLog(LOG_KEYS[it]) },
+                )
             }
 
             // ── Log content ────────────────────────────────────────────────────

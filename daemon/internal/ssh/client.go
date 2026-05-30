@@ -2,11 +2,14 @@
 package ssh
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/binary"
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"strings"
 	"sync"
@@ -146,13 +149,17 @@ func dialTransport(ctx context.Context, cfg ConnectConfig, timeout time.Duration
 		if err != nil {
 			return nil, err
 		}
-		// Optional payload injection before SSH
+		// Optional payload injection before SSH. The payload is sent verbatim
+		// (after token substitution); any HTTP acknowledgement the server returns
+		// is then drained so the SSH handshake starts on the raw tunnel.
 		if cfg.PayloadEnabled && cfg.Payload != "" {
 			p := substitutePayload(cfg.Payload, cfg.Host, cfg.Port)
 			if _, err := conn.Write([]byte(p)); err != nil {
 				conn.Close()
 				return nil, fmt.Errorf("payload write: %w", err)
 			}
+			log.Printf("[payload] sent %d bytes to %s", len(p), addr)
+			return drainPayloadResponse(ctx, conn), nil
 		}
 		return conn, nil
 
@@ -185,18 +192,10 @@ func dialTransport(ctx context.Context, cfg ConnectConfig, timeout time.Duration
 			raw.Close()
 			return nil, fmt.Errorf("proxy CONNECT write: %w", err)
 		}
-
-		buf := make([]byte, 4096)
-		n, err := raw.Read(buf)
-		if err != nil {
-			raw.Close()
-			return nil, fmt.Errorf("proxy CONNECT response: %w", err)
-		}
-		resp := string(buf[:n])
-		if !strings.Contains(resp, "200") {
-			raw.Close()
-			return nil, fmt.Errorf("proxy CONNECT rejected: %s", strings.SplitN(resp, "\r\n", 2)[0])
-		}
+		// Drain the proxy/CDN acknowledgement (CONNECT 200, WebSocket 101, etc.)
+		// before starting TLS. Status-agnostic — the TLS/SSH handshake is the
+		// real success test.
+		raw = drainPayloadResponse(ctx, raw)
 
 		sni := cfg.SNIHost
 		if sni == "" {
@@ -237,6 +236,117 @@ func substitutePayload(payload, host string, port int) string {
 	p = strings.ReplaceAll(p, "[cr]", "\r")
 	p = strings.ReplaceAll(p, "[lf]", "\n")
 	return p
+}
+
+// payloadDrainTimeout bounds how long we wait for the server's HTTP
+// acknowledgement after sending an injection payload.
+const payloadDrainTimeout = 12 * time.Second
+
+// drainPayloadResponse consumes any HTTP acknowledgement the server/CDN sends
+// after an injected payload — a CONNECT 200, a WebSocket 101 Switching
+// Protocols, a GET host-injection response, or several of them — and returns a
+// net.Conn that replays any tunnel bytes already read past the headers before
+// delegating to the socket. It is deliberately generic and status-agnostic so
+// that ANY payload (HTTP Injector / HTTP Custom style) works; the subsequent
+// SSH/TLS handshake is the real success test. If the server sends no HTTP
+// response at all (a raw prefix payload), nothing is consumed.
+//
+// This must NOT block waiting for data the client is expected to send next
+// (e.g. a TLS ClientHello in proxy mode), so after the first response block we
+// only keep consuming blocks that are already buffered.
+func drainPayloadResponse(ctx context.Context, conn net.Conn) net.Conn {
+	deadline := time.Now().Add(payloadDrainTimeout)
+	if dl, ok := ctx.Deadline(); ok && dl.Before(deadline) {
+		deadline = dl
+	}
+	if err := conn.SetReadDeadline(deadline); err != nil {
+		return conn
+	}
+	defer conn.SetReadDeadline(time.Time{})
+
+	br := bufio.NewReader(conn)
+
+	// Decide whether the server actually replied with an HTTP response.
+	peek, err := br.Peek(5)
+	if err != nil || string(peek) != "HTTP/" {
+		// Raw-prefix payload or read timeout/EOF — replay anything buffered.
+		return wrapBuffered(conn, br)
+	}
+
+	first := true
+	for {
+		if !first {
+			// Only consume an additional response if it already arrived in the
+			// same buffer — never block here.
+			if br.Buffered() < 5 {
+				break
+			}
+			ahead, _ := br.Peek(5)
+			if string(ahead) != "HTTP/" {
+				break
+			}
+		}
+		status, herr := readHTTPHeaderBlock(br)
+		if status != "" {
+			log.Printf("[payload] server response: %s", status)
+		}
+		if herr != nil {
+			break
+		}
+		first = false
+	}
+
+	return wrapBuffered(conn, br)
+}
+
+// readHTTPHeaderBlock reads a status line plus headers up to the blank CRLF
+// line, returning the trimmed status line.
+func readHTTPHeaderBlock(br *bufio.Reader) (string, error) {
+	status := ""
+	for {
+		line, err := br.ReadString('\n')
+		if line != "" {
+			trimmed := strings.TrimRight(line, "\r\n")
+			if status == "" {
+				status = trimmed
+			}
+			if trimmed == "" {
+				return status, nil // end of header block
+			}
+		}
+		if err != nil {
+			return status, err
+		}
+	}
+}
+
+// wrapBuffered returns a net.Conn that first replays any bytes already buffered
+// in br (tunnel data read past the HTTP headers) before delegating to conn.
+func wrapBuffered(conn net.Conn, br *bufio.Reader) net.Conn {
+	n := br.Buffered()
+	if n <= 0 {
+		return conn
+	}
+	buf := make([]byte, n)
+	if _, err := io.ReadFull(br, buf); err != nil {
+		return conn
+	}
+	return &prefixConn{Conn: conn, prefix: buf}
+}
+
+// prefixConn replays a buffered prefix before reading from the underlying conn.
+type prefixConn struct {
+	net.Conn
+	prefix []byte
+}
+
+func (c *prefixConn) Read(p []byte) (int, error) {
+	if len(c.prefix) > 0 {
+		n := copy(p, c.prefix)
+		c.prefix = c.prefix[n:]
+		return n, nil
+	}
+	return c.Conn.Read(p)
 }
 
 // fillPool pre-warms direct SSH-tunnelled TCP connections to a dummy address
