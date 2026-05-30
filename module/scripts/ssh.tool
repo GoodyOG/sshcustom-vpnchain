@@ -95,15 +95,21 @@ cgroup_blkio() {
     fi
   fi
 
-  if [ -d "${target}" ]; then
-    printf '%s\n' "${weight}" > "${target}/blkio.weight" 2>/dev/null || true
+  # Test writability explicitly before redirecting. In POSIX sh,
+  # `cmd > file 2>/dev/null` still prints the open failure to the original
+  # stderr because the `> file` redirection is set up before `2>/dev/null`
+  # takes effect — so a non-writable cgroup leaks a "Permission denied" line.
+  if [ -d "${target}" ] && [ -w "${target}/cgroup.procs" ]; then
+    if [ -w "${target}/blkio.weight" ]; then
+      printf '%s\n' "${weight}" > "${target}/blkio.weight" 2>/dev/null || true
+    fi
     if printf '%s\n' "${PID}" > "${target}/cgroup.procs" 2>/dev/null; then
       log Info "blkio: pid=${PID} → ${target} weight=${weight}"
       return 0
     fi
   fi
 
-  log Warning "blkio: could not assign pid=${PID} — skipping (non-fatal)"
+  log Info "blkio: cgroup not writable on this kernel — skipping (non-fatal)"
   return 0  # always succeed — blkio is a nice-to-have
 }
 

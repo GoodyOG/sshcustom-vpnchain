@@ -13,6 +13,8 @@ import (
 	"time"
 
 	xssh "golang.org/x/crypto/ssh"
+
+	"github.com/GoodyOG/SSHCustom_Magisk/internal/dnsx"
 )
 
 // TransportMode configures how the TCP connection to the SSH server is established.
@@ -140,8 +142,7 @@ func dialTransport(ctx context.Context, cfg ConnectConfig, timeout time.Duration
 
 	switch cfg.Mode {
 	case ModeDirect:
-		d := &net.Dialer{Timeout: timeout}
-		conn, err := d.DialContext(ctx, "tcp", addr)
+		conn, err := dnsx.New().DialContext(ctx, "tcp", addr)
 		if err != nil {
 			return nil, err
 		}
@@ -156,8 +157,7 @@ func dialTransport(ctx context.Context, cfg ConnectConfig, timeout time.Duration
 		return conn, nil
 
 	case ModeSNI:
-		d := &net.Dialer{Timeout: timeout}
-		raw, err := d.DialContext(ctx, "tcp", addr)
+		raw, err := dnsx.New().DialContext(ctx, "tcp", addr)
 		if err != nil {
 			return nil, err
 		}
@@ -175,8 +175,7 @@ func dialTransport(ctx context.Context, cfg ConnectConfig, timeout time.Duration
 
 	case ModeSNIHTTPProxy:
 		proxyAddr := fmt.Sprintf("%s:%d", cfg.HTTPProxyHost, cfg.HTTPProxyPort)
-		d := &net.Dialer{Timeout: timeout}
-		raw, err := d.DialContext(ctx, "tcp", proxyAddr)
+		raw, err := dnsx.New().DialContext(ctx, "tcp", proxyAddr)
 		if err != nil {
 			return nil, fmt.Errorf("http proxy dial: %w", err)
 		}

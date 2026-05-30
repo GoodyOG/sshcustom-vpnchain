@@ -18,10 +18,12 @@ import (
 	"os/signal"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
+	_ "time/tzdata" // embed IANA tz database — Android has no usable zoneinfo dir
 
 	"github.com/GoodyOG/SSHCustom_Magisk/internal/api"
 	"github.com/GoodyOG/SSHCustom_Magisk/internal/config"
@@ -31,7 +33,29 @@ import (
 
 var version = "2.0.0"
 
+// setLocalTimezone aligns the daemon's log timestamps with the device's local
+// time. When launched via nohup from a root service, TZ is unset, so Go's
+// time.Local resolves to UTC — making daemon logs appear an hour (or more) off
+// from the shell scripts' `date` output in the same log file. We read the
+// Android timezone property and load it from the embedded tz database.
+func setLocalTimezone() {
+	out, err := exec.Command("/system/bin/getprop", "persist.sys.timezone").Output()
+	if err != nil {
+		return
+	}
+	name := strings.TrimSpace(string(out))
+	if name == "" {
+		return
+	}
+	if loc, err := time.LoadLocation(name); err == nil {
+		time.Local = loc
+	}
+}
+
 func main() {
+	// Align daemon log timestamps with device local time (see setLocalTimezone).
+	setLocalTimezone()
+
 	// GC tuning: allow more heap before GC, cap RSS at 192 MB
 	debug.SetGCPercent(200)
 	debug.SetMemoryLimit(192 * 1024 * 1024)

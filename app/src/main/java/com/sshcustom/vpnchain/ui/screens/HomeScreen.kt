@@ -90,7 +90,7 @@ private fun StatusCard(status: DaemonStatus, state: TunnelState) {
                         is TunnelState.Error     -> "Error"
                         else                     -> "Stopped"
                     },
-                    fontSize = 22.sp,
+                    fontSize = 24.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MiuixTheme.colorScheme.onSurface,
                 )
@@ -100,13 +100,13 @@ private fun StatusCard(status: DaemonStatus, state: TunnelState) {
                 // Live uptime — updates every second via the status flow
                 Text(
                     text = "Uptime  ${formatUptime(status.uptimeSeconds)}",
-                    fontSize = 14.sp,
+                    fontSize = 16.sp,
                     fontFamily = FontFamily.Monospace,
                     color = MiuixTheme.colorScheme.primary,
                 )
                 Text(
                     text = "${status.sshMode.uppercase()}  ·  ${status.networkMode.uppercase()}  ·  v${status.version}",
-                    fontSize = 12.sp,
+                    fontSize = 14.sp,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 )
             }
@@ -114,7 +114,7 @@ private fun StatusCard(status: DaemonStatus, state: TunnelState) {
             if (state is TunnelState.Error) {
                 Text(
                     text = state.message,
-                    fontSize = 12.sp,
+                    fontSize = 14.sp,
                     color = MiuixTheme.colorScheme.error,
                 )
             }
@@ -216,7 +216,7 @@ private fun InfoGrid(status: DaemonStatus, netSpeed: NetSpeed, wanIp: String) {
             InfoCard("WAN", Modifier.weight(1f)) {
                 Text(
                     text       = wanIp.ifBlank { "—" },
-                    fontSize   = 12.sp,
+                    fontSize   = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color      = MiuixTheme.colorScheme.onSurface,
                     fontFamily = FontFamily.Monospace,
@@ -224,8 +224,8 @@ private fun InfoGrid(status: DaemonStatus, netSpeed: NetSpeed, wanIp: String) {
                 )
             }
             InfoCard("Net Speed", Modifier.weight(1f)) {
-                Text("↑  ${"%.1f".format(netSpeed.upKbs)} KB/s",   fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
-                Text("↓  ${"%.1f".format(netSpeed.downKbs)} KB/s", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
+                Text("↑  ${"%.1f".format(netSpeed.upKbs)} KB/s",   fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
+                Text("↓  ${"%.1f".format(netSpeed.downKbs)} KB/s", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
             }
         }
         Row(
@@ -233,12 +233,12 @@ private fun InfoGrid(status: DaemonStatus, netSpeed: NetSpeed, wanIp: String) {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             InfoCard("Resources", Modifier.weight(1f)) {
-                Text("Mem  ${"%.1f".format(status.memRssMb)} MB", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
-                Text("CPU  ${"%.1f".format(status.cpuPercent)}%",  fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
+                Text("Mem  ${"%.1f".format(status.memRssMb)} MB", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
+                Text("CPU  ${"%.1f".format(status.cpuPercent)}%",  fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
             }
             InfoCard("Pool", Modifier.weight(1f)) {
-                Text("${status.channelPoolAvail}/${status.channelPoolSize} channels", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
-                Text("${status.activeConnections} active",                            fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
+                Text("${status.channelPoolAvail}/${status.channelPoolSize} channels", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
+                Text("${status.activeConnections} active",                            fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
             }
         }
     }
@@ -251,14 +251,14 @@ private fun InfoCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Card(modifier = modifier.height(90.dp)) {
+    Card(modifier = modifier.height(100.dp)) {
         Column(
             modifier = Modifier.padding(12.dp).fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
                 text = title,
-                fontSize = 11.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
                 color = MiuixTheme.colorScheme.onSurfaceVariantActions,
             )
@@ -284,12 +284,12 @@ private fun NoRootScreen(bottomPadding: PaddingValues) {
             Text("🔒", fontSize = 52.sp)
             Text(
                 text = "Root access not found",
-                fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
+                fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
                 color = MiuixTheme.colorScheme.onSurface,
             )
             Text(
                 text = "Open KernelSU → Superuser tab\n→ find SSHCustom → Allow",
-                fontSize = 14.sp,
+                fontSize = 16.sp,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             )
         }
