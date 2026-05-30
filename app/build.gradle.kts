@@ -59,6 +59,13 @@ android {
         buildConfig = true
     }
 
+    // Disable lint vital check for release — avoids lint metadata crash
+    // with newer Kotlin/AGP combinations
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
+
     // arm64-only split — massive size reduction
     splits {
         abi {

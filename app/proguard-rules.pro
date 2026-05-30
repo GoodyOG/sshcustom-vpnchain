@@ -54,5 +54,4 @@
 }
 
 # ── Remove Compose debug/inspection overhead in release ───────────────────
--assumenosideeffects class androidx.compose.ui.tooling.** { *; }
--assumenosideeffects class androidx.compose.ui.tooling.preview.** { *; }
+-assumenosideeffects class androidx.compose.ui.tooling.preview.Preview { *; }
