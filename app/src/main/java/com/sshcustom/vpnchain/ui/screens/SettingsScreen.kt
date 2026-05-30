@@ -253,24 +253,24 @@ fun SettingsScreen(
                     Card(Modifier.fillMaxWidth()) {
                         // BasicComponent shows no arrow icon — pure info row
                         BasicComponent(
-                            title   = "App version",
-                            endActions = {
+                            title        = "App version",
+                            rightActions = {
                                 Text(appVersion,
                                     color    = MiuixTheme.colorScheme.onSurfaceVariantActions,
                                     fontSize = MiuixTheme.textStyles.body2.fontSize)
                             },
                         )
                         BasicComponent(
-                            title   = "Module data",
-                            endActions = {
+                            title        = "Module data",
+                            rightActions = {
                                 Text("/data/adb/sshcustom",
                                     color    = MiuixTheme.colorScheme.onSurfaceVariantActions,
                                     fontSize = 11.sp)
                             },
                         )
                         BasicComponent(
-                            title   = "VPN Chain",
-                            endActions = {
+                            title        = "VPN Chain",
+                            rightActions = {
                                 Text("Coming soon",
                                     color    = MiuixTheme.colorScheme.onSurfaceVariantActions,
                                     fontSize = MiuixTheme.textStyles.body2.fontSize)
