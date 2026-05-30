@@ -1,0 +1,82 @@
+#!/system/bin/sh
+# vpnchain.iptables — VPN Chain routing.
+#
+# When the VPN Chain is active, OpenVPN (started by ovpn.service) becomes the
+# device default route via its redirect-gateway, so all app traffic exits
+# through Windscribe. The ONLY thing that must NOT enter the OpenVPN tun is the
+# SSH daemon's own uplink to the bug host (otherwise it loops). The SSH daemon
+# runs as root (uid 0), so we mark its traffic and route it via a side table
+# that points at the real carrier link.
+#
+# Usage: vpnchain.iptables {enable|disable}
+
+scripts_dir="${0%/*}"
+. /data/adb/sshcustom/settings.ini
+
+VPN_MARK="0x9040"
+VPN_TABLE="9040"
+VPN_PREF="9040"
+SSH_UID="0" # SSH daemon runs as root
+
+_build_major="$(getprop ro.build.version.release 2>/dev/null | cut -d. -f1)"
+if [ "${_build_major:-0}" -ge 11 ] 2>/dev/null; then
+  IPV="iptables -w 100"
+else
+  IPV="iptables"
+fi
+
+intranet="127.0.0.0/8 10.0.0.0/8 100.64.0.0/10 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 240.0.0.0/4"
+
+real_default() {
+  # The real (carrier) default route, excluding the OpenVPN tun device.
+  ip route show table main default 2>/dev/null | grep -v "${tun_device}" | head -1
+}
+
+enable_chain() {
+  # Side table with the real default so the SSH daemon's bug-host traffic
+  # bypasses the OpenVPN tun.
+  local rd
+  rd="$(real_default)"
+  if [ -n "${rd}" ]; then
+    # shellcheck disable=SC2086
+    ip route replace table "${VPN_TABLE}" ${rd} >/dev/null 2>&1 || true
+  else
+    log Warning "vpnchain: no real default route found — bypass may be incomplete"
+  fi
+
+  ip rule show pref "${VPN_PREF}" 2>/dev/null | grep -q "${VPN_TABLE}" || \
+    ip rule add fwmark "${VPN_MARK}" table "${VPN_TABLE}" pref "${VPN_PREF}" >/dev/null 2>&1 || true
+
+  ${IPV} -t mangle -N SSHC_VPNCHAIN >/dev/null 2>&1 || true
+  ${IPV} -t mangle -F SSHC_VPNCHAIN >/dev/null 2>&1 || true
+  ${IPV} -t mangle -A SSHC_VPNCHAIN -o lo -j RETURN >/dev/null 2>&1 || true
+  for sn in ${intranet}; do
+    ${IPV} -t mangle -A SSHC_VPNCHAIN -d "${sn}" -j RETURN >/dev/null 2>&1 || true
+  done
+  # Mark the SSH daemon's (root) uplink so it bypasses the OpenVPN tun.
+  ${IPV} -t mangle -A SSHC_VPNCHAIN -m owner --uid-owner "${SSH_UID}" -j MARK --set-xmark "${VPN_MARK}" >/dev/null 2>&1 || true
+  ${IPV} -t mangle -C OUTPUT -j SSHC_VPNCHAIN >/dev/null 2>&1 || \
+    ${IPV} -t mangle -A OUTPUT -j SSHC_VPNCHAIN >/dev/null 2>&1 || true
+
+  sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+  log Info "vpnchain: routing applied (bypass uid=${SSH_UID} via table ${VPN_TABLE}, tun=${tun_device})"
+  return 0
+}
+
+disable_chain() {
+  ${IPV} -t mangle -D OUTPUT -j SSHC_VPNCHAIN >/dev/null 2>&1 || true
+  ${IPV} -t mangle -F SSHC_VPNCHAIN >/dev/null 2>&1 || true
+  ${IPV} -t mangle -X SSHC_VPNCHAIN >/dev/null 2>&1 || true
+  ip rule del pref "${VPN_PREF}" >/dev/null 2>&1 || true
+  ip route flush table "${VPN_TABLE}" >/dev/null 2>&1 || true
+  log Info "vpnchain: routing removed"
+  return 0
+}
+
+case "${1:-}" in
+  enable)  enable_chain ;;
+  disable) disable_chain ;;
+  *) printf 'Usage: %s {enable|disable}\n' "$0" >&2; exit 1 ;;
+esac
+
+exit 0

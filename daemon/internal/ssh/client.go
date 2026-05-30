@@ -69,7 +69,7 @@ func (c *Client) RemoveConn() { atomic.AddInt32(&c.activeConns, -1) }
 func (c *Client) ActiveConns() int { return int(atomic.LoadInt32(&c.activeConns)) }
 
 // Dial establishes an SSH connection using the configured transport mode.
-func Dial(ctx context.Context, cfg ConnectConfig, poolSize int) (*Client, error) {
+func Dial(ctx context.Context, cfg ConnectConfig) (*Client, error) {
 	timeout := cfg.ConnectTimeout
 	if timeout == 0 {
 		timeout = 25 * time.Second
@@ -106,20 +106,14 @@ func Dial(ctx context.Context, cfg ConnectConfig, poolSize int) (*Client, error)
 	cliCtx, cancel := context.WithCancel(ctx)
 	c := &Client{
 		sshConn: xssh.NewClient(sshConn, chans, reqs),
-		poolSz:  poolSize,
 		cfg:     cfg,
 		ctx:     cliCtx,
 		cancel:  cancel,
 		closed:  make(chan struct{}),
 	}
 
-	// SSH keepalive sender
+	// SSH keepalive sender — keeps the WebSocket/bug-host path alive.
 	go c.keepAlive(keepAliveInterval, keepAliveMax)
-
-	// Pre-warm the pool
-	if poolSize > 0 {
-		go c.fillPool()
-	}
 
 	return c, nil
 }

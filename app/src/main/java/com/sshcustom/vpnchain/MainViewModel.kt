@@ -39,9 +39,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ── Daemon status — polled every 1s. Eagerly so the last known state is
-    // retained across app backgrounding (no "Stopped" flash on resume). ───────
+    // retained across app backgrounding; seeded from the last persisted state
+    // so a cold start (OS killed the process) shows the real state, not a flash.
+    private var lastPersistedConnected: Boolean? = null
     val status: StateFlow<DaemonStatus> = repo.statusFlow()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, DaemonStatus())
+        .onEach { s ->
+            if (lastPersistedConnected != s.connected) {
+                lastPersistedConnected = s.connected
+                repo.saveLastState(s)
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, repo.loadLastState())
 
     // ── Tunnel state — derived + overridden during transitions ────────────────
     private val _tunnelStateOverride = MutableStateFlow<TunnelState?>(null)
@@ -117,12 +125,35 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var settingsNeedRestart = false
         private set
 
+    // ── VPN Chain (OpenVPN over SSHCustom) ────────────────────────────────────
+    private val _vpnConfigs = MutableStateFlow<List<String>>(emptyList())
+    val vpnConfigs: StateFlow<List<String>> = _vpnConfigs
+
+    private val _selectedVpnConfig = MutableStateFlow("")
+    val selectedVpnConfig: StateFlow<String> = _selectedVpnConfig
+
+    private val _vpnChainState = MutableStateFlow<VpnChainState>(VpnChainState.Stopped)
+    val vpnChainState: StateFlow<VpnChainState> = _vpnChainState
+
+    private val _chainExitIp = MutableStateFlow("—")
+    val chainExitIp: StateFlow<String> = _chainExitIp
+
+    private val _vpnUser = MutableStateFlow("")
+    val vpnUser: StateFlow<String> = _vpnUser
+
+    private val _vpnPass = MutableStateFlow("")
+    val vpnPass: StateFlow<String> = _vpnPass
+
+    private val _vpnBusy = MutableStateFlow(false)
+    val vpnBusy: StateFlow<Boolean> = _vpnBusy
+
     // ── Init ──────────────────────────────────────────────────────────────────
     init {
         checkRoot()
         loadPersistedData()
         bindRootService()
         startLogPolling()
+        startVpnPolling()
     }
 
     private fun checkRoot() = viewModelScope.launch(Dispatchers.IO) {
@@ -154,6 +185,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _profiles.value       = repo.loadProfiles()
         _activeProfileId.value = repo.loadActiveProfileId()
         _settings.value       = repo.loadSettings()
+        _selectedVpnConfig.value = repo.loadVpnConfig()
+        _vpnUser.value        = repo.loadVpnUser()
+        _vpnPass.value        = repo.loadVpnPass()
     }
 
     private fun bindRootService() {
@@ -273,6 +307,86 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun refreshLog() = viewModelScope.launch { refreshLogInternal() }
+
+    // ── VPN Chain control ─────────────────────────────────────────────────────
+
+    fun refreshVpnConfigs() = viewModelScope.launch(Dispatchers.IO) {
+        val list = try { rootBinder?.listVpnConfigs() } catch (_: Exception) { null } ?: emptyList()
+        _vpnConfigs.value = list
+        if (_selectedVpnConfig.value.isBlank() && list.isNotEmpty()) {
+            _selectedVpnConfig.value = list.first()
+            repo.saveVpnConfig(list.first())
+        }
+    }
+
+    fun selectVpnConfig(name: String) {
+        _selectedVpnConfig.value = name
+        repo.saveVpnConfig(name)
+    }
+
+    fun saveVpnCreds(user: String, pass: String) {
+        _vpnUser.value = user
+        _vpnPass.value = pass
+        repo.saveVpnCreds(user, pass)
+        viewModelScope.launch(Dispatchers.IO) {
+            try { rootBinder?.saveVpnAuth(user, pass) } catch (_: Exception) {}
+        }
+    }
+
+    fun startVpnChain() = viewModelScope.launch {
+        if (!status.value.connected) {
+            _vpnChainState.value = VpnChainState.Error("Connect SSHCustom first")
+            return@launch
+        }
+        val cfg = _selectedVpnConfig.value
+        if (cfg.isBlank()) {
+            _vpnChainState.value = VpnChainState.Error("Select a config first")
+            return@launch
+        }
+        _vpnBusy.value = true
+        _vpnChainState.value = VpnChainState.Connecting
+        withContext(Dispatchers.IO) {
+            try {
+                rootBinder?.saveVpnAuth(_vpnUser.value, _vpnPass.value)
+                rootBinder?.startVpnChain(cfg)
+                    ?: Shell.cmd("sh /data/adb/sshcustom/scripts/ovpn.service start '$cfg'").exec()
+            } catch (_: Exception) {}
+        }
+        _vpnBusy.value = false
+    }
+
+    fun stopVpnChain() = viewModelScope.launch {
+        _vpnBusy.value = true
+        withContext(Dispatchers.IO) {
+            try {
+                rootBinder?.stopVpnChain()
+                    ?: Shell.cmd("sh /data/adb/sshcustom/scripts/ovpn.service stop").exec()
+            } catch (_: Exception) {}
+        }
+        _vpnBusy.value = false
+    }
+
+    private fun startVpnPolling() {
+        viewModelScope.launch {
+            while (isActive) {
+                withContext(Dispatchers.IO) {
+                    val st = try { rootBinder?.vpnChainStatus() } catch (_: Exception) { null } ?: "stopped"
+                    val newState: VpnChainState = when (st) {
+                        "connected"  -> VpnChainState.Connected
+                        "connecting" -> VpnChainState.Connecting
+                        else -> if (_vpnBusy.value) _vpnChainState.value else VpnChainState.Stopped
+                    }
+                    _vpnChainState.value = newState
+                    if (newState is VpnChainState.Connected) {
+                        if (_chainExitIp.value == "—") _chainExitIp.value = repo.fetchChainExitIp()
+                    } else {
+                        _chainExitIp.value = "—"
+                    }
+                }
+                delay(4_000)
+            }
+        }
+    }
 
     // ── Profiles — full CRUD with persistence ─────────────────────────────────
 

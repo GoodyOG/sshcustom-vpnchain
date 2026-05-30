@@ -534,6 +534,13 @@ apply_tun_family() {
 # ── Main ──────────────────────────────────────────────────────────────────────
 case "${1:-}" in
   enable|renew)
+    # VPN Chain (socks-only) mode: OpenVPN owns device routing via
+    # vpnchain.iptables, and the SSH side only needs to provide the SOCKS
+    # uplink. So skip the SSH device-redirect rules entirely.
+    if [ -f "${box_run}/vpnchain.active" ]; then
+      log Info "iptables: vpnchain active — socks-only mode, skipping SSH device redirect"
+      exit 0
+    fi
     [ "${1}" = "renew" ] && log Warning "iptables: renew — cleaning first"
     apply_capability_downgrades
     probe_user_group
