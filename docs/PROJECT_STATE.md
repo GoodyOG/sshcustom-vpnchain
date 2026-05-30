@@ -307,6 +307,7 @@ push/tag → 5 parallel jobs:
 | `v1.0.1` | (preserved) | Original pre-rebuild tag |
 | `v2.0.0` | 2026-05-30 | Complete monorepo rebuild: new module scripts, Go daemon v2, Android app from scratch |
 | `v2.0.1` | 2026-05-30 | Profile editor scroll bug (SuperBottomSheet), collapsing TopAppBar, home icon, settings selection indicator, release APK (<8MB), R8 full mode |
+| `v2.0.2` | 2026-05-30 | Profile editor fully scrollable (Column→LazyColumn inside sheet, fixes toggle-payload-then-can't-save), SSH Mode SuperDropdown, Settings Traffic Mode SuperDropdown, Settings DNS Mode SuperDropdown |
 
 ---
 
