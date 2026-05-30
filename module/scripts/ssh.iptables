@@ -554,6 +554,14 @@ case "${1:-}" in
     [ "${1}" = "renew" ] && log Warning "iptables: renew — cleaning first"
     apply_capability_downgrades
     probe_user_group
+
+    # Disable Android captive portal detection so the system marks the network
+    # as validated immediately. Without this, apps (YouTube, Chrome, etc.) show
+    # "no internet" even though TCP works fine through the tunnel. This is what
+    # HTTP Injector / box / HTTP Custom do under the hood.
+    settings put global captive_portal_mode 0 >/dev/null 2>&1 || true
+    settings put global captive_portal_detection_enabled 0 >/dev/null 2>&1 || true
+
     log Info "iptables: mode=${network_mode} dns=${dns_hijack_mode} quic=${quic} ipv6=${ipv6}"
 
     # Clean existing rules (errors here are non-fatal — chains may not exist yet)
@@ -604,6 +612,10 @@ case "${1:-}" in
   disable)
     runtime_load 2>/dev/null || true
     enable_ipv6
+
+    # Restore captive portal detection
+    settings put global captive_portal_mode 1 >/dev/null 2>&1 || true
+    settings put global captive_portal_detection_enabled 1 >/dev/null 2>&1 || true
     probe_user_group
     log Warning "iptables: disabling — cleaning all rules"
 
