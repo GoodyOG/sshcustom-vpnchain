@@ -22,8 +22,8 @@ const ipTransparent = 19
 // accepted connection's LocalAddr() is the real target.
 type TProxyServer struct {
 	Addr    string
-	Client  *issh.Client
-	Timeout time.Duration // per-connection dial timeout; 0 = 25s
+	Client  func() *issh.Client // current SSH client; nil during a reconnect gap
+	Timeout time.Duration       // per-connection dial timeout; 0 = 25s
 }
 
 // ListenAndServe binds with IP_TRANSPARENT and serves until ctx is cancelled.
@@ -76,14 +76,18 @@ func (t *TProxyServer) handle(ctx context.Context, conn net.Conn) {
 	dialCtx, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
 
-	remote, err := t.Client.DialTCP(dialCtx, "tcp", target)
+	cl := t.Client()
+	if cl == nil {
+		return // tunnel reconnecting — drop this conn (fail-closed)
+	}
+	remote, err := cl.DialTCP(dialCtx, "tcp", target)
 	if err != nil {
 		return
 	}
 	defer remote.Close()
 
-	t.Client.AddConn()
-	defer t.Client.RemoveConn()
+	cl.AddConn()
+	defer cl.RemoveConn()
 
 	relay(conn, remote)
 }

@@ -268,12 +268,37 @@ func tunnelLoop(
 	st *State,
 	clientPtr *atomic.Pointer[issh.Client],
 ) {
-	const baseDelay = 3 * time.Second
-	const maxDelay = 30 * time.Second
+	const (
+		baseDelay       = 1 * time.Second
+		maxDelay        = 30 * time.Second
+		reconnectGiveUp = 15 * time.Minute
+	)
 	iptables := workDir + "/scripts/ssh.iptables"
+	curClient := func() *issh.Client { return clientPtr.Load() }
 
-	// First attempt is immediate; backoff only applies after a failure.
+	// A "session" = the local listeners + iptables. It is brought up once on the
+	// first successful connect and KEPT UP across transparent SSH reconnects, so
+	// a brief SSH drop no longer flaps routing — apps just stall ~1s with no
+	// leak (fail-closed), exactly like a VpnService app whose tun stays up.
+	var (
+		listenerCancel context.CancelFunc
+		sessionMode    string
+		iptablesUp     bool
+	)
+	teardownSession := func() {
+		if listenerCancel != nil {
+			listenerCancel()
+			listenerCancel = nil
+		}
+		if iptablesUp {
+			runScriptTimeout(iptables, 15*time.Second, "disable")
+			iptablesUp = false
+		}
+	}
+	defer teardownSession() // explicit stop (ctx cancel) removes routing
+
 	delay := time.Duration(0)
+	var downSince time.Time // when the tunnel was lost while a session was up
 
 	for {
 		select {
@@ -283,7 +308,6 @@ func tunnelLoop(
 		}
 
 		cfg := atomicCfg.Get()
-
 		if cfg.SSHHost == "" || cfg.SSHUser == "" {
 			log.Println("[tunnel] ssh_host/ssh_user not configured — waiting")
 			delay = 10 * time.Second
@@ -318,117 +342,142 @@ func tunnelLoop(
 				s.lastError = err.Error()
 				s.lastEvent = "connect_failed"
 			})
-			// Ensure no stale redirect rules black-hole traffic while we retry.
-			runScriptTimeout(iptables, 15*time.Second, "disable")
-			if delay == 0 {
-				delay = baseDelay
-			} else {
-				delay = minDuration(delay*2, maxDelay)
+			// Keep the session (iptables + listeners) UP across retries —
+			// fail-closed, no traffic leak. But if we've been unable to reconnect
+			// for too long, release routing so the device isn't blocked forever.
+			if iptablesUp && !downSince.IsZero() && time.Since(downSince) > reconnectGiveUp {
+				log.Println("[tunnel] reconnect gave up after timeout — releasing routing until tunnel returns")
+				teardownSession()
+				sessionMode = ""
 			}
+			delay = nextDelay(delay, baseDelay, maxDelay)
 			continue
 		}
 
+		// Connected.
 		clientPtr.Store(c)
+		downSince = time.Time{}
 		st.set(func(s *State) {
 			s.connected = true
 			s.tunnelStart = time.Now()
 			s.sshMode = cfg.SSHMode
 			s.netMode = cfg.NetworkMode
+			s.lastError = ""
 			s.lastEvent = "connected"
 		})
 		log.Printf("[tunnel] connected")
 
-		// Bring up the local listeners FIRST so the redirect/tproxy target is
-		// already accepting before iptables starts steering traffic to it.
-		listenerCtx, listenerCancel := context.WithCancel(ctx)
-
-		socks := &proxy.SOCKS5Server{
-			Addr:   fmt.Sprintf("127.0.0.1:%d", cfg.SocksPort),
-			Client: c,
-		}
-		go func() {
-			if err := socks.ListenAndServe(listenerCtx); err != nil {
-				log.Printf("[socks5] %v", err)
+		// Bring the session up once, or rebuild it if the network mode changed.
+		if listenerCancel == nil || sessionMode != cfg.NetworkMode {
+			if listenerCancel != nil {
+				listenerCancel()
+				listenerCancel = nil
 			}
-		}()
-
-		switch cfg.NetworkMode {
-		case "tproxy":
-			tp := &proxy.TProxyServer{
-				Addr:    fmt.Sprintf("0.0.0.0:%d", cfg.TProxyPort),
-				Client:  c,
-				Timeout: 25 * time.Second,
-			}
-			go func() {
-				if err := tp.ListenAndServe(listenerCtx); err != nil {
-					log.Printf("[tproxy] %v", err)
-				}
-			}()
-		default: // redirect
-			trans := &proxy.TransparentServer{
-				Addr:    fmt.Sprintf("0.0.0.0:%d", cfg.RedirPort),
-				Client:  c,
-				Timeout: 25 * time.Second,
-			}
-			go func() {
-				if err := trans.ListenAndServe(listenerCtx); err != nil {
-					log.Printf("[transparent] %v", err)
-				}
-			}()
+			lctx, lcancel := context.WithCancel(ctx)
+			listenerCancel = lcancel
+			sessionMode = cfg.NetworkMode
+			startListeners(lctx, cfg, curClient)
+			time.Sleep(150 * time.Millisecond)
+			runScriptTimeout(iptables, 30*time.Second, "enable")
+			iptablesUp = true
+			go wanIPRefresher(lctx, curClient, st)
 		}
 
-		// Give the listener a brief moment to bind before steering traffic.
-		time.Sleep(150 * time.Millisecond)
-
-		// Daemon owns iptables: applied only once the tunnel is up and listeners
-		// are ready (ssh.service no longer applies them).
-		runScriptTimeout(iptables, 30*time.Second, "enable")
-
-		// Resolve the tunnel-side public IP in the background and cache it so the
-		// app's WAN card can read it instantly. Refresh every 5 minutes.
-		go func(c *issh.Client) {
-			for {
-				if ip, country := fetchPublicIP(c); ip != "" {
-					st.set(func(s *State) { s.wanIP = ip; s.wanCountry = country })
-				}
-				select {
-				case <-listenerCtx.Done():
-					return
-				case <-time.After(5 * time.Minute):
-				}
-			}
-		}(c)
-
-		// Wait for SSH to die using the proper Wait() method
+		// Wait for THIS client to die (or an explicit shutdown).
 		waitDone := make(chan error, 1)
 		go func() { waitDone <- c.Wait() }()
-
 		select {
 		case <-ctx.Done():
-		case err := <-waitDone:
-			if err != nil {
-				log.Printf("[tunnel] SSH connection lost: %v", err)
+			c.Close()
+			clientPtr.Store(nil)
+			return // defer teardownSession removes routing on explicit stop
+		case werr := <-waitDone:
+			if werr != nil {
+				log.Printf("[tunnel] SSH connection lost: %v", werr)
 			}
 		}
 
-		// Teardown
-		log.Println("[tunnel] tearing down")
-		listenerCancel()
+		// Transparent reconnect: keep listeners + iptables UP, clear the client,
+		// and re-dial. Listeners refuse connections during the gap (fail-closed).
+		log.Println("[tunnel] connection lost — reconnecting (routing kept up)")
 		c.Close()
 		clientPtr.Store(nil)
+		downSince = time.Now()
 		st.set(func(s *State) {
 			s.connected = false
 			s.wanIP = ""
 			s.wanCountry = ""
-			s.lastEvent = "disconnected"
+			s.lastEvent = "reconnecting"
 		})
-		runScriptTimeout(iptables, 15*time.Second, "disable")
-
 		if ctx.Err() != nil {
 			return
 		}
-		// Reconnect attempt is immediate after an unexpected drop.
-		delay = 0
+		delay = baseDelay
+	}
+}
+
+// nextDelay returns the next backoff delay (immediate → base → ×2 → cap).
+func nextDelay(cur, base, max time.Duration) time.Duration {
+	if cur <= 0 {
+		return base
+	}
+	return minDuration(cur*2, max)
+}
+
+// startListeners brings up the SOCKS5 + mode-specific transparent/tproxy
+// listeners. They are bound to the CURRENT SSH client via curClient(), so they
+// keep running and pick up the new client across transparent reconnects.
+func startListeners(ctx context.Context, cfg *config.Config, curClient func() *issh.Client) {
+	socks := &proxy.SOCKS5Server{
+		Addr:   fmt.Sprintf("127.0.0.1:%d", cfg.SocksPort),
+		Client: curClient,
+	}
+	go func() {
+		if err := socks.ListenAndServe(ctx); err != nil {
+			log.Printf("[socks5] %v", err)
+		}
+	}()
+
+	switch cfg.NetworkMode {
+	case "tproxy":
+		tp := &proxy.TProxyServer{
+			Addr:    fmt.Sprintf("0.0.0.0:%d", cfg.TProxyPort),
+			Client:  curClient,
+			Timeout: 25 * time.Second,
+		}
+		go func() {
+			if err := tp.ListenAndServe(ctx); err != nil {
+				log.Printf("[tproxy] %v", err)
+			}
+		}()
+	default: // redirect
+		trans := &proxy.TransparentServer{
+			Addr:    fmt.Sprintf("0.0.0.0:%d", cfg.RedirPort),
+			Client:  curClient,
+			Timeout: 25 * time.Second,
+		}
+		go func() {
+			if err := trans.ListenAndServe(ctx); err != nil {
+				log.Printf("[transparent] %v", err)
+			}
+		}()
+	}
+}
+
+// wanIPRefresher caches the tunnel-side public IP (refreshes every 5 min),
+// using whatever client is current.
+func wanIPRefresher(ctx context.Context, curClient func() *issh.Client, st *State) {
+	for {
+		if c := curClient(); c != nil {
+			if ip, country := fetchPublicIP(c); ip != "" {
+				st.set(func(s *State) { s.wanIP = ip; s.wanCountry = country })
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Minute):
+		}
 	}
 }
 

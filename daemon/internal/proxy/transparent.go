@@ -17,8 +17,8 @@ import (
 // It reads the original destination via SO_ORIGINAL_DST and forwards through SSH.
 type TransparentServer struct {
 	Addr    string
-	Client  *issh.Client
-	Timeout time.Duration // per-connection dial timeout; 0 = 25s
+	Client  func() *issh.Client // current SSH client; nil during a reconnect gap
+	Timeout time.Duration       // per-connection dial timeout; 0 = 25s
 }
 
 // ListenAndServe starts the transparent proxy listener.
@@ -63,14 +63,18 @@ func (t *TransparentServer) handle(ctx context.Context, conn net.Conn) {
 	dialCtx, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
 
-	remote, err := t.Client.DialTCP(dialCtx, "tcp", target)
+	cl := t.Client()
+	if cl == nil {
+		return // tunnel reconnecting — drop this conn (fail-closed, no leak)
+	}
+	remote, err := cl.DialTCP(dialCtx, "tcp", target)
 	if err != nil {
 		return
 	}
 	defer remote.Close()
 
-	t.Client.AddConn()
-	defer t.Client.RemoveConn()
+	cl.AddConn()
+	defer cl.RemoveConn()
 
 	// relay uses interface check for half-close — safe for SSH channels
 	relay(conn, remote)

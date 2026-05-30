@@ -28,6 +28,10 @@ const (
 	cacheTTL      = 5 * time.Minute
 	queryTimeout  = 5 * time.Second
 	serversMaxAge = 30 * time.Second
+	// tcpKeepAlive enables SO_KEEPALIVE on tunnel sockets so the carrier/NAT/
+	// WebSocket path stays mapped at the TCP layer (OpenSSH sets TCPKeepAlive
+	// by default; we did not, which contributed to idle drops).
+	tcpKeepAlive = 15 * time.Second
 )
 
 // fallbackServers are tried only after carrier DNS. A carrier "bug host"
@@ -74,7 +78,7 @@ func (r *Resolver) DialContext(ctx context.Context, network, addr string) (net.C
 
 	// Already an IP literal — no resolution needed.
 	if net.ParseIP(host) != nil {
-		var d net.Dialer
+		d := net.Dialer{KeepAlive: tcpKeepAlive}
 		return d.DialContext(ctx, network, addr)
 	}
 
@@ -83,7 +87,7 @@ func (r *Resolver) DialContext(ctx context.Context, network, addr string) (net.C
 		return nil, fmt.Errorf("dnsx: resolve %q: %w", host, err)
 	}
 
-	var d net.Dialer
+	d := net.Dialer{KeepAlive: tcpKeepAlive}
 	var lastErr error
 	for _, ip := range ips {
 		target := net.JoinHostPort(ip.String(), port)
