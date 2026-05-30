@@ -59,13 +59,44 @@ check_bin() {
   return 0
 }
 
+# ── is_idle_mode ──────────────────────────────────────────────────────────────
+# Returns 0 (true) if the daemon is running in --idle mode (no tunnel active).
+# Checks the daemon API: if running but connected=false and state indicates idle.
+is_idle_mode() {
+  bin_alive || return 1
+  # If the PID file was started with --idle flag, the process args will show it
+  local PID
+  PID="$(cat "${box_pid}" 2>/dev/null)"
+  [ -z "${PID}" ] && return 1
+  # Check /proc/<pid>/cmdline for --idle flag
+  if cat /proc/"${PID}"/cmdline 2>/dev/null | tr '\0' ' ' | grep -q '\-\-idle'; then
+    return 0
+  fi
+  return 1
+}
+
 # ── start_daemon ──────────────────────────────────────────────────────────────
 start_daemon() {
   local idle_flag="${1:-}"
 
   check_bin || return 1
 
-  if bin_alive && api_alive; then
+  # If daemon is running in idle mode and we want a full start,
+  # kill it first so we can relaunch without --idle.
+  if [ "${idle_flag}" != "--idle" ] && is_idle_mode; then
+    log Info "service: daemon in idle mode — restarting in full tunnel mode"
+    local PID
+    PID="$(cat "${box_pid}" 2>/dev/null)"
+    [ -n "${PID}" ] && kill -TERM "${PID}" 2>/dev/null || true
+    local i=0
+    while [ "${i}" -lt 4 ]; do
+      kill -0 "${PID}" 2>/dev/null || break
+      sleep 1; i=$((i+1))
+    done
+    kill -0 "${PID}" 2>/dev/null && kill -KILL "${PID}" 2>/dev/null || true
+    rm -f "${box_pid}"
+    sleep 1
+  elif bin_alive && api_alive; then
     log Warning "service: daemon already running (pid=$(cat "${box_pid}" 2>/dev/null))"
     return 0
   fi

@@ -198,7 +198,9 @@ private fun ProfileEditorContent(
     // LazyColumn — scrolls freely inside SuperBottomSheet's fixed-height container.
     LazyColumn(
         modifier            = Modifier.fillMaxWidth(),
-        contentPadding      = PaddingValues(bottom = 20.dp),
+        contentPadding      = PaddingValues(
+            bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 28.dp,
+        ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
 

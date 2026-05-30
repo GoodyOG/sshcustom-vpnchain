@@ -269,6 +269,23 @@ start_redirect() {
     ${iptables} -t nat -A "${loc}" -p tcp -j REDIRECT --to-ports "${redir_port}" >/dev/null 2>&1 || true
   ensure_jump nat OUTPUT "${loc}"
 
+  # Hotspot sharing — PREROUTING for hotspot interface clients
+  if [ "${hotspot_sharing:-false}" = "true" ] && [ "${proxy_tcp}" = "true" ]; then
+    local hspot="SSHC_HOTSPOT"
+    [ "${iptables}" = "${IP6V}" ] && hspot="SSHC_HOTSPOT6"
+    ensure_chain nat "${hspot}"
+    for sn in ${intranet}; do
+      ${iptables} -t nat -A "${hspot}" -d "${sn}" -j RETURN >/dev/null 2>&1 || true
+    done
+    ${iptables} -t nat -A "${hspot}" -p tcp -j REDIRECT --to-ports "${redir_port}" >/dev/null 2>&1 || true
+    # Apply to common hotspot interfaces
+    for iface in wlan0 wlan1 ap0 swlan0 rndis0 ncm0 bt-pan; do
+      ${iptables} -t nat -C PREROUTING -i "${iface}" -j "${hspot}" >/dev/null 2>&1 || \
+        ${iptables} -t nat -I PREROUTING -i "${iface}" -j "${hspot}" >/dev/null 2>&1 || true
+    done
+    log Info "redirect: hotspot sharing enabled via ${hspot}"
+  fi
+
   setup_dns_hijack
   apply_quic_block
   log Info "redirect: rules applied (port=${redir_port})"
@@ -276,7 +293,13 @@ start_redirect() {
 }
 
 stop_redirect() {
-  for chain in SSHC_EXTERNAL SSHC_LOCAL SSHC_EXTERNAL6 SSHC_LOCAL6; do
+  # Remove hotspot interface jumps first
+  for iface in wlan0 wlan1 ap0 swlan0 rndis0 ncm0 bt-pan; do
+    for hchain in SSHC_HOTSPOT SSHC_HOTSPOT6; do
+      ${iptables} -t nat -D PREROUTING -i "${iface}" -j "${hchain}" >/dev/null 2>&1 || true
+    done
+  done
+  for chain in SSHC_EXTERNAL SSHC_LOCAL SSHC_EXTERNAL6 SSHC_LOCAL6 SSHC_HOTSPOT SSHC_HOTSPOT6; do
     del_jump nat PREROUTING "${chain}"
     del_jump nat OUTPUT "${chain}"
     cleanup_chain nat "${chain}"

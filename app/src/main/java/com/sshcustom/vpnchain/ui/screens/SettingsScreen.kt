@@ -61,7 +61,7 @@ fun SettingsScreen(
             ),
         ) {
 
-            // Restart warning banner
+            // Restart warning
             if (needsRestart) {
                 item {
                     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
@@ -70,6 +70,34 @@ fun SettingsScreen(
                             fontSize = 13.sp,
                             color    = MiuixTheme.colorScheme.error,
                             modifier = Modifier.padding(14.dp),
+                        )
+                    }
+                }
+            }
+
+            // ── Boot behaviour ────────────────────────────────────────────────
+            settingsSection("Boot Behaviour") {
+                item {
+                    Card(Modifier.fillMaxWidth()) {
+                        SuperSwitch(
+                            checked         = settings.autostartTunnel,
+                            onCheckedChange = { onSettingsChange(settings.copy(autostartTunnel = it)) },
+                            title           = "Start tunnel on boot",
+                            summary         = "OFF = daemon starts in idle mode only (WebUI accessible, no tunnel). ON = tunnel connects automatically after boot.",
+                        )
+                    }
+                }
+            }
+
+            // ── Hotspot ───────────────────────────────────────────────────────
+            settingsSection("Hotspot Sharing") {
+                item {
+                    Card(Modifier.fillMaxWidth()) {
+                        SuperSwitch(
+                            checked         = settings.hotspotSharing,
+                            onCheckedChange = { onSettingsChange(settings.copy(hotspotSharing = it)) },
+                            title           = "Share tunnel via hotspot",
+                            summary         = "Forward hotspot clients through the SSH tunnel. Requires restart.",
                         )
                     }
                 }
@@ -95,7 +123,7 @@ fun SettingsScreen(
                 }
             }
 
-            // ── Traffic Mode — SuperDropdown ──────────────────────────────────
+            // ── Traffic Mode ──────────────────────────────────────────────────
             settingsSection("Traffic Mode") {
                 item {
                     Card(Modifier.fillMaxWidth()) {
@@ -179,7 +207,6 @@ fun SettingsScreen(
                             onCheckedChange = { onSettingsChange(settings.copy(dnsHijackUdp = it)) },
                             title           = "Hijack DNS over UDP",
                         )
-                        // DNS mode — SuperDropdown
                         SuperDropdown(
                             title               = "DNS Mode",
                             items               = DNS_MODE_LABELS,
@@ -210,6 +237,7 @@ fun SettingsScreen(
             settingsSection("Developer") {
                 item {
                     Card(Modifier.fillMaxWidth()) {
+                        // Force cleanup IS an action — keep arrow
                         SuperArrow(
                             title   = "Force iptables cleanup",
                             summary = "Runs ssh.iptables disable — clears all rules even if stuck",
@@ -219,36 +247,34 @@ fun SettingsScreen(
                 }
             }
 
-            // ── About ─────────────────────────────────────────────────────────
+            // ── About — info rows have NO arrow (not navigating anywhere) ─────
             settingsSection("About") {
                 item {
                     Card(Modifier.fillMaxWidth()) {
-                        SuperArrow(
-                            title        = "App version",
-                            rightActions = {
+                        // BasicComponent shows no arrow icon — pure info row
+                        BasicComponent(
+                            title   = "App version",
+                            endActions = {
                                 Text(appVersion,
                                     color    = MiuixTheme.colorScheme.onSurfaceVariantActions,
                                     fontSize = MiuixTheme.textStyles.body2.fontSize)
                             },
-                            onClick = {},
                         )
-                        SuperArrow(
-                            title        = "Module data",
-                            rightActions = {
+                        BasicComponent(
+                            title   = "Module data",
+                            endActions = {
                                 Text("/data/adb/sshcustom",
                                     color    = MiuixTheme.colorScheme.onSurfaceVariantActions,
                                     fontSize = 11.sp)
                             },
-                            onClick = {},
                         )
-                        SuperArrow(
-                            title        = "VPN Chain",
-                            rightActions = {
+                        BasicComponent(
+                            title   = "VPN Chain",
+                            endActions = {
                                 Text("Coming soon",
                                     color    = MiuixTheme.colorScheme.onSurfaceVariantActions,
                                     fontSize = MiuixTheme.textStyles.body2.fontSize)
                             },
-                            onClick = {},
                         )
                     }
                 }
@@ -259,7 +285,6 @@ fun SettingsScreen(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Section header + content + spacing, all as LazyColumn items. */
 private fun LazyListScope.settingsSection(
     title: String,
     content: LazyListScope.() -> Unit,

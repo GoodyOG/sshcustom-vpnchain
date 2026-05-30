@@ -16,9 +16,18 @@ import androidx.compose.ui.unit.sp
 import top.yukonga.miuix.kmp.basic.*
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
+// Log file selector options — matches ViewModel.LOG_PATHS keys
+private val LOG_TABS = listOf(
+    "core"    to "Core",
+    "control" to "Control",
+    "action"  to "Boot",
+)
+
 @Composable
 fun LogsScreen(
     logText: String,
+    activeLog: String,
+    onSwitchLog: (String) -> Unit,
     onClear: () -> Unit,
     onRefresh: () -> Unit,
     bottomPadding: PaddingValues,
@@ -26,11 +35,10 @@ fun LogsScreen(
     val lines = remember(logText) {
         if (logText.isBlank()) emptyList() else logText.lines()
     }
-    val listState = rememberLazyListState()
-    var autoScroll by remember { mutableStateOf(true) }
+    val listState      = rememberLazyListState()
+    var autoScroll     by remember { mutableStateOf(true) }
     val scrollBehavior = MiuixScrollBehavior()
 
-    // Track whether user has scrolled away from bottom
     val atBottom by remember {
         derivedStateOf {
             val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()
@@ -47,72 +55,89 @@ fun LogsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = "Logs",
+                title   = "Logs",
                 scrollBehavior = scrollBehavior,
                 actions = {
                     TextButton(
-                        text = if (autoScroll) "Auto ●" else "Auto ○",
-                        onClick = { autoScroll = !autoScroll },
+                        text     = if (autoScroll) "Auto ●" else "Auto ○",
+                        onClick  = { autoScroll = !autoScroll },
                         modifier = Modifier.wrapContentWidth(),
                     )
                     TextButton(
-                        text = "Clear",
-                        onClick = onClear,
+                        text     = "Clear",
+                        onClick  = onClear,
                         modifier = Modifier.wrapContentWidth(),
-                        colors = ButtonDefaults.textButtonColors(
-                            color = MiuixTheme.colorScheme.error,
-                            textColor = Color.White,
-                            disabledColor = MiuixTheme.colorScheme.disabledSecondaryVariant,
+                        colors   = ButtonDefaults.textButtonColors(
+                            color             = MiuixTheme.colorScheme.error,
+                            textColor         = Color.White,
+                            disabledColor     = MiuixTheme.colorScheme.disabledSecondaryVariant,
                             disabledTextColor = MiuixTheme.colorScheme.disabledOnSecondaryVariant,
                         ),
                     )
                 },
             )
         },
-        // Scroll-to-bottom FAB — only visible when not at bottom
         floatingActionButton = {
             if (!atBottom) {
-                FloatingActionButton(
-                    onClick = {
-                        autoScroll = true
-                    },
-                ) {
+                FloatingActionButton(onClick = { autoScroll = true }) {
                     Text("↓", fontSize = 18.sp, color = Color.White)
                 }
             }
         },
     ) { innerPadding ->
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Color(0xFF0D0D0D)),
-        ) {
-            if (lines.isEmpty()) {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        "(no logs — tap Refresh)",
-                        fontSize = 13.sp,
-                        color = Color(0xFF555555),
+        Column(Modifier.fillMaxSize()) {
+
+            // ── Log file selector tabs ─────────────────────────────────────────
+            // Matches box app style: row of tappable chips below the TopAppBar
+            Spacer(Modifier.height(innerPadding.calculateTopPadding()))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MiuixTheme.colorScheme.surface)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                LOG_TABS.forEach { (key, label) ->
+                    val selected = activeLog == key
+                    TextButton(
+                        text     = label,
+                        onClick  = { onSwitchLog(key) },
+                        modifier = Modifier.wrapContentWidth(),
+                        colors   = if (selected)
+                            ButtonDefaults.textButtonColorsPrimary()
+                        else
+                            ButtonDefaults.textButtonColors(),
                     )
                 }
-            } else {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .nestedScroll(scrollBehavior.nestedScrollConnection),
-                    contentPadding = PaddingValues(
-                        start = 8.dp, end = 8.dp,
-                        top = innerPadding.calculateTopPadding() + 4.dp,
-                        bottom = bottomPadding.calculateBottomPadding() + 16.dp,
-                    ),
-                ) {
-                    items(lines) { line -> LogLine(line) }
+            }
+
+            // ── Log content ────────────────────────────────────────────────────
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF0D0D0D)),
+            ) {
+                if (lines.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            "(no logs — tap Refresh or wait 2s)",
+                            fontSize = 13.sp,
+                            color    = Color(0xFF555555),
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .nestedScroll(scrollBehavior.nestedScrollConnection),
+                        contentPadding = PaddingValues(
+                            start  = 8.dp, end = 8.dp, top = 4.dp,
+                            bottom = bottomPadding.calculateBottomPadding() + 16.dp,
+                        ),
+                    ) {
+                        items(lines) { line -> LogLine(line) }
+                    }
                 }
             }
         }
@@ -129,8 +154,8 @@ private fun LogLine(line: String) {
             line.contains("[Debug]",   ignoreCase = true) -> Color(0xFF757575)
             else                                           -> Color(0xFFDDDDDD)
         },
-        fontSize = 11.sp,
+        fontSize   = 11.sp,
         fontFamily = FontFamily.Monospace,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
+        modifier   = Modifier.fillMaxWidth().padding(vertical = 1.dp),
     )
 }

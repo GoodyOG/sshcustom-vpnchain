@@ -50,15 +50,21 @@ class SSHControlService : RootService() {
         }
 
         // ── Logs ──────────────────────────────────────────────────────────────
-        /** Read the last N lines of the daemon log. Root required because log is 0600. */
-        fun readLog(lines: Int = 300): String {
-            val r = Shell.cmd("tail -n $lines $logFile 2>/dev/null || echo '(log not found)'").exec()
+        /** Read the last N lines of any log file by path. */
+        fun readLogFile(path: String, lines: Int = 300): String {
+            val r = Shell.cmd("tail -n $lines '$path' 2>/dev/null || echo '(log empty)'").exec()
             return (r.out + r.err).joinToString("\n")
         }
 
-        fun clearLog() {
-            Shell.cmd(": > $logFile").exec()
+        /** Truncate any log file by path. */
+        fun clearLogFile(path: String) {
+            Shell.cmd(": > '$path'").exec()
         }
+
+        /** Read the last N lines of the daemon log. Root required because log is 0600. */
+        fun readLog(lines: Int = 300): String = readLogFile(logFile, lines)
+
+        fun clearLog() = clearLogFile(logFile)
 
         // ── settings.ini write ────────────────────────────────────────────────
         /**

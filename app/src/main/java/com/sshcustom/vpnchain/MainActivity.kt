@@ -37,15 +37,17 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainAppContent() {
     val vm: MainViewModel = viewModel()
-    val status      by vm.status.collectAsState()
-    val tunnelState by vm.tunnelState.collectAsState()
-    val netSpeed    by vm.netSpeed.collectAsState()
-    val wanIp       by vm.wanIp.collectAsState()
-    val logText     by vm.logText.collectAsState()
-    val profiles    by vm.profiles.collectAsState()
-    val settings    by vm.settings.collectAsState()
-    val hasRoot     by vm.hasRoot.collectAsState()
-    val isLoading   by vm.isLoading.collectAsState()
+    val status          by vm.status.collectAsState()
+    val tunnelState     by vm.tunnelState.collectAsState()
+    val netSpeed        by vm.netSpeed.collectAsState()
+    val wanIp           by vm.wanIp.collectAsState()
+    val logText         by vm.logText.collectAsState()
+    val activeLog       by vm.activeLog.collectAsState()
+    val profiles        by vm.profiles.collectAsState()
+    val activeProfileId by vm.activeProfileId.collectAsState()   // now a StateFlow
+    val settings        by vm.settings.collectAsState()
+    val hasRoot         by vm.hasRoot.collectAsState()
+    val isLoading       by vm.isLoading.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
 
@@ -77,7 +79,7 @@ fun MainAppContent() {
                 bottomPadding = bottomPadding,
             )
             1 -> ProfilesScreen(
-                profiles = profiles, activeProfileId = vm.activeProfileId,
+                profiles = profiles, activeProfileId = activeProfileId,
                 onSelectProfile = vm::selectProfile, onSaveProfile = vm::saveProfile,
                 onDeleteProfile = vm::deleteProfile,
                 bottomPadding = bottomPadding,
@@ -90,7 +92,9 @@ fun MainAppContent() {
                 bottomPadding = bottomPadding,
             )
             3 -> LogsScreen(
-                logText = logText, onClear = vm::clearLog,
+                logText = logText, activeLog = activeLog,
+                onSwitchLog = vm::switchLog,
+                onClear = vm::clearLog,
                 onRefresh = vm::refreshLog,
                 bottomPadding = bottomPadding,
             )

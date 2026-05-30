@@ -74,14 +74,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _logText = MutableStateFlow("")
     val logText: StateFlow<String> = _logText
 
+    // Which log file to show: "core" | "control" | "action"
+    private val _activeLog = MutableStateFlow("core")
+    val activeLog: StateFlow<String> = _activeLog
+
     private var logPollingJob: Job? = null
+
+    private val LOG_PATHS = mapOf(
+        "core"    to "/data/adb/sshcustom/run/sshcustom.log",
+        "control" to "/data/adb/sshcustom/run/control.log",
+        "action"  to "/data/adb/sshcustom/run/boot.log",
+    )
+
+    fun switchLog(type: String) {
+        if (_activeLog.value != type) {
+            _activeLog.value = type
+            _logText.value = ""
+            refreshLog()
+        }
+    }
 
     // ── Profiles — persisted to SharedPreferences ─────────────────────────────
     private val _profiles = MutableStateFlow<List<Profile>>(emptyList())
     val profiles: StateFlow<List<Profile>> = _profiles
 
+    // Exposed as StateFlow so Compose recomposes immediately on selectProfile()
     private val _activeProfileId = MutableStateFlow("")
-    val activeProfileId: String get() = _activeProfileId.value
+    val activeProfileId: StateFlow<String> = _activeProfileId
 
     // ── Settings — persisted to SharedPreferences ─────────────────────────────
     private val _settings = MutableStateFlow(AppSettings())
@@ -149,11 +168,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun refreshLogInternal() {
-        val binder = rootBinder ?: return
+        val logPath = LOG_PATHS[_activeLog.value] ?: LOG_PATHS["core"]!!
         withContext(Dispatchers.IO) {
             try {
-                val log = binder.readLog(300)
-                _logText.value = log
+                val binder = rootBinder
+                val text = if (binder != null) {
+                    // Use binder — reads root-owned file directly
+                    binder.readLogFile(logPath, 300)
+                } else {
+                    // Binder not ready yet — fall back to Shell.cmd
+                    val r = Shell.cmd("tail -n 300 $logPath 2>/dev/null || echo '(log empty)'").exec()
+                    (r.out + r.err).joinToString("\n")
+                }
+                _logText.value = text
             } catch (_: Exception) {}
         }
     }
@@ -231,9 +258,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ── Logs ──────────────────────────────────────────────────────────────────
 
     fun clearLog() = viewModelScope.launch(Dispatchers.IO) {
+        val logPath = LOG_PATHS[_activeLog.value] ?: LOG_PATHS["core"]!!
         try {
-            rootBinder?.clearLog()
-                ?: Shell.cmd(": > /data/adb/sshcustom/run/sshcustom.log").exec()
+            rootBinder?.clearLogFile(logPath)
+                ?: Shell.cmd(": > $logPath").exec()
             _logText.value = ""
         } catch (_: Exception) {}
     }
@@ -248,14 +276,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (idx >= 0) current[idx] = profile else current.add(profile)
         _profiles.value = current
         repo.saveProfiles(current)
-        // If this is the active profile, re-apply to settings.ini
         if (profile.id == _activeProfileId.value) {
             applyProfileToSettings(profile)
         }
     }
 
     fun selectProfile(id: String) {
-        _activeProfileId.value = id
+        _activeProfileId.value = id          // StateFlow update — Compose recomposes immediately
         repo.saveActiveProfileId(id)
         val profile = _profiles.value.find { it.id == id } ?: return
         applyProfileToSettings(profile)
@@ -325,24 +352,38 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun applySettingsToIni(s: AppSettings) = viewModelScope.launch(Dispatchers.IO) {
         try {
             val pairs = mapOf(
-                "network_mode"     to s.networkMode,
-                "socks_port"       to s.socksPort.toString(),
-                "tproxy_port"      to s.tproxyPort.toString(),
-                "redir_port"       to s.redirPort.toString(),
-                "quic"             to s.quic,
-                "proxy_tcp"        to s.proxyTcp.toString(),
-                "proxy_udp"        to s.proxyUdp.toString(),
-                "dns_hijack_tcp"   to s.dnsHijackTcp.toString(),
-                "dns_hijack_udp"   to s.dnsHijackUdp.toString(),
-                "dns_hijack_mode"  to s.dnsHijackMode,
-                "channel_pool"     to s.channelPool.toString(),
+                "network_mode"      to s.networkMode,
+                "socks_port"        to s.socksPort.toString(),
+                "tproxy_port"       to s.tproxyPort.toString(),
+                "redir_port"        to s.redirPort.toString(),
+                "quic"              to s.quic,
+                "proxy_tcp"         to s.proxyTcp.toString(),
+                "proxy_udp"         to s.proxyUdp.toString(),
+                "dns_hijack_tcp"    to s.dnsHijackTcp.toString(),
+                "dns_hijack_udp"    to s.dnsHijackUdp.toString(),
+                "dns_hijack_mode"   to s.dnsHijackMode,
+                "channel_pool"      to s.channelPool.toString(),
                 "channel_pool_size" to s.channelPoolSize.toString(),
-                "bbr_enabled"      to s.bbrEnabled.toString(),
+                "bbr_enabled"       to s.bbrEnabled.toString(),
                 "tcp_buffer_tuning" to s.tcpBufferTuning.toString(),
-                "ipv6"             to s.ipv6.toString(),
+                "ipv6"              to s.ipv6.toString(),
             )
-            rootBinder?.writeSettings(pairs)
-                ?: fallbackWriteSettings(pairs)
+            rootBinder?.writeSettings(pairs) ?: fallbackWriteSettings(pairs)
+
+            // Autostart marker — presence of file = autostart enabled
+            val autostart = "/data/adb/sshcustom/run/autostart"
+            if (s.autostartTunnel) {
+                Shell.cmd("touch $autostart").exec()
+            } else {
+                Shell.cmd("rm -f $autostart").exec()
+            }
+
+            // Hotspot sharing — write to settings.ini hotspot section
+            val hotspotPairs = mapOf(
+                "hotspot_sharing" to s.hotspotSharing.toString(),
+            )
+            rootBinder?.writeSettings(hotspotPairs) ?: fallbackWriteSettings(hotspotPairs)
+
         } catch (_: Exception) {}
     }
 

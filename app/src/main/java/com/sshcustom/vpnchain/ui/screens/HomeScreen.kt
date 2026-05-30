@@ -214,18 +214,18 @@ private fun InfoGrid(status: DaemonStatus, netSpeed: NetSpeed, wanIp: String) {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             InfoCard("WAN", Modifier.weight(1f)) {
-                val displayIp = wanIp.ifBlank { "—" }
                 Text(
-                    text = displayIp,
-                    fontSize = 12.sp,
-                    color = MiuixTheme.colorScheme.onSurface,
+                    text       = wanIp.ifBlank { "—" },
+                    fontSize   = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color      = MiuixTheme.colorScheme.onSurface,
                     fontFamily = FontFamily.Monospace,
-                    maxLines = 2,
+                    maxLines   = 2,
                 )
             }
             InfoCard("Net Speed", Modifier.weight(1f)) {
-                Text("↑  ${"%.1f".format(netSpeed.upKbs)} KB/s",   fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurface)
-                Text("↓  ${"%.1f".format(netSpeed.downKbs)} KB/s", fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurface)
+                Text("↑  ${"%.1f".format(netSpeed.upKbs)} KB/s",   fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
+                Text("↓  ${"%.1f".format(netSpeed.downKbs)} KB/s", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
             }
         }
         Row(
@@ -233,12 +233,12 @@ private fun InfoGrid(status: DaemonStatus, netSpeed: NetSpeed, wanIp: String) {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             InfoCard("Resources", Modifier.weight(1f)) {
-                Text("Mem  ${"%.1f".format(status.memRssMb)} MB", fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurface)
-                Text("CPU  ${"%.1f".format(status.cpuPercent)}%",  fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurface)
+                Text("Mem  ${"%.1f".format(status.memRssMb)} MB", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
+                Text("CPU  ${"%.1f".format(status.cpuPercent)}%",  fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
             }
             InfoCard("Pool", Modifier.weight(1f)) {
-                Text("${status.channelPoolAvail}/${status.channelPoolSize} channels", fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurface)
-                Text("${status.activeConnections} active",           fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurface)
+                Text("${status.channelPoolAvail}/${status.channelPoolSize} channels", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
+                Text("${status.activeConnections} active",                            fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onSurface)
             }
         }
     }

@@ -41,9 +41,9 @@ data class Profile(
 @Serializable
 data class AppSettings(
     val networkMode: String = "redirect",
-    val socksPort: Int = 1080,
-    val tproxyPort: Int = 9898,
-    val redirPort: Int = 9797,
+    val socksPort: Int = 1081,      // changed from 1080 to avoid box module conflict
+    val tproxyPort: Int = 9899,     // changed from 9898 to avoid box module conflict
+    val redirPort: Int = 9799,      // changed from 9797 to avoid box module conflict
     val quic: String = "disable",
     val proxyTcp: Boolean = true,
     val proxyUdp: Boolean = false,
@@ -55,6 +55,10 @@ data class AppSettings(
     val bbrEnabled: Boolean = true,
     val tcpBufferTuning: Boolean = true,
     val ipv6: Boolean = false,
+    // Boot behaviour — default: daemon starts idle at boot, tunnel is manual
+    val autostartTunnel: Boolean = false,
+    // Hotspot sharing — share tunnel with hotspot clients
+    val hotspotSharing: Boolean = false,
 )
 
 /** Tunnel lifecycle state — all states used in ViewModel. */
