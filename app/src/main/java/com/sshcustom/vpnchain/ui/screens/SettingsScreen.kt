@@ -1,22 +1,23 @@
 package com.sshcustom.vpnchain.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.PaddingValues
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sshcustom.vpnchain.domain.AppSettings
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.basic.*
 import top.yukonga.miuix.kmp.extra.SuperArrow
 import top.yukonga.miuix.kmp.extra.SuperSwitch
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -28,163 +29,250 @@ fun SettingsScreen(
     onForceCleanup: () -> Unit,
     needsRestart: Boolean,
     appVersion: String,
-    paddingValues: PaddingValues,
+    bottomPadding: PaddingValues,
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(paddingValues),
-    ) {
-        if (needsRestart) {
-            Card(modifier = Modifier.fillMaxWidth().padding(12.dp, 6.dp)) {
-                Text(
-                    "⚠️  Settings changed — restart tunnel to apply",
-                    fontSize = 13.sp, color = MiuixTheme.colorScheme.error,
-                    modifier = Modifier.padding(14.dp),
-                )
+    val scrollBehavior = MiuixScrollBehavior()
+
+    Scaffold(
+        topBar = { TopAppBar(title = "Settings", scrollBehavior = scrollBehavior) },
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+            contentPadding = PaddingValues(
+                start = 12.dp, end = 12.dp,
+                top = innerPadding.calculateTopPadding() + 4.dp,
+                bottom = bottomPadding.calculateBottomPadding() + 16.dp,
+            ),
+        ) {
+
+            // Restart warning banner
+            if (needsRestart) {
+                item {
+                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                        Text(
+                            "⚠  Settings changed — restart tunnel to apply",
+                            fontSize = 13.sp,
+                            color = MiuixTheme.colorScheme.error,
+                            modifier = Modifier.padding(14.dp),
+                        )
+                    }
+                }
             }
-        }
 
-        // ── Ports ─────────────────────────────────────────────────────────────
-        SmallTitle("Ports")
-        Card(modifier = Modifier.fillMaxWidth().padding(12.dp, 0.dp, 12.dp, 12.dp)) {
-            PortField("Redirect Port", settings.redirPort.toString()) { v ->
-                v.toIntOrNull()?.takeIf { it in 1024..65535 }
-                    ?.let { onSettingsChange(settings.copy(redirPort = it)) }
+            settingsSection("Ports") {
+                item {
+                    Card(Modifier.fillMaxWidth()) {
+                        PortField("Redirect Port", settings.redirPort.toString()) { v ->
+                            v.toIntOrNull()?.takeIf { it in 1024..65535 }
+                                ?.let { onSettingsChange(settings.copy(redirPort = it)) }
+                        }
+                        PortField("TPROXY Port", settings.tproxyPort.toString()) { v ->
+                            v.toIntOrNull()?.takeIf { it in 1024..65535 }
+                                ?.let { onSettingsChange(settings.copy(tproxyPort = it)) }
+                        }
+                        PortField("SOCKS5 Port", settings.socksPort.toString()) { v ->
+                            v.toIntOrNull()?.takeIf { it in 1024..65535 }
+                                ?.let { onSettingsChange(settings.copy(socksPort = it)) }
+                        }
+                    }
+                }
             }
-            PortField("TPROXY Port", settings.tproxyPort.toString()) { v ->
-                v.toIntOrNull()?.takeIf { it in 1024..65535 }
-                    ?.let { onSettingsChange(settings.copy(tproxyPort = it)) }
+
+            settingsSection("Traffic Mode") {
+                item {
+                    Card(Modifier.fillMaxWidth()) {
+                        listOf(
+                            "redirect"   to "Redirect — TCP, most compatible",
+                            "tproxy"     to "TPROXY — TCP + UDP, needs kernel",
+                            "tun"        to "TUN — via tun2proxy",
+                            "tun_udpgw"  to "TUN + UDPGW — real UDP tunneling",
+                        ).forEach { (mode, label) ->
+                            SelectRow(
+                                label    = label,
+                                selected = settings.networkMode == mode,
+                                onClick  = { onSettingsChange(settings.copy(networkMode = mode)) },
+                            )
+                        }
+                    }
+                }
             }
-            PortField("SOCKS5 Port", settings.socksPort.toString()) { v ->
-                v.toIntOrNull()?.takeIf { it in 1024..65535 }
-                    ?.let { onSettingsChange(settings.copy(socksPort = it)) }
+
+            settingsSection("Proxy Behaviour") {
+                item {
+                    Card(Modifier.fillMaxWidth()) {
+                        SuperSwitch(
+                            checked = settings.quic == "disable",
+                            onCheckedChange = {
+                                onSettingsChange(settings.copy(quic = if (it) "disable" else "enable"))
+                            },
+                            title = "Block QUIC",
+                            summary = "Drop UDP 443/80 — forces TCP through tunnel",
+                        )
+                        SuperSwitch(
+                            checked = settings.proxyTcp,
+                            onCheckedChange = { onSettingsChange(settings.copy(proxyTcp = it)) },
+                            title = "Proxy TCP",
+                        )
+                        SuperSwitch(
+                            checked = settings.proxyUdp,
+                            onCheckedChange = { onSettingsChange(settings.copy(proxyUdp = it)) },
+                            title = "Proxy UDP",
+                            summary = "Only available in TPROXY / TUN modes",
+                        )
+                    }
+                }
             }
-        }
 
-        // ── Traffic Mode ──────────────────────────────────────────────────────
-        SmallTitle("Traffic Mode")
-        Card(modifier = Modifier.fillMaxWidth().padding(12.dp, 0.dp, 12.dp, 12.dp)) {
-            listOf(
-                "redirect"  to "Redirect (TCP, most compatible)",
-                "tproxy"    to "TPROXY (TCP+UDP, needs kernel)",
-                "tun"       to "TUN (via tun2proxy)",
-                "tun_udpgw" to "TUN + UDPGW (real UDP)",
-            ).forEach { (mode, label) ->
-                SuperArrow(
-                    title = label,
-                    rightActions = {
-                        if (settings.networkMode == mode)
-                            Text("✓", color = MiuixTheme.colorScheme.primary, fontSize = MiuixTheme.textStyles.body2.fontSize)
-                    },
-                    onClick = { onSettingsChange(settings.copy(networkMode = mode)) },
-                )
+            settingsSection("Speed Boost") {
+                item {
+                    Card(Modifier.fillMaxWidth()) {
+                        SuperSwitch(
+                            checked = settings.channelPool,
+                            onCheckedChange = { onSettingsChange(settings.copy(channelPool = it)) },
+                            title = "Channel Pool",
+                            summary = "Pre-warm SSH channels — reduces per-connection latency",
+                        )
+                        SuperSwitch(
+                            checked = settings.bbrEnabled,
+                            onCheckedChange = { onSettingsChange(settings.copy(bbrEnabled = it)) },
+                            title = "BBR Congestion Control",
+                            summary = "Enable BBR if kernel supports it",
+                        )
+                        SuperSwitch(
+                            checked = settings.tcpBufferTuning,
+                            onCheckedChange = { onSettingsChange(settings.copy(tcpBufferTuning = it)) },
+                            title = "TCP Buffer Tuning",
+                            summary = "Maximize socket buffers for high throughput",
+                        )
+                    }
+                }
             }
-        }
 
-        // ── Proxy Behaviour ───────────────────────────────────────────────────
-        SmallTitle("Proxy Behaviour")
-        Card(modifier = Modifier.fillMaxWidth().padding(12.dp, 0.dp, 12.dp, 12.dp)) {
-            SuperSwitch(
-                checked = settings.quic == "disable",
-                onCheckedChange = { onSettingsChange(settings.copy(quic = if (it) "disable" else "enable")) },
-                title = "Block QUIC",
-                summary = "Drop UDP 443/80 — forces TCP through tunnel",
-            )
-            SuperSwitch(
-                checked = settings.proxyTcp,
-                onCheckedChange = { onSettingsChange(settings.copy(proxyTcp = it)) },
-                title = "Proxy TCP",
-            )
-            SuperSwitch(
-                checked = settings.proxyUdp,
-                onCheckedChange = { onSettingsChange(settings.copy(proxyUdp = it)) },
-                title = "Proxy UDP",
-                summary = "Only effective in TPROXY / TUN modes",
-            )
-        }
-
-        // ── Speed Boost ───────────────────────────────────────────────────────
-        SmallTitle("Speed Boost")
-        Card(modifier = Modifier.fillMaxWidth().padding(12.dp, 0.dp, 12.dp, 12.dp)) {
-            SuperSwitch(
-                checked = settings.channelPool,
-                onCheckedChange = { onSettingsChange(settings.copy(channelPool = it)) },
-                title = "Channel Pool",
-                summary = "Pre-warm SSH channels — reduces first-connection latency",
-            )
-            SuperSwitch(
-                checked = settings.bbrEnabled,
-                onCheckedChange = { onSettingsChange(settings.copy(bbrEnabled = it)) },
-                title = "BBR Congestion Control",
-                summary = "Enable BBR if kernel supports it",
-            )
-            SuperSwitch(
-                checked = settings.tcpBufferTuning,
-                onCheckedChange = { onSettingsChange(settings.copy(tcpBufferTuning = it)) },
-                title = "TCP Buffer Tuning",
-                summary = "Maximize buffer sizes for high throughput",
-            )
-        }
-
-        // ── DNS Hijack ────────────────────────────────────────────────────────
-        SmallTitle("DNS Hijack")
-        Card(modifier = Modifier.fillMaxWidth().padding(12.dp, 0.dp, 12.dp, 12.dp)) {
-            SuperSwitch(
-                checked = settings.dnsHijackTcp,
-                onCheckedChange = { onSettingsChange(settings.copy(dnsHijackTcp = it)) },
-                title = "Hijack DNS TCP",
-            )
-            SuperSwitch(
-                checked = settings.dnsHijackUdp,
-                onCheckedChange = { onSettingsChange(settings.copy(dnsHijackUdp = it)) },
-                title = "Hijack DNS UDP",
-            )
-            listOf("redirect" to "Redirect", "tproxy" to "TPROXY", "disable" to "Disable").forEach { (m, l) ->
-                SuperArrow(
-                    title = "DNS Mode: $l",
-                    rightActions = {
-                        if (settings.dnsHijackMode == m)
-                            Text("✓", color = MiuixTheme.colorScheme.primary, fontSize = MiuixTheme.textStyles.body2.fontSize)
-                    },
-                    onClick = { onSettingsChange(settings.copy(dnsHijackMode = m)) },
-                )
+            settingsSection("DNS Hijack") {
+                item {
+                    Card(Modifier.fillMaxWidth()) {
+                        SuperSwitch(
+                            checked = settings.dnsHijackTcp,
+                            onCheckedChange = { onSettingsChange(settings.copy(dnsHijackTcp = it)) },
+                            title = "Hijack DNS over TCP",
+                        )
+                        SuperSwitch(
+                            checked = settings.dnsHijackUdp,
+                            onCheckedChange = { onSettingsChange(settings.copy(dnsHijackUdp = it)) },
+                            title = "Hijack DNS over UDP",
+                        )
+                        listOf(
+                            "redirect" to "Redirect",
+                            "tproxy"   to "TPROXY",
+                            "disable"  to "Disable",
+                        ).forEach { (m, l) ->
+                            SelectRow(
+                                label    = "DNS Mode: $l",
+                                selected = settings.dnsHijackMode == m,
+                                onClick  = { onSettingsChange(settings.copy(dnsHijackMode = m)) },
+                            )
+                        }
+                    }
+                }
             }
-        }
 
-        // ── IPv6 ──────────────────────────────────────────────────────────────
-        SmallTitle("IPv6")
-        Card(modifier = Modifier.fillMaxWidth().padding(12.dp, 0.dp, 12.dp, 12.dp)) {
-            SuperSwitch(
-                checked = !settings.ipv6,
-                onCheckedChange = { onSettingsChange(settings.copy(ipv6 = !it)) },
-                title = "Disable IPv6",
-                summary = "Recommended while tunnel is active",
-            )
-        }
+            settingsSection("IPv6") {
+                item {
+                    Card(Modifier.fillMaxWidth()) {
+                        SuperSwitch(
+                            checked = !settings.ipv6,
+                            onCheckedChange = { onSettingsChange(settings.copy(ipv6 = !it)) },
+                            title = "Disable IPv6",
+                            summary = "Recommended while tunnel is active",
+                        )
+                    }
+                }
+            }
 
-        // ── Developer ─────────────────────────────────────────────────────────
-        SmallTitle("Developer")
-        Card(modifier = Modifier.fillMaxWidth().padding(12.dp, 0.dp, 12.dp, 12.dp)) {
-            SuperArrow(
-                title = "Force iptables cleanup",
-                summary = "Runs ssh.iptables disable — clears all rules",
-                onClick = onForceCleanup,
-            )
-        }
+            settingsSection("Developer") {
+                item {
+                    Card(Modifier.fillMaxWidth()) {
+                        SuperArrow(
+                            title = "Force iptables cleanup",
+                            summary = "Runs ssh.iptables disable — clears all rules even if stuck",
+                            onClick = onForceCleanup,
+                        )
+                    }
+                }
+            }
 
-        // ── About ─────────────────────────────────────────────────────────────
-        SmallTitle("About")
-        Card(modifier = Modifier.fillMaxWidth().padding(12.dp, 0.dp, 12.dp, 24.dp)) {
-            SuperArrow(title = "App version", rightActions = {
-                Text(appVersion, color = MiuixTheme.colorScheme.onSurfaceVariantActions, fontSize = MiuixTheme.textStyles.body2.fontSize)
-            }, onClick = {})
-            SuperArrow(title = "Module data", rightActions = {
-                Text("/data/adb/sshcustom", color = MiuixTheme.colorScheme.onSurfaceVariantActions, fontSize = 11.sp)
-            }, onClick = {})
-            SuperArrow(title = "VPN Chain", rightActions = {
-                Text("Coming soon", color = MiuixTheme.colorScheme.onSurfaceVariantActions, fontSize = MiuixTheme.textStyles.body2.fontSize)
-            }, onClick = {})
+            settingsSection("About") {
+                item {
+                    Card(Modifier.fillMaxWidth()) {
+                        SuperArrow(
+                            title = "App version",
+                            rightActions = {
+                                Text(appVersion,
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                    fontSize = MiuixTheme.textStyles.body2.fontSize)
+                            },
+                            onClick = {},
+                        )
+                        SuperArrow(
+                            title = "Module data",
+                            rightActions = {
+                                Text("/data/adb/sshcustom",
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                    fontSize = 11.sp)
+                            },
+                            onClick = {},
+                        )
+                        SuperArrow(
+                            title = "VPN Chain",
+                            rightActions = {
+                                Text("Coming soon",
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                    fontSize = MiuixTheme.textStyles.body2.fontSize)
+                            },
+                            onClick = {},
+                        )
+                    }
+                }
+            }
         }
     }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * A selected-option row with a solid colour dot as the checkmark.
+ * Much more visible than a plain text "✓" — proper MIUI-style selection indicator.
+ */
+@Composable
+private fun SelectRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    SuperArrow(
+        title = label,
+        rightActions = {
+            if (selected) {
+                // Solid filled circle — unmistakably selected; aligns right like a radio indicator
+                Box(
+                    Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(MiuixTheme.colorScheme.primary),
+                )
+            }
+        },
+        onClick = onClick,
+    )
+}
+
+/** LazyListScope extension to emit SmallTitle + content with consistent spacing. */
+private fun LazyListScope.settingsSection(
+    title: String,
+    content: LazyListScope.() -> Unit,
+) {
+    item { SmallTitle(title) }
+    content()
+    item { Spacer(Modifier.height(4.dp)) }
 }
 
 @Composable
@@ -193,8 +281,9 @@ private fun PortField(label: String, value: String, onDone: (String) -> Unit) {
     TextField(
         value = text,
         onValueChange = { text = it.filter { c -> c.isDigit() }; onDone(text) },
-        label = label, singleLine = true,
+        label = label,
+        singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        modifier = Modifier.fillMaxWidth().padding(12.dp, 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
     )
 }

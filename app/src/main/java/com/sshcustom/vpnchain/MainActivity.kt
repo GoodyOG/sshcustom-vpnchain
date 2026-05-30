@@ -11,9 +11,8 @@ import com.sshcustom.vpnchain.ui.theme.SSHCustomTheme
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationItem
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.icons.useful.Info
+import top.yukonga.miuix.kmp.icon.icons.useful.NavigatorSwitch
 import top.yukonga.miuix.kmp.icon.icons.useful.Personal
 import top.yukonga.miuix.kmp.icon.icons.useful.Settings
 import top.yukonga.miuix.kmp.icon.icons.useful.Order
@@ -26,6 +25,15 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Root composable.
+ *
+ * Architecture note:
+ * - Each screen owns its own MiuixScrollBehavior + TopAppBar.
+ * - The Scaffold here only hosts the shared NavigationBar at the bottom.
+ * - This lets every screen have independent collapsing-header behaviour
+ *   and avoids the nestedScroll connection needing to cross screen boundaries.
+ */
 @Composable
 fun MainAppContent() {
     val vm: MainViewModel = viewModel()
@@ -41,48 +49,50 @@ fun MainAppContent() {
 
     var selectedTab by remember { mutableIntStateOf(0) }
 
-    val tabs = listOf("Home", "Profiles", "Settings", "Logs")
     val navItems = listOf(
-        NavigationItem(label = "Home",     icon = MiuixIcons.Useful.Info),
+        NavigationItem(label = "Home",     icon = MiuixIcons.Useful.NavigatorSwitch),
         NavigationItem(label = "Profiles", icon = MiuixIcons.Useful.Personal),
         NavigationItem(label = "Settings", icon = MiuixIcons.Useful.Settings),
         NavigationItem(label = "Logs",     icon = MiuixIcons.Useful.Order),
     )
 
+    // Scaffold here only provides the bottom NavigationBar + popup host.
+    // Each screen composable is responsible for its own TopAppBar + Scaffold.
     Scaffold(
-        topBar = { TopAppBar(title = tabs[selectedTab]) },
-        // miuix NavigationBar handles its own window-insets padding internally
+        topBar = {}, // screens own their TopAppBar
         bottomBar = {
             NavigationBar(
                 items = navItems,
                 selected = selectedTab,
                 onClick = { selectedTab = it },
             )
-        }
-    ) { paddingValues ->
+        },
+    ) { bottomPadding ->
         when (selectedTab) {
             0 -> HomeScreen(
                 status = status, netSpeed = netSpeed, wanIp = wanIp,
                 tunnelState = tunnelState, hasRoot = hasRoot, isLoading = isLoading,
                 onStart = vm::startTunnel, onStop = vm::stopTunnel,
                 onRestart = vm::restartTunnel, onReload = vm::reloadConfig,
-                paddingValues = paddingValues,
+                bottomPadding = bottomPadding,
             )
             1 -> ProfilesScreen(
                 profiles = profiles, activeProfileId = vm.activeProfileId,
                 onSelectProfile = vm::selectProfile, onSaveProfile = vm::saveProfile,
-                onDeleteProfile = vm::deleteProfile, paddingValues = paddingValues,
+                onDeleteProfile = vm::deleteProfile,
+                bottomPadding = bottomPadding,
             )
             2 -> SettingsScreen(
                 settings = settings, onSettingsChange = vm::updateSettings,
                 onForceCleanup = vm::forceCleanup,
                 needsRestart = vm.settingsNeedRestart,
                 appVersion = BuildConfig.VERSION_NAME,
-                paddingValues = paddingValues,
+                bottomPadding = bottomPadding,
             )
             3 -> LogsScreen(
                 logText = logText, onClear = vm::clearLog,
-                onRefresh = vm::refreshLog, paddingValues = paddingValues,
+                onRefresh = vm::refreshLog,
+                bottomPadding = bottomPadding,
             )
         }
     }

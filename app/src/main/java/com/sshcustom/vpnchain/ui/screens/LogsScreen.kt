@@ -9,12 +9,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.PaddingValues
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.basic.*
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -22,36 +22,97 @@ fun LogsScreen(
     logText: String,
     onClear: () -> Unit,
     onRefresh: () -> Unit,
-    paddingValues: PaddingValues,
+    bottomPadding: PaddingValues,
 ) {
-    val lines = remember(logText) { if (logText.isBlank()) emptyList() else logText.lines() }
+    val lines = remember(logText) {
+        if (logText.isBlank()) emptyList() else logText.lines()
+    }
     val listState = rememberLazyListState()
     var autoScroll by remember { mutableStateOf(true) }
+    val scrollBehavior = MiuixScrollBehavior()
 
-    LaunchedEffect(lines.size) {
-        if (autoScroll && lines.isNotEmpty()) listState.animateScrollToItem(lines.size - 1)
+    // Track whether user has scrolled away from bottom
+    val atBottom by remember {
+        derivedStateOf {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()
+            last == null || last.index >= lines.lastIndex
+        }
     }
 
-    Column(Modifier.fillMaxSize().padding(paddingValues)) {
-        Row(
-            Modifier.fillMaxWidth().padding(12.dp, 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text("${lines.size} lines", fontSize = 12.sp,
-                color = MiuixTheme.colorScheme.onSurfaceVariantActions, modifier = Modifier.weight(1f))
-            TextButton(if (autoScroll) "📌 Auto" else "Auto", { autoScroll = !autoScroll }, modifier = Modifier.wrapContentWidth())
-            TextButton("Refresh", onRefresh, modifier = Modifier.wrapContentWidth())
-            TextButton("Clear", onClear, modifier = Modifier.wrapContentWidth(),
-                colors = ButtonDefaults.textButtonColors(color = MiuixTheme.colorScheme.error, textColor = Color.White,
-                    disabledColor = MiuixTheme.colorScheme.disabledSecondaryVariant,
-                    disabledTextColor = MiuixTheme.colorScheme.disabledOnSecondaryVariant))
+    LaunchedEffect(lines.size) {
+        if (autoScroll && lines.isNotEmpty()) {
+            listState.animateScrollToItem(lines.lastIndex)
         }
-        Box(Modifier.fillMaxSize().background(Color(0xFF0D0D0D)).padding(horizontal = 8.dp)) {
-            LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-                if (lines.isEmpty()) {
-                    item { Text("(no logs yet)", fontSize = 12.sp, color = Color(0xFF555555), modifier = Modifier.padding(16.dp)) }
-                } else {
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = "Logs",
+                scrollBehavior = scrollBehavior,
+                actions = {
+                    TextButton(
+                        text = if (autoScroll) "Auto ●" else "Auto ○",
+                        onClick = { autoScroll = !autoScroll },
+                        modifier = Modifier.wrapContentWidth(),
+                    )
+                    TextButton(
+                        text = "Clear",
+                        onClick = onClear,
+                        modifier = Modifier.wrapContentWidth(),
+                        colors = ButtonDefaults.textButtonColors(
+                            color = MiuixTheme.colorScheme.error,
+                            textColor = Color.White,
+                            disabledColor = MiuixTheme.colorScheme.disabledSecondaryVariant,
+                            disabledTextColor = MiuixTheme.colorScheme.disabledOnSecondaryVariant,
+                        ),
+                    )
+                },
+            )
+        },
+        // Scroll-to-bottom FAB — only visible when not at bottom
+        floatingActionButton = {
+            if (!atBottom) {
+                FloatingActionButton(
+                    onClick = {
+                        autoScroll = true
+                    },
+                ) {
+                    Text("↓", fontSize = 18.sp, color = Color.White)
+                }
+            }
+        },
+    ) { innerPadding ->
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color(0xFF0D0D0D)),
+        ) {
+            if (lines.isEmpty()) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "(no logs — tap Refresh)",
+                        fontSize = 13.sp,
+                        color = Color(0xFF555555),
+                    )
+                }
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .nestedScroll(scrollBehavior.nestedScrollConnection),
+                    contentPadding = PaddingValues(
+                        start = 8.dp, end = 8.dp,
+                        top = innerPadding.calculateTopPadding() + 4.dp,
+                        bottom = bottomPadding.calculateBottomPadding() + 16.dp,
+                    ),
+                ) {
                     items(lines) { line -> LogLine(line) }
                 }
             }

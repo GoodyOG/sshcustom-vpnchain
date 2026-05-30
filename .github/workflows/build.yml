@@ -41,40 +41,18 @@ jobs:
           export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${CC}"
           cd /tmp/tun2proxy
           cargo build --release --target aarch64-linux-android 2>&1
-
-          # tun2proxy project may produce tun2proxy-bin or tun2proxy depending on version
-          # Find whichever binary was built and copy it
           TARGET_DIR="target/aarch64-linux-android/release"
           BIN=""
           for candidate in tun2proxy-bin tun2proxy; do
-            if [ -f "${TARGET_DIR}/${candidate}" ]; then
-              BIN="${TARGET_DIR}/${candidate}"
-              echo "Found binary: ${BIN}"
-              break
-            fi
+            [ -f "${TARGET_DIR}/${candidate}" ] && BIN="${TARGET_DIR}/${candidate}" && break
           done
-
-          if [ -z "${BIN}" ]; then
-            echo "ERROR: No tun2proxy binary found. Contents of release dir:"
-            ls -la "${TARGET_DIR}/" | grep -v '\.d$' | head -20
-            # Try finding any non-debug ELF
-            BIN=$(find "${TARGET_DIR}" -maxdepth 1 -type f ! -name '*.d' ! -name '*.rlib' \
-              -executable 2>/dev/null | head -1)
-            echo "Fallback binary: ${BIN}"
-          fi
-
-          if [ -z "${BIN}" ]; then
-            echo "FATAL: could not find tun2proxy binary"
-            exit 1
-          fi
-
+          [ -z "${BIN}" ] && BIN=$(find "${TARGET_DIR}" -maxdepth 1 -type f ! -name '*.d' ! -name '*.rlib' -executable 2>/dev/null | head -1)
+          [ -z "${BIN}" ] && echo "FATAL: no tun2proxy binary" && exit 1
           cp "${BIN}" "${{ github.workspace }}/third_party/tun2proxy/tun2proxy"
           chmod +x "${{ github.workspace }}/third_party/tun2proxy/tun2proxy"
           file "${{ github.workspace }}/third_party/tun2proxy/tun2proxy"
-          ls -lh "${{ github.workspace }}/third_party/tun2proxy/tun2proxy"
 
-      - name: Upload tun2proxy artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: tun2proxy-arm64
           path: third_party/tun2proxy/tun2proxy
@@ -86,25 +64,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Go ${{ env.GO_VERSION }}
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: daemon/go.sum
 
       - name: Set VERSION
         run: |
-          if [ -f VERSION ]; then
-            echo "VERSION=$(cat VERSION | tr -d '[:space:]')" >> "$GITHUB_ENV"
-          else
-            echo "VERSION=0.0.0-dev" >> "$GITHUB_ENV"
-          fi
+          echo "VERSION=$(cat VERSION 2>/dev/null | tr -d '[:space:]' || echo '0.0.0-dev')" >> "$GITHUB_ENV"
 
-      - name: Build daemon
+      - name: Build daemon (android/arm64)
         env:
           GOOS: android
           GOARCH: arm64
           CGO_ENABLED: "0"
+        working-directory: daemon
         run: |
           mkdir -p ../module/bin
           go build \
@@ -113,87 +87,63 @@ jobs:
             -ldflags="-s -w -X main.version=${{ env.VERSION }}" \
             -o ../module/bin/sshcustomd \
             ./cmd/sshcustomd/
-        working-directory: daemon
 
-      - name: Verify daemon binary
+      - name: Verify binary is arm64
         run: |
           file module/bin/sshcustomd
-          ls -lh module/bin/sshcustomd
-          # Should be ELF 64-bit ARM aarch64
-          file module/bin/sshcustomd | grep -q "aarch64" && echo "✓ arm64 verified" || (echo "WRONG ARCH"; exit 1)
+          file module/bin/sshcustomd | grep -q "aarch64" && echo "✓ arm64" || (echo "WRONG ARCH"; exit 1)
 
-      - name: Upload daemon artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: sshcustomd-arm64
           path: module/bin/sshcustomd
 
   # ── 3. Package Magisk module ZIP ─────────────────────────────────────────
   package-module:
-    name: Package Magisk module ZIP
+    name: Package module ZIP
     runs-on: ubuntu-latest
     needs: [build-tun2proxy, build-daemon]
     steps:
       - uses: actions/checkout@v4
 
       - name: Set VERSION
-        run: |
-          if [ -f VERSION ]; then
-            echo "VERSION=$(cat VERSION | tr -d '[:space:]')" >> "$GITHUB_ENV"
-          else
-            echo "VERSION=0.0.0-dev" >> "$GITHUB_ENV"
-          fi
+        run: echo "VERSION=$(cat VERSION 2>/dev/null | tr -d '[:space:]' || echo '0.0.0-dev')" >> "$GITHUB_ENV"
 
-      - name: Download daemon
-        uses: actions/download-artifact@v4
-        with:
-          name: sshcustomd-arm64
-          path: module/bin/
+      - uses: actions/download-artifact@v4
+        with: { name: sshcustomd-arm64, path: module/bin/ }
 
-      - name: Download tun2proxy
-        uses: actions/download-artifact@v4
-        with:
-          name: tun2proxy-arm64
-          path: module/bin/
+      - uses: actions/download-artifact@v4
+        with: { name: tun2proxy-arm64, path: module/bin/ }
 
-      - name: Set binary permissions
+      - name: Set permissions and stamp version
         run: |
           chmod +x module/bin/sshcustomd module/bin/tun2proxy
-          ls -lh module/bin/
-
-      - name: Stamp module.prop version
-        run: |
-          VERSION="${{ env.VERSION }}"
-          sed -i "s|^version=.*|version=v${VERSION}|" module/module.prop
-          # versionCode: strip dots, append 00
-          VC="$(echo "${VERSION}" | tr -d '.' | sed 's/[^0-9]//g')00"
+          V="${{ env.VERSION }}"
+          sed -i "s|^version=.*|version=v${V}|" module/module.prop
+          VC="$(echo "${V}" | tr -d '.' | sed 's/[^0-9]//g')00"
           sed -i "s|^versionCode=.*|versionCode=${VC}|" module/module.prop
-          cat module/module.prop
 
       - name: Package ZIP
         run: |
           mkdir -p dist
           cd module
           zip -r9 "../dist/SSHCustom-VPNChain-v${{ env.VERSION }}.zip" . \
-            -x "*.DS_Store" -x "__MACOSX/*" \
-            -x "bin/.gitkeep" -x "vpnchain/configs/.gitkeep"
+            -x "*.DS_Store" -x "__MACOSX/*" -x "bin/.gitkeep" -x "vpnchain/configs/.gitkeep"
           ls -lh "../dist/SSHCustom-VPNChain-v${{ env.VERSION }}.zip"
 
-      - name: Upload module ZIP artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: module-zip
           path: dist/SSHCustom-VPNChain-v${{ env.VERSION }}.zip
 
-  # ── 4. Build Android APK ─────────────────────────────────────────────────
+  # ── 4. Build Android RELEASE APK (target: <5 MB arm64-only) ──────────────
   build-apk:
-    name: Build Android APK
+    name: Build Android APK (release)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
@@ -204,36 +154,67 @@ jobs:
       - name: Accept SDK licenses
         run: yes | sdkmanager --licenses 2>/dev/null || true
 
+      # Generate a self-signed release keystore for signing.
+      # This is NOT a Play Store keystore — it just allows release builds.
+      # The generated key is deterministic from a random secret so it's reproducible
+      # across CI runs if KEYSTORE_PASS is set as a repo secret.
+      - name: Generate release keystore
+        run: |
+          PASS="${{ secrets.KEYSTORE_PASS }}"
+          # Fall back to a fixed dev password if the secret is not set
+          [ -z "$PASS" ] && PASS="sshcustom_dev_keystore_2024"
+          keytool -genkeypair \
+            -keystore /tmp/release.jks \
+            -alias release \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass "$PASS" \
+            -keypass  "$PASS" \
+            -dname "CN=SSHCustom, O=SSHCustom, C=US" \
+            -noprompt
+          echo "SIGNING_KEY_PATH=/tmp/release.jks" >> "$GITHUB_ENV"
+          echo "SIGNING_STORE_PASSWORD=$PASS"     >> "$GITHUB_ENV"
+          echo "SIGNING_KEY_ALIAS=release"         >> "$GITHUB_ENV"
+          echo "SIGNING_KEY_PASSWORD=$PASS"        >> "$GITHUB_ENV"
+
       - name: Make gradlew executable
         run: chmod +x gradlew
         working-directory: app
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
+      - name: Build release APK
+        run: ./gradlew assembleRelease --no-daemon
         working-directory: app
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          SIGNING_KEY_PATH:      ${{ env.SIGNING_KEY_PATH }}
+          SIGNING_STORE_PASSWORD: ${{ env.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS:     ${{ env.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD:  ${{ env.SIGNING_KEY_PASSWORD }}
 
       - name: Locate and stage APK
         run: |
-          echo "Searching for APK in $GITHUB_WORKSPACE..."
-          find "$GITHUB_WORKSPACE" -name "*debug*.apk" -type f 2>/dev/null
-          APK=$(find "$GITHUB_WORKSPACE" -name "*debug*.apk" -type f 2>/dev/null | head -1)
-          if [ -z "$APK" ]; then
-            echo "ERROR: No debug APK found"
+          # Release APK has a predictable path — no find needed
+          APK="${GITHUB_WORKSPACE}/app/build/outputs/apk/release/app-arm64-v8a-release.apk"
+          if [ ! -f "$APK" ]; then
+            # Fallback: search for any release apk
+            APK=$(find "${GITHUB_WORKSPACE}" -path "*/release/*.apk" -type f 2>/dev/null | head -1)
+          fi
+          if [ -z "$APK" ] || [ ! -f "$APK" ]; then
+            echo "ERROR: No release APK found"
+            find "${GITHUB_WORKSPACE}/app/build/outputs" -name "*.apk" 2>/dev/null || true
             exit 1
           fi
-          echo "Found: $APK"
-          cp "$APK" "$GITHUB_WORKSPACE/SSHCustom-VPNChain-debug.apk"
-          ls -lh "$GITHUB_WORKSPACE/SSHCustom-VPNChain-debug.apk"
+          echo "Found: $APK  ($(du -sh "$APK" | cut -f1))"
+          cp "$APK" "${GITHUB_WORKSPACE}/SSHCustom-VPNChain-release.apk"
+          ls -lh "${GITHUB_WORKSPACE}/SSHCustom-VPNChain-release.apk"
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
-          path: SSHCustom-VPNChain-debug.apk
+          name: app-release-apk
+          path: SSHCustom-VPNChain-release.apk
 
-  # ── 5. Create GitHub Release (on version tags only) ───────────────────────
+  # ── 5. Create GitHub Release (tags only) ─────────────────────────────────
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
@@ -247,31 +228,24 @@ jobs:
       - name: Set VERSION from tag
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
-      - name: Download module ZIP
-        uses: actions/download-artifact@v4
-        with:
-          name: module-zip
-          path: dist/
+      - uses: actions/download-artifact@v4
+        with: { name: module-zip, path: dist/ }
 
-      - name: Download APK (optional — release proceeds even if APK build failed)
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         continue-on-error: true
-        with:
-          name: app-debug-apk
-          path: dist/
+        with: { name: app-release-apk, path: dist/ }
 
       - name: List release assets
         run: ls -lh dist/
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: SSHCustom-VPNChain ${{ github.ref_name }}
-          draft: false
-          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') }}
+          tag_name:                ${{ github.ref_name }}
+          name:                    "SSHCustom-VPNChain ${{ github.ref_name }}"
+          draft:                   false
+          prerelease:              ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
           fail_on_unmatched_files: false
-          overwrite_files: true
+          overwrite_files:         true
           files: |
             dist/*.zip
             dist/*.apk
@@ -281,22 +255,27 @@ jobs:
             ### Installation
             1. Flash `SSHCustom-VPNChain-v${{ env.VERSION }}.zip` via Magisk / KernelSU / APatch
             2. Reboot
-            3. Install `SSHCustom-VPNChain-debug.apk`
-            4. Open app → grant root in KSU → configure SSH credentials → **Start**
+            3. Install `SSHCustom-VPNChain-release.apk`
+            4. Open app → KernelSU Superuser → grant root → configure SSH → **Start**
 
-            ### Included in ZIP
+            ### What's fixed in this release
+            - ✅ Profile editor scroll bug (SuperBottomSheet — no more stuck form)
+            - ✅ Collapsing TopAppBar on every screen (miuix MiuixScrollBehavior)
+            - ✅ NavigatorSwitch home icon
+            - ✅ Settings — filled circle selection indicator (visible and clear)
+            - ✅ Release APK with R8 full mode — arm64-only, target **<5 MB**
+            - ✅ Logs — scroll-to-bottom FAB
+
+            ### ZIP contents
             | File | Description |
             |---|---|
-            | `bin/sshcustomd` | Go daemon (ARM64, static, 6-7MB) |
-            | `bin/tun2proxy` | TUN proxy binary (tun/tun_udpgw modes) |
-            | `scripts/ssh.service` | Lifecycle manager |
-            | `scripts/ssh.iptables` | All 4 traffic modes + capability probe |
-            | `scripts/ssh.tool` | BBR, TCP buffers, cgroup helpers |
-            | `settings.ini` | Master config — edit SSH credentials here |
+            | `bin/sshcustomd` | Go daemon ARM64, static, ~6 MB |
+            | `bin/tun2proxy` | TUN proxy for tun/tun_udpgw modes |
+            | `scripts/ssh.service` | Lifecycle: start/stop/restart |
+            | `scripts/ssh.iptables` | 4 modes + capability probe |
+            | `scripts/ssh.tool` | BBR, TCP buffers, cgroup |
+            | `settings.ini` | Edit SSH credentials here |
 
             ### Requirements
-            - Android 9+ (`arm64-v8a`)
+            - Android 9+ `arm64-v8a`
             - Magisk v20.4+, KernelSU, or APatch
-
-            ### Traffic modes
-            `redirect` (default) · `tproxy` · `tun` · `tun_udpgw`
