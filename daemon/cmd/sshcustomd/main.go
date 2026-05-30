@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"os/signal"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -92,9 +94,13 @@ type State struct {
 	netMode      string
 	poolSize     int
 	poolAvail    int
-	activeConns  int32
+	activeConns  int
 	memRSS       uint64
 	cpuPct       float64
+	upBps        float64
+	downBps      float64
+	wanIP        string
+	wanCountry   string
 	version      string
 }
 
@@ -102,6 +108,13 @@ func (s *State) set(fn func(*State)) {
 	s.mu.Lock()
 	fn(s)
 	s.mu.Unlock()
+}
+
+// wanInfo returns the cached tunnel-side public IP and country.
+func (s *State) wanInfo() (string, string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.wanIP, s.wanCountry
 }
 
 func (s *State) snapshot() api.StatusSnapshot {
@@ -118,10 +131,12 @@ func (s *State) snapshot() api.StatusSnapshot {
 		NetworkMode:      s.netMode,
 		ChannelPoolSize:  s.poolSize,
 		ChannelPoolAvail: s.poolAvail,
-		ActiveConns:      int(atomic.LoadInt32(&s.activeConns)),
+		ActiveConns:      s.activeConns,
 		Version:          s.version,
 		MemRSSMB:         float64(s.memRSS) / 1024 / 1024,
 		CPUPercent:       s.cpuPct,
+		UpKbps:           s.upBps / 1024,
+		DownKbps:         s.downBps / 1024,
 		LastError:        s.lastError,
 	}
 }
@@ -198,7 +213,7 @@ func runCmd() {
 	}()
 
 	// Metrics ticker
-	go metricsLoop(ctx, st)
+	go metricsLoop(ctx, st, &sshClient)
 
 	// Start tunnel unless idle
 	if !*idle {
@@ -238,8 +253,12 @@ func tunnelLoop(
 	st *State,
 	clientPtr *atomic.Pointer[issh.Client],
 ) {
-	delay := 3 * time.Second
-	maxDelay := 30 * time.Second
+	const baseDelay = 3 * time.Second
+	const maxDelay = 30 * time.Second
+	iptables := workDir + "/scripts/ssh.iptables"
+
+	// First attempt is immediate; backoff only applies after a failure.
+	delay := time.Duration(0)
 
 	for {
 		select {
@@ -284,11 +303,16 @@ func tunnelLoop(
 				s.lastError = err.Error()
 				s.lastEvent = "connect_failed"
 			})
-			delay = minDuration(delay*2, maxDelay)
+			// Ensure no stale redirect rules black-hole traffic while we retry.
+			runScriptTimeout(iptables, 15*time.Second, "disable")
+			if delay == 0 {
+				delay = baseDelay
+			} else {
+				delay = minDuration(delay*2, maxDelay)
+			}
 			continue
 		}
 
-		delay = 3 * time.Second
 		clientPtr.Store(c)
 		sz, av := c.PoolStats()
 		st.set(func(s *State) {
@@ -302,39 +326,76 @@ func tunnelLoop(
 		})
 		log.Printf("[tunnel] connected pool_size=%d", cfg.ChannelPoolSize)
 
-		// Apply iptables with timeout
-		runScriptTimeout(workDir+"/scripts/ssh.iptables", 30*time.Second, "enable")
+		// Bring up the local listeners FIRST so the redirect/tproxy target is
+		// already accepting before iptables starts steering traffic to it.
+		listenerCtx, listenerCancel := context.WithCancel(ctx)
 
-		// SOCKS5 listener
-		socksCtx, socksCancel := context.WithCancel(ctx)
 		socks := &proxy.SOCKS5Server{
 			Addr:   fmt.Sprintf("127.0.0.1:%d", cfg.SocksPort),
 			Client: c,
 		}
 		go func() {
-			if err := socks.ListenAndServe(socksCtx); err != nil {
+			if err := socks.ListenAndServe(listenerCtx); err != nil {
 				log.Printf("[socks5] %v", err)
 			}
 		}()
 
-		// Transparent proxy listener
-		transCtx, transCancel := context.WithCancel(ctx)
-		trans := &proxy.TransparentServer{
-			Addr:    fmt.Sprintf("0.0.0.0:%d", cfg.RedirPort),
-			Client:  c,
-			Timeout: 25 * time.Second,
-		}
-		go func() {
-			if err := trans.ListenAndServe(transCtx); err != nil {
-				log.Printf("[transparent] %v", err)
+		switch cfg.NetworkMode {
+		case "tproxy":
+			tp := &proxy.TProxyServer{
+				Addr:    fmt.Sprintf("0.0.0.0:%d", cfg.TProxyPort),
+				Client:  c,
+				Timeout: 25 * time.Second,
 			}
-		}()
+			go func() {
+				if err := tp.ListenAndServe(listenerCtx); err != nil {
+					log.Printf("[tproxy] %v", err)
+				}
+			}()
+		case "tun", "tun_udpgw":
+			// tun2proxy owns the data path; no transparent/tproxy listener.
+		default: // redirect
+			trans := &proxy.TransparentServer{
+				Addr:    fmt.Sprintf("0.0.0.0:%d", cfg.RedirPort),
+				Client:  c,
+				Timeout: 25 * time.Second,
+			}
+			go func() {
+				if err := trans.ListenAndServe(listenerCtx); err != nil {
+					log.Printf("[transparent] %v", err)
+				}
+			}()
+		}
 
-		// Launch tun2proxy if mode requires it
+		// For TUN modes, start tun2proxy and wait for the device to exist before
+		// applying iptables (the tun routing rules reference the device).
 		var tun2proxyCmd *exec.Cmd
 		if cfg.NetworkMode == "tun" || cfg.NetworkMode == "tun_udpgw" {
 			tun2proxyCmd = startTun2proxy(cfg)
+			waitForDevice(cfg.TunDevice, 5*time.Second)
+		} else {
+			// Give the listener a brief moment to bind before steering traffic.
+			time.Sleep(150 * time.Millisecond)
 		}
+
+		// Daemon owns iptables: applied only once the tunnel is up and listeners
+		// are ready (ssh.service no longer applies them).
+		runScriptTimeout(iptables, 30*time.Second, "enable")
+
+		// Resolve the tunnel-side public IP in the background and cache it so the
+		// app's WAN card can read it instantly. Refresh every 5 minutes.
+		go func(c *issh.Client) {
+			for {
+				if ip, country := fetchPublicIP(c); ip != "" {
+					st.set(func(s *State) { s.wanIP = ip; s.wanCountry = country })
+				}
+				select {
+				case <-listenerCtx.Done():
+					return
+				case <-time.After(5 * time.Minute):
+				}
+			}
+		}(c)
 
 		// Wait for SSH to die using the proper Wait() method
 		waitDone := make(chan error, 1)
@@ -350,8 +411,7 @@ func tunnelLoop(
 
 		// Teardown
 		log.Println("[tunnel] tearing down")
-		socksCancel()
-		transCancel()
+		listenerCancel()
 		if tun2proxyCmd != nil && tun2proxyCmd.Process != nil {
 			tun2proxyCmd.Process.Kill()
 		}
@@ -361,24 +421,41 @@ func tunnelLoop(
 			s.connected = false
 			s.poolSize = 0
 			s.poolAvail = 0
+			s.wanIP = ""
+			s.wanCountry = ""
 			s.lastEvent = "disconnected"
 		})
-		runScriptTimeout(workDir+"/scripts/ssh.iptables", 15*time.Second, "disable")
+		runScriptTimeout(iptables, 15*time.Second, "disable")
 
 		if ctx.Err() != nil {
 			return
 		}
+		// Reconnect attempt is immediate after an unexpected drop.
+		delay = 0
 	}
 }
 
-// startTun2proxy launches the tun2proxy binary.
+// waitForDevice blocks until a network interface named dev appears, or timeout.
+func waitForDevice(dev string, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat("/sys/class/net/" + dev); err == nil {
+			return
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+}
+
+// startTun2proxy launches the tun2proxy binary (pinned to v0.8.1 in CI).
+// We pass --tun (not --setup) and let ssh.iptables own the routing, so the
+// daemon's own SSH connection to the server is exempted via owner-match rules.
 func startTun2proxy(cfg *config.Config) *exec.Cmd {
 	bin := cfg.BinDir + "/tun2proxy"
 	args := []string{
-		"--device", cfg.TunDevice,
+		"--tun", cfg.TunDevice,
 		"--proxy", fmt.Sprintf("socks5://127.0.0.1:%d", cfg.SocksPort),
 		"--dns", "over-tcp",
-		"--loglevel", "warn",
+		"--verbosity", "warn",
 	}
 	if cfg.NetworkMode == "tun_udpgw" && cfg.UDPGWServer != "" {
 		args = append(args, "--udpgw-server", cfg.UDPGWServer)
@@ -390,7 +467,7 @@ func startTun2proxy(cfg *config.Config) *exec.Cmd {
 		log.Printf("[tun2proxy] failed to start: %v", err)
 		return nil
 	}
-	log.Printf("[tun2proxy] started pid=%d", cmd.Process.Pid)
+	log.Printf("[tun2proxy] started pid=%d (tun=%s)", cmd.Process.Pid, cfg.TunDevice)
 	return cmd
 }
 
@@ -503,6 +580,20 @@ func buildHTTPMux(
 		env(w, true, cfg, "")
 	})
 
+	// Public IP as seen through the tunnel (used by the app's WAN card). Served
+	// from the daemon's cache (refreshed on connect) so the app's short HTTP
+	// timeout isn't blocked by a live through-tunnel lookup.
+	mux.HandleFunc("/api/v1/network/public-ip", func(w http.ResponseWriter, r *http.Request) {
+		ip, country := st.wanInfo()
+		if ip == "" {
+			env(w, false, nil, "resolving")
+			return
+		}
+		env(w, true, map[string]interface{}{
+			"tunnel": map[string]string{"ip": ip, "country": country},
+		}, "")
+	})
+
 	// Serve on-disk WebUI at root (no embedded — companion app is the primary UI)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		webrootIndex := workDir + "/webroot/index.html"
@@ -518,18 +609,156 @@ func buildHTTPMux(
 
 // ── Metrics ───────────────────────────────────────────────────────────────────
 
-func metricsLoop(ctx context.Context, st *State) {
-	ticker := time.NewTicker(20 * time.Second)
+// fetchPublicIP dials a lightweight IP-echo service through the SSH tunnel and
+// returns the tunnel-side public IP and country. Best-effort: returns empty on
+// any failure.
+func fetchPublicIP(c *issh.Client) (ip string, country string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	conn, err := c.DialTCP(ctx, "tcp", "ip-api.com:80")
+	if err != nil {
+		return "", ""
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(8 * time.Second))
+
+	// HTTP/1.0 so the server closes the connection after the body (no chunking).
+	req := "GET /json/?fields=query,country HTTP/1.0\r\n" +
+		"Host: ip-api.com\r\nUser-Agent: sshcustomd\r\n\r\n"
+	if _, err := conn.Write([]byte(req)); err != nil {
+		return "", ""
+	}
+
+	raw, err := io.ReadAll(conn)
+	if err != nil && len(raw) == 0 {
+		return "", ""
+	}
+	body := string(raw)
+	if i := strings.Index(body, "\r\n\r\n"); i >= 0 {
+		body = body[i+4:]
+	}
+	var resp struct {
+		Query   string `json:"query"`
+		Country string `json:"country"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(body)), &resp); err != nil {
+		return "", ""
+	}
+	return resp.Query, resp.Country
+}
+
+// clkTck is the kernel USER_HZ (clock ticks per second). 100 on Android/Linux.
+const clkTck = 100.0
+
+func metricsLoop(ctx context.Context, st *State, clientPtr *atomic.Pointer[issh.Client]) {
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
+
+	prevCPU := readCPUTicks()
+	prevRx, prevTx := readNetBytes()
+	prevT := time.Now()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case now := <-ticker.C:
+			dt := now.Sub(prevT).Seconds()
+
 			rss := readRSS()
-			st.set(func(s *State) { s.memRSS = rss })
+
+			// CPU% over the interval (sum of user+system ticks / USER_HZ / dt).
+			curCPU := readCPUTicks()
+			cpu := 0.0
+			if dt > 0 && curCPU >= prevCPU {
+				cpu = float64(curCPU-prevCPU) / clkTck / dt * 100.0
+			}
+
+			// Net throughput (bytes/sec) across all non-loopback interfaces.
+			rx, tx := readNetBytes()
+			up, down := 0.0, 0.0
+			if dt > 0 {
+				if tx >= prevTx {
+					up = float64(tx-prevTx) / dt
+				}
+				if rx >= prevRx {
+					down = float64(rx-prevRx) / dt
+				}
+			}
+
+			prevCPU = curCPU
+			prevRx, prevTx = rx, tx
+			prevT = now
+
+			ps, pa, ac := 0, 0, 0
+			if c := clientPtr.Load(); c != nil {
+				ps, pa = c.PoolStats()
+				ac = c.ActiveConns()
+			}
+
+			st.set(func(s *State) {
+				s.memRSS = rss
+				s.cpuPct = cpu
+				s.upBps = up
+				s.downBps = down
+				s.poolSize = ps
+				s.poolAvail = pa
+				s.activeConns = ac
+			})
 		}
 	}
+}
+
+// readCPUTicks returns this process's cumulative (utime+stime) in clock ticks.
+func readCPUTicks() uint64 {
+	data, err := os.ReadFile("/proc/self/stat")
+	if err != nil {
+		return 0
+	}
+	s := string(data)
+	// The comm field (2nd) is parenthesised and may contain spaces; parse the
+	// fields after the final ')'. utime is field 14, stime field 15 (1-indexed),
+	// i.e. indices 11 and 12 in the post-')' slice (which starts at field 3).
+	rp := strings.LastIndexByte(s, ')')
+	if rp < 0 || rp+1 >= len(s) {
+		return 0
+	}
+	fields := strings.Fields(s[rp+1:])
+	if len(fields) < 13 {
+		return 0
+	}
+	utime, _ := strconv.ParseUint(fields[11], 10, 64)
+	stime, _ := strconv.ParseUint(fields[12], 10, 64)
+	return utime + stime
+}
+
+// readNetBytes sums received/transmitted bytes across all non-loopback
+// interfaces from /proc/net/dev (the daemon is root, so this is readable).
+func readNetBytes() (rx uint64, tx uint64) {
+	data, err := os.ReadFile("/proc/net/dev")
+	if err != nil {
+		return 0, 0
+	}
+	for _, line := range splitLines(data) {
+		idx := strings.IndexByte(line, ':')
+		if idx < 0 {
+			continue
+		}
+		iface := strings.TrimSpace(line[:idx])
+		if iface == "" || iface == "lo" {
+			continue
+		}
+		fields := strings.Fields(line[idx+1:])
+		if len(fields) < 9 {
+			continue
+		}
+		r, _ := strconv.ParseUint(fields[0], 10, 64) // recv bytes
+		t, _ := strconv.ParseUint(fields[8], 10, 64) // transmit bytes
+		rx += r
+		tx += t
+	}
+	return rx, tx
 }
 
 func readRSS() uint64 {

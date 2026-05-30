@@ -17,6 +17,8 @@ data class DaemonStatus(
     val version: String = "",
     val memRssMb: Double = 0.0,
     val cpuPercent: Double = 0.0,
+    val upKbps: Double = 0.0,
+    val downKbps: Double = 0.0,
     val lastError: String = "",
 )
 

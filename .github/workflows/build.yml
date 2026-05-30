@@ -32,7 +32,7 @@ jobs:
           echo "TOOLCHAIN=/opt/android-ndk-${{ env.ANDROID_NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64" >> "$GITHUB_ENV"
 
       - name: Clone tun2proxy
-        run: git clone --depth 1 https://github.com/tun2proxy/tun2proxy.git /tmp/tun2proxy
+        run: git clone --depth 1 --branch v0.8.1 https://github.com/tun2proxy/tun2proxy.git /tmp/tun2proxy
 
       - name: Build tun2proxy for aarch64-linux-android
         run: |

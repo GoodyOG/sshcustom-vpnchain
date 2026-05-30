@@ -13,6 +13,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	xssh "golang.org/x/crypto/ssh"
@@ -56,7 +57,16 @@ type Client struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	closed  chan struct{}
+
+	activeConns int32 // number of in-flight proxied connections
 }
+
+// AddConn / RemoveConn track in-flight proxied connections for the status UI.
+func (c *Client) AddConn()    { atomic.AddInt32(&c.activeConns, 1) }
+func (c *Client) RemoveConn() { atomic.AddInt32(&c.activeConns, -1) }
+
+// ActiveConns returns the current number of in-flight proxied connections.
+func (c *Client) ActiveConns() int { return int(atomic.LoadInt32(&c.activeConns)) }
 
 // Dial establishes an SSH connection using the configured transport mode.
 func Dial(ctx context.Context, cfg ConnectConfig, poolSize int) (*Client, error) {

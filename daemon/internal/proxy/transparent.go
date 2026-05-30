@@ -69,6 +69,9 @@ func (t *TransparentServer) handle(ctx context.Context, conn net.Conn) {
 	}
 	defer remote.Close()
 
+	t.Client.AddConn()
+	defer t.Client.RemoveConn()
+
 	// relay uses interface check for half-close — safe for SSH channels
 	relay(conn, remote)
 }

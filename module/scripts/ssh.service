@@ -161,18 +161,11 @@ start_service() {
   # Apply cgroup blkio (non-fatal — some kernels don't support it)
   sh "${TOOL}" blkio >> "${box_log}" 2>&1 || true
 
-  # Apply iptables rules.
-  # We run this in a subshell so a non-zero exit does NOT kill our start sequence.
-  # Errors are logged but the tunnel is considered started even if iptables has
-  # minor issues (e.g., missing TPROXY on older kernels falls back gracefully).
-  if sh "${IPTABLES}" enable >> "${box_log}" 2>&1; then
-    log Info "service: iptables rules applied"
-  else
-    # Non-zero from ssh.iptables is usually due to partial failures that were
-    # already handled internally. Log the warning but continue.
-    log Warning "service: iptables enable returned non-zero — check log for details"
-    log Warning "service: tunnel may still function; verify with 'ssh.service status'"
-  fi
+  # NOTE: iptables are now managed by the daemon. The daemon applies the rules
+  # only AFTER the SSH tunnel connects (and the local listeners are bound), and
+  # removes them on disconnect or connect failure. This avoids a window where
+  # traffic is redirected to a proxy port before the tunnel is up, and prevents
+  # stale rules from black-holing traffic if the connection never succeeds.
 
   set_description running
   log Info "service: started successfully"

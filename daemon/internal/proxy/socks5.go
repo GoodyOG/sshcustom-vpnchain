@@ -105,6 +105,9 @@ func (s *SOCKS5Server) handle(ctx context.Context, conn net.Conn) {
 	}
 	defer remote.Close()
 
+	s.Client.AddConn()
+	defer s.Client.RemoveConn()
+
 	// Success reply
 	conn.Write([]byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0})
 

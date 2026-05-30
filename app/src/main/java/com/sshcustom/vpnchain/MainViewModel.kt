@@ -38,9 +38,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ── Daemon status — polled every 1s, suspended when no UI collectors ──────
+    // ── Daemon status — polled every 1s. Eagerly so the last known state is
+    // retained across app backgrounding (no "Stopped" flash on resume). ───────
     val status: StateFlow<DaemonStatus> = repo.statusFlow()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DaemonStatus())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, DaemonStatus())
 
     // ── Tunnel state — derived + overridden during transitions ────────────────
     private val _tunnelStateOverride = MutableStateFlow<TunnelState?>(null)
@@ -56,19 +57,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             s.lastError.isNotEmpty() && !s.connected -> TunnelState.Error(s.lastError)
             else -> TunnelState.Stopped
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TunnelState.Stopped)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, TunnelState.Stopped)
+
+    // ── Which action is in flight ("start" | "stop" | "restart" | null) so the
+    // Home buttons can show the correct spinner. ──────────────────────────────
+    private val _pendingAction = MutableStateFlow<String?>(null)
+    val pendingAction: StateFlow<String?> = _pendingAction
 
     // ── Loading state (shown during start/stop/restart) ───────────────────────
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading
 
-    // ── Net speed ─────────────────────────────────────────────────────────────
-    val netSpeed: StateFlow<NetSpeed> = repo.netSpeedFlow()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NetSpeed())
+    // ── Net speed — derived from the daemon status (root-side measurement) ────
+    val netSpeed: StateFlow<NetSpeed> = status
+        .map { NetSpeed(it.upKbps.toFloat(), it.downKbps.toFloat()) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, NetSpeed())
 
     // ── WAN IP ────────────────────────────────────────────────────────────────
     val wanIp: StateFlow<String> = repo.wanIpFlow()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "—")
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "—")
 
     // ── Logs ──────────────────────────────────────────────────────────────────
     private val _logText = MutableStateFlow("")
@@ -189,6 +196,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun startTunnel() = viewModelScope.launch {
         _isLoading.value = true
+        _pendingAction.value = "start"
         _tunnelStateOverride.value = TunnelState.Starting
         withContext(Dispatchers.IO) {
             try {
@@ -203,12 +211,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // Clear override after 8s — by then status polling will reflect reality
         delay(8_000)
         _tunnelStateOverride.value = null
+        _pendingAction.value = null
         _isLoading.value = false
         settingsNeedRestart = false
     }
 
     fun stopTunnel() = viewModelScope.launch {
         _isLoading.value = true
+        _pendingAction.value = "stop"
         _tunnelStateOverride.value = TunnelState.Stopping
         withContext(Dispatchers.IO) {
             try {
@@ -222,11 +232,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         delay(5_000)
         _tunnelStateOverride.value = null
+        _pendingAction.value = null
         _isLoading.value = false
     }
 
     fun restartTunnel() = viewModelScope.launch {
         _isLoading.value = true
+        _pendingAction.value = "restart"
         _tunnelStateOverride.value = TunnelState.Stopping
         withContext(Dispatchers.IO) {
             try {
@@ -242,18 +254,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _tunnelStateOverride.value = TunnelState.Starting
         delay(8_000)
         _tunnelStateOverride.value = null
+        _pendingAction.value = null
         _isLoading.value = false
         settingsNeedRestart = false
     }
 
     fun reloadConfig() = restartTunnel()
-
-    fun forceCleanup() = viewModelScope.launch(Dispatchers.IO) {
-        try {
-            rootBinder?.forceCleanup()
-                ?: Shell.cmd("sh /data/adb/sshcustom/scripts/ssh.iptables disable").exec()
-        } catch (_: Exception) {}
-    }
 
     // ── Logs ──────────────────────────────────────────────────────────────────
 
