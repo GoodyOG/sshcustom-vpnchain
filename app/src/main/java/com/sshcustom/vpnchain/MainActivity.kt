@@ -4,11 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sshcustom.vpnchain.ui.screens.*
 import com.sshcustom.vpnchain.ui.theme.SSHCustomTheme
@@ -33,15 +29,15 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainAppContent() {
     val vm: MainViewModel = viewModel()
-    val status        by vm.status.collectAsState()
-    val tunnelState   by vm.tunnelState.collectAsState()
-    val netSpeed      by vm.netSpeed.collectAsState()
-    val wanIp         by vm.wanIp.collectAsState()
-    val logText       by vm.logText.collectAsState()
-    val profiles      by vm.profiles.collectAsState()
-    val settings      by vm.settings.collectAsState()
-    val hasRoot       by vm.hasRoot.collectAsState()
-    val isLoading     by vm.isLoading.collectAsState()
+    val status      by vm.status.collectAsState()
+    val tunnelState by vm.tunnelState.collectAsState()
+    val netSpeed    by vm.netSpeed.collectAsState()
+    val wanIp       by vm.wanIp.collectAsState()
+    val logText     by vm.logText.collectAsState()
+    val profiles    by vm.profiles.collectAsState()
+    val settings    by vm.settings.collectAsState()
+    val hasRoot     by vm.hasRoot.collectAsState()
+    val isLoading   by vm.isLoading.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
 
@@ -55,12 +51,12 @@ fun MainAppContent() {
 
     Scaffold(
         topBar = { TopAppBar(title = tabs[selectedTab]) },
+        // miuix NavigationBar handles its own window-insets padding internally
         bottomBar = {
             NavigationBar(
                 items = navItems,
                 selected = selectedTab,
                 onClick = { selectedTab = it },
-                modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)
             )
         }
     ) { paddingValues ->
