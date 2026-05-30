@@ -163,7 +163,15 @@ func dialTransport(ctx context.Context, cfg ConnectConfig, timeout time.Duration
 				return nil, fmt.Errorf("payload write: %w", err)
 			}
 			log.Printf("[payload] sent %d bytes to %s", len(p), addr)
-			return drainPayloadResponse(ctx, conn), nil
+			// Wait for the real SSH banner, discarding any/all HTTP acks first
+			// (HTTP Injector / HTTP Custom behaviour). Far more robust than
+			// trusting a single HTTP status.
+			out, derr := awaitSSHBanner(ctx, conn)
+			if derr != nil {
+				conn.Close()
+				return nil, derr
+			}
+			return out, nil
 		}
 		return conn, nil
 
@@ -320,6 +328,54 @@ func readHTTPHeaderBlock(br *bufio.Reader) (string, error) {
 		}
 		if err != nil {
 			return status, err
+		}
+	}
+}
+
+// awaitSSHBanner is used after an injection payload in direct mode. The server
+// (or WebSocket/CDN bridge) may reply with one or more HTTP responses
+// (101 Switching Protocols, 200, 302, …) which are carrier-fooling noise; we
+// discard them all and keep reading until the real SSH identification banner
+// ("SSH-…") appears, then hand the socket — with the banner preserved — to the
+// SSH handshake. This mirrors HTTP Injector / HTTP Custom behaviour and is far
+// more robust than trusting a single HTTP status. If no banner arrives before
+// the deadline (or the server closes after a redirect), it returns a clear
+// error instead of letting the SSH handshake fail with a cryptic EOF.
+func awaitSSHBanner(ctx context.Context, conn net.Conn) (net.Conn, error) {
+	deadline := time.Now().Add(payloadDrainTimeout)
+	if dl, ok := ctx.Deadline(); ok && dl.Before(deadline) {
+		deadline = dl
+	}
+	_ = conn.SetReadDeadline(deadline)
+	defer conn.SetReadDeadline(time.Time{})
+
+	br := bufio.NewReader(conn)
+	var lastStatus string
+	for {
+		peek, err := br.Peek(4)
+		if err != nil {
+			if lastStatus != "" {
+				return nil, fmt.Errorf("server rejected upgrade (%s) — no SSH banner", lastStatus)
+			}
+			return nil, fmt.Errorf("payload response: %w", err)
+		}
+		switch string(peek) {
+		case "SSH-":
+			// Real SSH banner — hand off with it preserved.
+			return wrapBuffered(conn, br), nil
+		case "HTTP":
+			status, herr := readHTTPHeaderBlock(br)
+			if status != "" {
+				lastStatus = status
+				log.Printf("[payload] server response: %s", status)
+			}
+			if herr != nil {
+				return nil, fmt.Errorf("server response %q ended early: %w", status, herr)
+			}
+			// keep reading — the SSH banner should follow
+		default:
+			// Neither HTTP nor SSH: assume a raw-prefix bridge; hand off as-is.
+			return wrapBuffered(conn, br), nil
 		}
 	}
 }

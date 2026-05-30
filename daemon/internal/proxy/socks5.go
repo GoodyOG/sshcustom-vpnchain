@@ -18,7 +18,7 @@ const copyBuf = 128 * 1024
 // SOCKS5Server listens on addr and proxies connections through the SSH client.
 type SOCKS5Server struct {
 	Addr   string
-	Client *issh.Client
+	Client func() *issh.Client // current SSH client; nil during a reconnect gap
 }
 
 // ListenAndServe starts the SOCKS5 server.
@@ -98,15 +98,20 @@ func (s *SOCKS5Server) handle(ctx context.Context, conn net.Conn) {
 
 	conn.SetDeadline(time.Time{}) // reset deadline for data transfer
 
-	remote, err := s.Client.DialTCP(ctx, "tcp", target)
+	cl := s.Client()
+	if cl == nil {
+		conn.Write([]byte{5, 4, 0, 1, 0, 0, 0, 0, 0, 0}) // host unreachable (reconnecting)
+		return
+	}
+	remote, err := cl.DialTCP(ctx, "tcp", target)
 	if err != nil {
 		conn.Write([]byte{5, 4, 0, 1, 0, 0, 0, 0, 0, 0})
 		return
 	}
 	defer remote.Close()
 
-	s.Client.AddConn()
-	defer s.Client.RemoveConn()
+	cl.AddConn()
+	defer cl.RemoveConn()
 
 	// Success reply
 	conn.Write([]byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0})
