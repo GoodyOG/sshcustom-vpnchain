@@ -1,0 +1,81 @@
+Ok, it connected and is working, all apps work well.
+8tcdoes take a while to connect, upto 10 sec. what's happening there 
+
+minor ui bug, when I minimize the app to go do another then, if I come back to thr app, it shows the home tab in stopped stage(start ) for a sec, then before it shows the running state. maybe fix that. Also I want Start, Stop and Restart button always showing to make it easier. the when any button is clicked, it shows Starting, Stopping, restarting, with spinning, just like in box app(screenshot). So in setting, u can remove the force iptable cleanup, since stop button ,will now be visible always and it does the cleanup, also make it if connecting fails, it cleans up the iptables too. 
+
+also in homepage, the wan, netsoeed and pool don't do anything, same with cpu, just shows 0.0%, don't know,if it's working. So what's  going on there, 
+
+here is to box app https://github.com/GoodyOG/sshcustom-vpnchain/blob/main/docs/box-20260523-1954-release.apk , dicect with apktool to analyze how it works, also let me know what u can learn from the apk and what u discovered. 
+
+
+
+Here is logs:
+
+2026-05-30 15:53:26 service starting...
+2026/05/30 15:53:26 [http] listening on 127.0.0.1:9190
+2026/05/30 15:53:26 [unix-api] listening on /data/adb/sshcustom/run/sshcustomd.sock
+15:53 [Info]: service: daemon started pid=17903 flags=-c /data/adb/sshcustom/settings.ini -w /data/adb/sshcustom
+15:53 [Info]: service: API ready
+15:53 [Debug]: cap: tproxy4=true tproxy6=true conntrack=true connmark=true ipset=false ip6_nat=false
+15:53 [Info]: iptables: mode=redirect dns=disable quic=disable ipv6=false
+2026/05/30 15:53:29 [tunnel] connecting to www.bc.game:80 mode=direct
+2026/05/30 15:53:29 [dnsx] resolved www.bc.game via 8.8.8.8:53 -> [104.18.28.120 104.18.29.120]
+2026/05/30 15:53:30 [dnsx] www.bc.game -> 104.18.28.120 (dial 104.18.28.120:80)
+2026/05/30 15:53:30 [payload] sent 87 bytes to www.bc.game:80
+2026/05/30 15:53:30 [payload] server response: HTTP/1.1 101 Switching Protocols
+2026/05/30 15:53:30 [tunnel] connected pool_size=8
+15:53 [Debug]: cap: loaded from cache
+15:53 [Info]: iptables: mode=redirect dns=disable quic=disable ipv6=false
+15:53 [Info]: iptables: QUIC (UDP 443/80) blocked via DROP
+15:53 [Info]: redirect: rules applied (port=9799)
+15:53 [Info]: iptables: iptables -w 100 REDIRECT rules applied
+15:53 [Info]: service: iptables rules applied
+15:53 [Info]: service: started successfully
+15:53 [Info]: iptables: QUIC (UDP 443/80) blocked via DROP
+15:53 [Info]: redirect: rules applied (port=9799)
+15:53 [Info]: iptables: iptables -w 100 REDIRECT rules applied
+2026/05/30 15:53:36 [socks5] listening on 127.0.0.1:1081
+2026/05/30 15:53:36 [transparent] listening on 0.0.0.0:9799
+16:02 [Info]: service: stopping SSHCustom-VPNChain...
+16:02 [Warning]: iptables: disabling — cleaning all rules
+16:02 [Info]: iptables: all rules removed — device in clean state
+16:02 [Info]: service: stopping daemon pid=17903
+2026/05/30 16:02:49 [main] signal terminated — shutting down
+2026/05/30 16:02:49 [tunnel] tearing down
+16:02 [Warning]: iptables: disabling — cleaning all rules
+16:02 [Info]: service: stopped — device in clean state
+16:02 [Info]: iptables: all rules removed — device in clean state
+
+
+connected after with Hotspot sharing, logs:
+
+2026-05-30 16:05:17 service starting...
+2026/05/30 16:05:18 [http] listening on 127.0.0.1:9190
+2026/05/30 16:05:18 [unix-api] listening on /data/adb/sshcustom/run/sshcustomd.sock
+16:05 [Info]: service: daemon started pid=25547 flags=-c /data/adb/sshcustom/settings.ini -w /data/adb/sshcustom
+16:05 [Info]: service: API ready
+16:05 [Debug]: cap: loaded from cache
+16:05 [Info]: iptables: mode=redirect dns=disable quic=disable ipv6=false
+2026/05/30 16:05:21 [tunnel] connecting to www.bc.game:80 mode=direct
+2026/05/30 16:05:21 [dnsx] resolved www.bc.game via 8.8.8.8:53 -> [104.18.29.120 104.18.28.120]
+2026/05/30 16:05:21 [dnsx] www.bc.game -> 104.18.29.120 (dial 104.18.29.120:80)
+2026/05/30 16:05:21 [payload] sent 87 bytes to www.bc.game:80
+2026/05/30 16:05:21 [payload] server response: HTTP/1.1 101 Switching Protocols
+2026/05/30 16:05:22 [tunnel] connected pool_size=8
+16:05 [Debug]: cap: loaded from cache
+16:05 [Info]: iptables: mode=redirect dns=disable quic=disable ipv6=false
+16:05 [Info]: redirect: hotspot sharing enabled via SSHC_HOTSPOT
+16:05 [Info]: iptables: QUIC (UDP 443/80) blocked via DROP
+16:05 [Info]: redirect: rules applied (port=9799)
+16:05 [Info]: iptables: iptables -w 100 REDIRECT rules applied
+16:05 [Info]: service: iptables rules applied
+16:05 [Info]: service: started successfully
+16:05 [Info]: redirect: hotspot sharing enabled via SSHC_HOTSPOT
+16:05 [Info]: iptables: QUIC (UDP 443/80) blocked via DROP
+16:05 [Info]: redirect: rules applied (port=9799)
+16:05 [Info]: iptables: iptables -w 100 REDIRECT rules applied
+2026/05/30 16:05:27 [socks5] listening on 127.0.0.1:1081
+2026/05/30 16:05:27 [transparent] listening on 0.0.0.0:9799
+
+
+So just analyze extensively and report to me your report in details, including all your plans, wait for my go order.r
