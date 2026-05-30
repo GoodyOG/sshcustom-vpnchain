@@ -1,0 +1,27 @@
+2026-05-30 14:38:27 service starting...
+2026/05/30 14:38:27 [http] listening on 127.0.0.1:9190
+2026/05/30 14:38:27 [unix-api] listening on /data/adb/sshcustom/run/sshcustomd.sock
+14:38 [Info]: service: daemon started pid=18897 flags=-c /data/adb/sshcustom/settings.ini -w /data/adb/sshcustom
+14:38 [Info]: service: API ready
+14:38 [Debug]: cap: tproxy4=true tproxy6=true conntrack=true connmark=true ipset=false ip6_nat=false
+14:38 [Info]: iptables: mode=redirect dns=disable quic=disable ipv6=false
+2026/05/30 14:38:30 [tunnel] ssh_host/ssh_user not configured — waiting
+14:38 [Info]: iptables: QUIC (UDP 443/80) blocked via DROP
+14:38 [Info]: redirect: rules applied (port=9799)
+14:38 [Info]: iptables: iptables -w 100 REDIRECT rules applied
+14:38 [Info]: service: iptables rules applied
+14:38 [Info]: service: started successfully
+2026/05/30 14:38:40 [tunnel] ssh_host/ssh_user not configured — waiting
+2026/05/30 14:38:50 [tunnel] ssh_host/ssh_user not configured — waiting
+2026/05/30 14:39:00 [tunnel] ssh_host/ssh_user not configured — waiting
+2026/05/30 14:39:10 [tunnel] ssh_host/ssh_user not configured — waiting
+2026/05/30 14:39:20 [tunnel] ssh_host/ssh_user not configured — waiting
+14:39 [Info]: service: running pid=18897 mem=7 MB mode=redirect
+14:39 [Info]: service: API online at http://127.0.0.1:9190
+14:39 [Info]: service: stopping SSHCustom-VPNChain...
+14:39 [Warning]: iptables: disabling — cleaning all rules
+2026/05/30 14:39:30 [tunnel] ssh_host/ssh_user not configured — waiting
+14:39 [Info]: iptables: all rules removed — device in clean state
+14:39 [Info]: service: stopping daemon pid=18897
+2026/05/30 14:39:32 [main] signal terminated — shutting down
+14:39 [Info]: service: stopped — device in clean state
