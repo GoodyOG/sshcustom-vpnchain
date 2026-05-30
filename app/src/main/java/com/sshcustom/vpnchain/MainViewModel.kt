@@ -74,16 +74,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _logText = MutableStateFlow("")
     val logText: StateFlow<String> = _logText
 
-    // Which log file to show: "core" | "control" | "action"
+    // Which log file to show: "core" | "boot" | "tool"
     private val _activeLog = MutableStateFlow("core")
     val activeLog: StateFlow<String> = _activeLog
 
     private var logPollingJob: Job? = null
 
     private val LOG_PATHS = mapOf(
-        "core"    to "/data/adb/sshcustom/run/sshcustom.log",
-        "control" to "/data/adb/sshcustom/run/control.log",
-        "action"  to "/data/adb/sshcustom/run/boot.log",
+        "core" to "/data/adb/sshcustom/run/sshcustom.log",
+        "boot" to "/data/adb/sshcustom/run/boot.log",
+        "tool" to "/data/adb/sshcustom/run/tool.log",
     )
 
     fun switchLog(type: String) {
