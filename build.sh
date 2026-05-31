@@ -76,19 +76,20 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
   ./cmd/sshcustomd/
 
 echo "==> Building tun2socks for ARM64"
-# Clone tun2socks if not already present
+# Clone tun2socks if not already present (pinned to v2.5.2 for stable build path)
 TUN2SOCKS_SRC="$DIST/tun2socks-src"
 if [ ! -d "$TUN2SOCKS_SRC" ]; then
-  git clone --depth 1 https://github.com/xjasonlyu/tun2socks.git "$TUN2SOCKS_SRC"
+  git clone --depth 1 --branch v2.5.2 https://github.com/xjasonlyu/tun2socks.git "$TUN2SOCKS_SRC"
 fi
 (
   cd "$TUN2SOCKS_SRC"
+  # tun2socks v2.5.x has main package at repo root
   GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
     -trimpath \
     -buildvcs=false \
     -ldflags="-s -w" \
     -o "$TUN2SOCKS_BIN" \
-    ./cmd/tun2socks
+    .
 )
 echo "   tun2socks built: $(ls -lh "$TUN2SOCKS_BIN" | awk '{print $5}')"
 
