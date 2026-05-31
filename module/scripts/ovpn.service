@@ -68,14 +68,19 @@ start_ovpn() {
 
   # OpenVPN reaches the Windscribe server through the SSH SOCKS5 proxy (free
   # bug-host path). --dev is forced so vpnchain.iptables and OpenVPN agree.
-  # --route-nopull prevents OpenVPN from adding routes (vpnchain.iptables
-  # handles routing via policy marks), fixing RTNETLINK errors.
+  # We DROP redirect-gateway/dhcp-option/tcp-nodelay/socket-flags via
+  # --pull-filter (OpenVPN-on-Android can't apply them, and rejecting them with
+  # --route-nopull blocks the tun config too). vpnchain.iptables handles
+  # device-default-route policy via fwmark, so we don't need redirect-gateway.
   # shellcheck disable=SC2086
   nohup "${OVPN_BIN}" \
     --config "${cfg}" \
-    --route-nopull \
     --dev "${OVPN_TUN}" \
     --socks-proxy 127.0.0.1 "${socks_port}" \
+    --pull-filter ignore "redirect-gateway" \
+    --pull-filter ignore "dhcp-option" \
+    --pull-filter ignore "tcp-nodelay" \
+    --pull-filter ignore "socket-flags" \
     ${auth_arg} \
     --auth-nocache \
     --persist-tun \
@@ -130,7 +135,9 @@ stop_ovpn() {
   rm -f "${OVPN_PID}"
 
   # Now disable vpnchain routing (restores carrier route from saved file).
-  sh "${VPNCHAIN_IPT}" disable >> "${box_log}" 2>&1 || true
+  # force-disable does aggressive cleanup: kill openvpn, drop tun1, restore
+  # carrier route. Safe even if some of those already happened above.
+  sh "${VPNCHAIN_IPT}" force-disable >> "${box_log}" 2>&1 || true
 
   # Remove marker and restore SSH iptables.
   rm -f "${MARKER}"

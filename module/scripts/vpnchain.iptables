@@ -39,9 +39,10 @@ real_default() {
 
 enable_chain() {
   # Save the current carrier default route BEFORE adding the side table.
+  # This is the canonical record we restore on disable.
   mkdir -p "$(dirname "${CARRIER_ROUTE_FILE}")" 2>/dev/null || true
   local rd
-  rd="$(real_default)"
+  rd="$(ip route show table main default 2>/dev/null | grep -v 'tun' | head -1)"
   if [ -n "${rd}" ]; then
     printf '%s\n' "${rd}" > "${CARRIER_ROUTE_FILE}" 2>/dev/null || true
     # Side table with the real default so the SSH daemon's bug-host traffic
@@ -79,14 +80,21 @@ disable_chain() {
   ip rule del pref "${VPN_PREF}" >/dev/null 2>&1 || true
   ip route flush table "${VPN_TABLE}" >/dev/null 2>&1 || true
 
-  # Restore the carrier default route from the saved file.
+  # Force-restore the carrier default route from the saved file.
+  # ip route replace overrides any stale tun1 default; if we still can't
+  # reach 1.1.1.1 afterwards, force-add it (replace is a no-op if the route
+  # already exists, add fails if it does — so we only fall back).
   if [ -f "${CARRIER_ROUTE_FILE}" ]; then
-    local saved_route
-    saved_route="$(cat "${CARRIER_ROUTE_FILE}" 2>/dev/null)"
-    if [ -n "${saved_route}" ]; then
+    local saved
+    saved="$(cat "${CARRIER_ROUTE_FILE}" 2>/dev/null)"
+    if [ -n "${saved}" ]; then
       # shellcheck disable=SC2086
-      ip route replace ${saved_route} >/dev/null 2>&1 || true
-      log Info "vpnchain: carrier route restored: ${saved_route}"
+      ip route replace ${saved} >/dev/null 2>&1 || true
+      if ! ip route get 1.1.1.1 >/dev/null 2>&1; then
+        # shellcheck disable=SC2086
+        ip route add ${saved} >/dev/null 2>&1 || true
+      fi
+      log Info "vpnchain: carrier route restored: ${saved}"
     fi
     rm -f "${CARRIER_ROUTE_FILE}" 2>/dev/null || true
   fi
@@ -95,10 +103,24 @@ disable_chain() {
   return 0
 }
 
+# force_disable_chain — aggressive cleanup for the Stop button. Kills any
+# stray OpenVPN, removes tun1 unconditionally, then runs the normal disable
+# (which restores the carrier route).
+force_disable_chain() {
+  killall openvpn 2>/dev/null || true
+  ip link set tun1 down 2>/dev/null || true
+  ip tuntap del tun1 mode tun 2>/dev/null || true
+  ip link del tun1 2>/dev/null || true
+  disable_chain
+  log Info "vpnchain: force-disable complete (tun1 removed, carrier route restored)"
+  return 0
+}
+
 case "${1:-}" in
-  enable)  enable_chain ;;
-  disable) disable_chain ;;
-  *) printf 'Usage: %s {enable|disable}\n' "$0" >&2; exit 1 ;;
+  enable)        enable_chain ;;
+  disable)       disable_chain ;;
+  force-disable) force_disable_chain ;;
+  *) printf 'Usage: %s {enable|disable|force-disable}\n' "$0" >&2; exit 1 ;;
 esac
 
 exit 0

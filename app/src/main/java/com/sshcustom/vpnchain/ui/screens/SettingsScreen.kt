@@ -7,6 +7,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -229,12 +230,25 @@ fun SettingsScreen(
                 }
             }
 
-            // ── About — info rows have NO arrow (not navigating anywhere) ─────
+            // ── About — Developer + Source rows are tappable links ────────────
             settingsSection("About") {
                 item {
+                    val context = LocalContext.current
+                    val openUrl: (String) -> Unit = { url ->
+                        runCatching {
+                            val intent = android.content.Intent(
+                                android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse(url),
+                            ).apply {
+                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        }
+                    }
                     Card(Modifier.fillMaxWidth()) {
                         BasicComponent(
                             title        = "Developer",
+                            onClick      = { openUrl("https://github.com/GoodyOG") },
                             rightActions = {
                                 Text("GoodyOG",
                                     color    = MiuixTheme.colorScheme.onSurfaceVariantActions,
@@ -243,6 +257,7 @@ fun SettingsScreen(
                         )
                         BasicComponent(
                             title        = "Source",
+                            onClick      = { openUrl("https://github.com/GoodyOG/sshcustom-vpnchain") },
                             rightActions = {
                                 Text("github.com/GoodyOG/sshcustom-vpnchain",
                                     color    = MiuixTheme.colorScheme.onSurfaceVariantActions,

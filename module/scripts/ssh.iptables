@@ -133,6 +133,29 @@ apply_capability_downgrades() {
 }
 
 
+# ── DNS-through-tunnel chain (SSHC_DNS) ──────────────────────────────────────
+# Redirects device UDP:53 traffic to our local forwarder (sshcustomd at
+# 127.0.0.1:5353), which proxies queries through the SSH tunnel as TCP DNS.
+# CRITICAL: Skip uid 0 so the SSH daemon's own dnsx queries (also uid 0) go
+# direct to carrier DNS — otherwise they'd loop through this chain back into
+# themselves.
+setup_dns_forward() {
+  ${IPV} -t nat -N SSHC_DNS >/dev/null 2>&1 || true
+  ${IPV} -t nat -F SSHC_DNS >/dev/null 2>&1 || true
+  ${IPV} -t nat -A SSHC_DNS -m owner --uid-owner 0 -j RETURN >/dev/null 2>&1 || true
+  ${IPV} -t nat -A SSHC_DNS -p udp --dport 53 -j DNAT --to-destination 127.0.0.1:5353 >/dev/null 2>&1 || true
+  ${IPV} -t nat -C OUTPUT -p udp --dport 53 -j SSHC_DNS >/dev/null 2>&1 || \
+    ${IPV} -t nat -A OUTPUT -p udp --dport 53 -j SSHC_DNS >/dev/null 2>&1 || true
+  log Info "iptables: DNS-through-tunnel enabled (UDP:53 → 127.0.0.1:5353, uid 0 bypass)"
+}
+
+cleanup_dns_forward() {
+  ${IPV} -t nat -D OUTPUT -p udp --dport 53 -j SSHC_DNS >/dev/null 2>&1 || true
+  ${IPV} -t nat -F SSHC_DNS >/dev/null 2>&1 || true
+  ${IPV} -t nat -X SSHC_DNS >/dev/null 2>&1 || true
+}
+
+
 # ── sysctl helpers ────────────────────────────────────────────────────────────
 disable_ipv6() {
   sysctl -w net.ipv4.ip_forward=1                 >/dev/null 2>&1 || true
@@ -477,6 +500,7 @@ cleanup_all() {
   cleanup_vpnchain 2>/dev/null || true
   cleanup_quic_block 2>/dev/null || true
   cleanup_dns_hijack 2>/dev/null || true
+  cleanup_dns_forward 2>/dev/null || true
 }
 
 # ── Runtime snapshot ──────────────────────────────────────────────────────────
@@ -592,6 +616,13 @@ case "${1:-}" in
         exit 1
         ;;
     esac
+
+    # DNS-through-tunnel: redirect device UDP:53 to our local forwarder so
+    # DNS rides the SSH tunnel (and Android's connectivity check sees the
+    # network as validated). Added LAST so cleanup_all above doesn't tear it
+    # down. The chain skips uid 0 — the SSH daemon's own dnsx queries must
+    # still go direct to carrier DNS to avoid a self-loop.
+    setup_dns_forward
 
     runtime_save
     [ "${1}" = "renew" ] && log Info "iptables: renew complete"

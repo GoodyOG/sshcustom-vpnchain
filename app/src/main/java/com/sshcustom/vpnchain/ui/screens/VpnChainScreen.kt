@@ -138,17 +138,17 @@ fun VpnChainScreen(
             item { Spacer(Modifier.height(2.dp)) }
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Start/Stop are ALWAYS clickable. Daemon/scripts handle no-op cases:
+                    // Stop with nothing running = no-op; Start with SSH down = error logged.
                     TextButton(
                         text = "Start",
                         onClick = onConnect,
-                        enabled = sshConnected && configs.isNotEmpty() && !connected && !connecting,
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.textButtonColorsPrimary(),
                     )
                     TextButton(
                         text = "Stop",
                         onClick = onDisconnect,
-                        enabled = connected || connecting,
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.textButtonColors(
                             color             = MiuixTheme.colorScheme.error,
