@@ -1,0 +1,37 @@
+{
+  "selected_id": "sample-ssh-direct",
+  "profiles": [
+    {
+      "id": "sample-ssh-direct",
+      "name": "Sample SSH Direct",
+      "selected": true,
+      "ssh": {
+        "host": "example.com",
+        "port": 22,
+        "username": "user",
+        "password": "password",
+        "auth_type": "password"
+      },
+      "transport": {
+        "mode": "direct",
+        "chain": [
+          "tcp",
+          "ssh"
+        ],
+        "payload": {
+          "enabled": false,
+          "template": "GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf][crlf]",
+          "send_timing": "before_ssh",
+          "read_response": true,
+          "allow_http_status": [
+            101,
+            200,
+            204,
+            302
+          ]
+        },
+        "http_proxy": null
+      }
+    }
+  ]
+}

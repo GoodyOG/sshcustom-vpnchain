@@ -1,0 +1,58 @@
+{
+  "module": {
+    "name": "SSHCustom-VPNChain",
+    "work_dir": "/data/adb/sshcustom",
+    "log_dir": "/data/adb/sshcustom/run",
+    "manual_start": true
+  },
+  "api": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 9190
+  },
+  "dns": {
+    "enabled": false,
+    "mode": "device",
+    "hijack": false,
+    "doh": false,
+    "servers": [],
+    "timeout_seconds": 4,
+    "note": "Device DNS is default. Google, Cloudflare, and custom modes affect SSHCustom endpoint resolution only."
+  },
+  "transport": {
+    "supported_modes": ["direct","http_proxy","tls_sni","http_proxy_tls_sni"],
+    "payload_is_core_feature": true
+  },
+  "local_proxy": {
+    "socks_enabled": true,
+    "socks_host": "127.0.0.1",
+    "socks_port": 1080
+  },
+  "transparent_proxy": {
+    "enabled": true,
+    "tcp_port": 10810,
+    "dns_port": 10811,
+    "udp_mode": "disabled",
+    "chains_prefix": "SSHC",
+    "apply_after_ssh_connected": true
+  },
+  "hotspot": {
+    "enabled": true,
+    "tcp": true,
+    "dns": false,
+    "interfaces": ["wlan+","swlan+","ap+","rndis+","ncm+","bt-pan+"]
+  },
+  "performance": {
+    "buffer_size": 262144,
+    "connect_timeout_seconds": 25,
+    "keepalive_seconds": 60,
+    "retry_initial_delay_seconds": 5,
+    "retry_max_delay_seconds": 45,
+    "read_probe_timeout_seconds": 10,
+    "ssh_pool_size": 4,
+    "max_streams_per_ssh": 64,
+    "verbose_transparent_logs": false,
+    "stream_idle_timeout_seconds": 600,
+    "stream_acquire_timeout_seconds": 12
+  }
+}

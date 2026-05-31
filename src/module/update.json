@@ -1,0 +1,6 @@
+{
+  "version": "v1.0.1",
+  "versionCode": 10001,
+  "zipUrl": "https://github.com/GoodyOG/sshcustom-vpnchain/releases/latest/download/SSHCustom-VPNChain-v1.0.1.zip",
+  "changelog": "v1.0.1: Fix VPN IP display, location persistence, clear/hide log, stable SSH pool display."
+}
