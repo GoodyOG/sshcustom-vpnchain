@@ -80,6 +80,10 @@ start_ovpn() {
     --config "${cfg}" \
     --dev "${OVPN_TUN}" \
     --socks-proxy 127.0.0.1 "${socks_port}" \
+    --tun-mtu 1280 \
+    --mssfix 1200 \
+    --sndbuf 524288 \
+    --rcvbuf 524288 \
     --pull-filter ignore "redirect-gateway" \
     --pull-filter ignore "dhcp-option" \
     --pull-filter ignore "tcp-nodelay" \
