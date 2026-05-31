@@ -23,6 +23,7 @@ OVPN_LOG="${box_run}/openvpn.log"
 MARKER="${box_run}/vpnchain.active"
 VPNCHAIN_IPT="${scripts_dir}/vpnchain.iptables"
 SSH_IPT="${scripts_dir}/ssh.iptables"
+OVPN_TUN="tun1"  # Use tun1 for VPN Chain (tun0 reserved for future use)
 
 ovpn_alive() {
   local p
@@ -55,14 +56,16 @@ start_ovpn() {
   sh "${SSH_IPT}" disable >> "${box_log}" 2>&1 || true
 
   local auth_arg=""
-  [ -f "${AUTH_FILE}" ] && auth_arg="--auth-user-pass ${AUTH_FILE}"
+  if [ -f "${AUTH_FILE}" ] && [ "$(head -1 "${AUTH_FILE}" 2>/dev/null)" != "username" ]; then
+    auth_arg="--auth-user-pass ${AUTH_FILE}"
+  fi
 
   # OpenVPN reaches the Windscribe server through the SSH SOCKS5 proxy (free
   # bug-host path). --dev is forced so vpnchain.iptables and OpenVPN agree.
   # shellcheck disable=SC2086
   nohup "${OVPN_BIN}" \
     --config "${cfg}" \
-    --dev "${tun_device}" \
+    --dev "${OVPN_TUN}" \
     --socks-proxy 127.0.0.1 "${socks_port}" \
     ${auth_arg} \
     --auth-nocache \
