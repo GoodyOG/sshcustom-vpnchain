@@ -2,7 +2,7 @@
   "id": "FEAT-001",
   "type": "chore",
   "description": "Phase 0 + Phase 1: Create branch, bump version, implement daemon engine fixes (SSH connection pool, TCP_NODELAY, network standby, VPN chain state, hotspot fix, OpenVPN flag cleanup)",
-  "status": "in_progress",
+  "status": "completed",
   "steps": [
     "Create and checkout branch v3.0.0-webui from main",
     "Update VERSION file to 3.0.0",
@@ -37,5 +37,5 @@
     "sh -n module/scripts/ssh.iptables && sh -n module/scripts/ovpn.service"
   ],
   "blocked_reason": null,
-  "findings": ""
+  "findings": "Build succeeds cleanly for GOOS=android GOARCH=arm64 CGO_ENABLED=0. go vet passes. Shell scripts pass sh -n. Binary verified as ARM aarch64 ELF. Pool uses round-robin via atomic uint32 index. The tunnelLoop preserves transparent-reconnect semantics: listeners and iptables stay UP across SSH drops; pool.Pick() returns nil during the gap (fail-closed)."
 }
