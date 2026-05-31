@@ -495,9 +495,9 @@
           </div>
         </div>
         <div class="card info-card">
-          <svg class="info-card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <svg class="info-card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
           <div class="info-card__text">
-            <p class="info-label">⚡ Latency</p>
+            <p class="info-label">Latency</p>
             <p class="info-value" id="latencyValue">--</p>
             <span class="supporting-text" id="latencyMeta">tap to measure via tunnel</span>
           </div>
@@ -640,7 +640,7 @@
           </div>
           <div class="list-item">
             <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
-            <div class="list-item-content"><div class="toggle-text">Transparent Redirect Port</div></div>
+            <div class="list-item-content"><div class="toggle-text">Redirect Port</div></div>
             <span class="chip" id="portRedir">9799</span>
           </div>
         </div>
@@ -909,7 +909,7 @@
       const connected = !!(s.connected && s.ssh_authenticated);
       const busy = !!(s.running && !connected);
       const standby = !!(s.running && s.state === 'PAUSED_NO_NETWORK');
-      const tunnelActive = s.running;
+      const tunnelActive = s.connected || s.state === 'connecting' || s.state === 'reconnecting';
 
       // Status dot — always pulses, color reflects tunnel state
       if (connected) {

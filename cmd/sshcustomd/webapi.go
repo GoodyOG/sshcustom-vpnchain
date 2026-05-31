@@ -78,15 +78,14 @@ func buildEnrichedStatus(snap interface{}, cfg interface{}, workDir string, sock
 	state := "disconnected"
 	if connected {
 		state = "connected"
-	} else if networkOnline {
-		state = "connecting"
 	}
 
 	runtime := map[string]interface{}{
 		// v1.0.1 WebUI primary fields
 		"connected":           connected,
 		"ssh_authenticated":   connected, // v1.0.1 uses this to gate "Tunnel Connected"
-		"running":             connected || networkOnline,
+		"running":             true,
+		"daemon_online":       true,
 		"state":               state,
 		"tunnel_uptime_seconds": int64(uptimeSec),
 		"uptime_seconds":      int64(uptimeSec),
