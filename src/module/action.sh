@@ -1,40 +1,42 @@
 #!/system/bin/sh
+# action.sh — KSU/Magisk action button: toggles the SSH tunnel.
 WORK_DIR="/data/adb/sshcustom"
+SERVICE="$WORK_DIR/scripts/ssh.service"
 RUN_DIR="$WORK_DIR/run"
-CONTROL="$WORK_DIR/sshcustom.sh"
 LOG="$RUN_DIR/action.log"
 mkdir -p "$RUN_DIR"
 exec 2>&1
 {
   echo "========================================"
-  echo "        SSHCustom-VPNChain Action"
+  echo "     SSHCustom-VPNChain v5.0.0 Action"
   echo "========================================"
-  if [ ! -x "$CONTROL" ]; then
-    echo "Control script missing: $CONTROL"
+  if [ ! -x "$SERVICE" ]; then
+    echo "Service script missing: $SERVICE"
+    echo "Re-flash the module ZIP to repair."
     exit 1
   fi
-  STATUS="$($CONTROL status-simple 2>/dev/null)"
+  STATUS="$(sh "$SERVICE" status 2>/dev/null | head -1)"
   echo "Status: $STATUS"
   echo
-  if [ "$STATUS" = "running" ]; then
-    echo "Stopping SSHCustom module..."
-    "$CONTROL" stop
-    echo
-    echo "Result: SSHCustom module stopped."
-  else
-    echo "Starting SSHCustom module..."
-    "$CONTROL" start
-    RC=$?
-    echo
-    if [ "$RC" = "0" ]; then
-      echo "Result: SSHCustom daemon started."
-      echo "Dashboard: http://127.0.0.1:9190/"
-    else
-      echo "Result: start failed. Last core log lines:"
-      tail -n 30 "$RUN_DIR/core.log" 2>/dev/null
-      exit "$RC"
-    fi
-  fi
-  echo "Log: $LOG"
+  case "$STATUS" in
+    *running*)
+      echo "Stopping tunnel..."
+      sh "$SERVICE" stop
+      echo "Tunnel stopped."
+      ;;
+    *)
+      echo "Starting tunnel..."
+      sh "$SERVICE" start
+      RC=$?
+      if [ "$RC" = "0" ]; then
+        echo "Tunnel started."
+        echo "Dashboard: http://127.0.0.1:9190/"
+      else
+        echo "Start failed. Check logs:"
+        tail -n 20 "$RUN_DIR/sshcustom.log" 2>/dev/null
+        exit "$RC"
+      fi
+      ;;
+  esac
   echo "========================================"
 } | tee -a "$LOG"

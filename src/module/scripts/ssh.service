@@ -1,0 +1,225 @@
+#!/system/bin/sh
+# ssh.service — SSHCustom service lifecycle manager
+# Modeled after boxproxy/box scripts/box.service
+#
+# Usage: ssh.service {start|start-idle|stop|restart|status}
+
+scripts_dir="${0%/*}"
+. /data/adb/sshcustom/settings.ini
+
+BIN="${bin_dir}/sshcustomd"
+SETTINGS="/data/adb/sshcustom/settings.ini"
+IPTABLES="${scripts_dir}/ssh.iptables"
+TOOL="${scripts_dir}/ssh.tool"
+
+# ── PID helpers ───────────────────────────────────────────────────────────────
+bin_alive() {
+  local PID
+  PID="$(cat "${box_pid}" 2>/dev/null)"
+  [ -n "${PID}" ] && kill -0 "${PID}" 2>/dev/null
+}
+
+api_alive() {
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsS --max-time 1 "http://127.0.0.1:9190/api/v1/health" >/dev/null 2>&1
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q -T 1 -O /dev/null "http://127.0.0.1:9190/api/v1/health" >/dev/null 2>&1
+  else
+    # No http client — fall back to checking process is alive
+    bin_alive
+  fi
+}
+
+# ── check_bin ─────────────────────────────────────────────────────────────────
+check_bin() {
+  if [ ! -x "${BIN}" ]; then
+    log Error "service: binary not found or not executable: ${BIN}"
+    log Error "service: re-flash the module ZIP to install binaries"
+    return 1
+  fi
+  local ver
+  ver="$("${BIN}" version 2>/dev/null || echo 'sshcustomd (unknown version)')"
+  log Info "service: ${ver}"
+  return 0
+}
+
+# ── is_idle_mode ──────────────────────────────────────────────────────────────
+# Returns 0 (true) if the daemon is running in --idle mode (no tunnel active).
+# Checks the daemon API: if running but connected=false and state indicates idle.
+is_idle_mode() {
+  bin_alive || return 1
+  # If the PID file was started with --idle flag, the process args will show it
+  local PID
+  PID="$(cat "${box_pid}" 2>/dev/null)"
+  [ -z "${PID}" ] && return 1
+  # Check /proc/<pid>/cmdline for --idle flag
+  if cat /proc/"${PID}"/cmdline 2>/dev/null | tr '\0' ' ' | grep -q '\-\-idle'; then
+    return 0
+  fi
+  return 1
+}
+
+# ── start_daemon ──────────────────────────────────────────────────────────────
+start_daemon() {
+  local idle_flag="${1:-}"
+
+  check_bin || return 1
+
+  # If daemon is running in idle mode and we want a full start,
+  # kill it first so we can relaunch without --idle.
+  if [ "${idle_flag}" != "--idle" ] && is_idle_mode; then
+    log Info "service: daemon in idle mode — restarting in full tunnel mode"
+    local PID
+    PID="$(cat "${box_pid}" 2>/dev/null)"
+    [ -n "${PID}" ] && kill -TERM "${PID}" 2>/dev/null || true
+    local i=0
+    while [ "${i}" -lt 4 ]; do
+      kill -0 "${PID}" 2>/dev/null || break
+      sleep 1; i=$((i+1))
+    done
+    kill -0 "${PID}" 2>/dev/null && kill -KILL "${PID}" 2>/dev/null || true
+    rm -f "${box_pid}"
+    sleep 1
+  elif bin_alive && api_alive; then
+    log Warning "service: daemon already running (pid=$(cat "${box_pid}" 2>/dev/null))"
+    return 0
+  fi
+
+  rm -f "${box_pid}"
+  killall sshcustomd 2>/dev/null || true
+  sleep 1
+
+  # Truncate log for fresh start
+  : > "${box_log}"
+  printf '%s service starting...\n' "$(date '+%Y-%m-%d %H:%M:%S')" >> "${box_log}"
+
+  # Speed boost before start
+  sh "${TOOL}" speed_boost >> "${box_log}" 2>&1 || true
+
+  local flags="-c ${SETTINGS} -w ${box_dir}"
+  [ "${idle_flag}" = "--idle" ] && flags="${flags} --idle"
+
+  nohup "${BIN}" run ${flags} >> "${box_log}" 2>&1 &
+  local PID="$!"
+  printf '%s\n' "${PID}" > "${box_pid}"
+  log Info "service: daemon started pid=${PID} flags=${flags}"
+
+  # Wait up to 5s for API
+  local i=0
+  while [ "${i}" -lt 5 ]; do
+    if ! bin_alive; then
+      log Error "service: daemon exited during startup — check ${box_log}"
+      rm -f "${box_pid}"
+      return 1
+    fi
+    if api_alive; then
+      log Info "service: API ready"
+      return 0
+    fi
+    sleep 1
+    i=$((i+1))
+  done
+
+  if bin_alive; then
+    log Info "service: daemon running (API still warming up)"
+    return 0
+  fi
+  log Error "service: daemon failed to start"
+  rm -f "${box_pid}"
+  return 1
+}
+
+# ── start_service ─────────────────────────────────────────────────────────────
+start_service() {
+  log Info "service: starting SSHCustom-VPNChain..."
+  printf 'Service starting, please wait...\n'
+
+  mkdir -p "${box_run}" "${box_run_state}" >/dev/null 2>&1 || true
+
+  # Start daemon first
+  if ! start_daemon; then
+    return 1
+  fi
+
+  # Apply cgroup blkio (non-fatal — some kernels don't support it)
+  sh "${TOOL}" blkio >> "${box_log}" 2>&1 || true
+
+  # NOTE: iptables are now managed by the daemon. The daemon applies the rules
+  # only AFTER the SSH tunnel connects (and the local listeners are bound), and
+  # removes them on disconnect or connect failure. This avoids a window where
+  # traffic is redirected to a proxy port before the tunnel is up, and prevents
+  # stale rules from black-holing traffic if the connection never succeeds.
+
+  log Info "service: started successfully"
+  return 0
+}
+
+# ── stop_service ──────────────────────────────────────────────────────────────
+stop_service() {
+  log Info "service: stopping SSHCustom-VPNChain..."
+  printf 'Service stopping...\n'
+
+  # Disable iptables first (loads runtime snapshot for targeted cleanup)
+  sh "${IPTABLES}" disable >> "${box_log}" 2>&1 || true
+
+  # Kill daemon
+  local PID
+  PID="$(cat "${box_pid}" 2>/dev/null)"
+  if [ -n "${PID}" ] && kill -0 "${PID}" 2>/dev/null; then
+    log Info "service: stopping daemon pid=${PID}"
+    kill -TERM "${PID}" 2>/dev/null || true
+    local i=0
+    while [ "${i}" -lt 5 ]; do
+      kill -0 "${PID}" 2>/dev/null || break
+      sleep 1; i=$((i+1))
+    done
+    kill -0 "${PID}" 2>/dev/null && kill -KILL "${PID}" 2>/dev/null || true
+  fi
+  killall sshcustomd 2>/dev/null || true
+  rm -f "${box_pid}"
+
+  # Restore speed settings
+  sh "${TOOL}" speed_restore >> "${box_log}" 2>&1 || true
+
+  log Info "service: stopped — device in clean state"
+  return 0
+}
+
+# ── status ────────────────────────────────────────────────────────────────────
+status_service() {
+  if bin_alive; then
+    local PID
+    PID="$(cat "${box_pid}" 2>/dev/null)"
+    local rss="0"
+    rss="$(busybox awk '/VmRSS/{print $2}' /proc/"${PID}"/status 2>/dev/null || echo 0)"
+    [ "${rss}" -ge 1024 ] 2>/dev/null && rss="$((rss / 1024)) MB" || rss="${rss} KB"
+    log Info "service: running pid=${PID} mem=${rss} mode=${network_mode}"
+    api_alive && log Info "service: API online at http://127.0.0.1:9190" || \
+      log Warning "service: API not responding"
+    return 0
+  else
+    log Warning "service: stopped"
+    return 1
+  fi
+}
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+case "${1:-}" in
+  start)        start_service ;;
+  start-idle)
+    log Info "service: starting daemon in idle mode (WebUI only)..."
+    mkdir -p "${box_run}" "${box_run_state}" >/dev/null 2>&1 || true
+    start_daemon --idle
+    ;;
+  stop)         stop_service ;;
+  restart)
+    stop_service
+    sleep 2
+    start_service
+    ;;
+  status)       status_service ;;
+  *)
+    printf 'Usage: %s {start|start-idle|stop|restart|status}\n' "$0" >&2
+    exit 1
+    ;;
+esac

@@ -1,38 +1,22 @@
-// Package dnsx implements SSHCustom's Android-aware hostname resolver.
+// Package dnsx provides an Android-aware DNS resolver that bypasses the broken
+// localhost stub resolver ([::1]:53 / 127.0.0.1:53) that Go's pure-Go resolver
+// falls back to on Android when CGO is disabled and /etc/resolv.conf is absent.
 //
-// # Why a custom resolver
-//
-// Go's net package, when it falls back from cgo to its pure-Go path, reads
-// /etc/resolv.conf or tries [::1]:53 directly. On Android both are dead ends:
-//
-//   - /etc/resolv.conf is empty or missing on most builds.
-//   - [::1]:53 is bound to dnsproxyd, which is a Unix-socket service at
-//     /dev/socket/dnsproxyd whose access is whitelisted by uid. Our Go binary
-//     runs from /data/adb/sshcustom and is not in the whitelist, so connect()
-//     to [::1]:53 returns "connection refused".
-//   - Java's InetAddress works because it goes through the proper Android DNS
-//     framework, but we cannot call into Java from a static Go binary.
-//
-// # Strategy
-//
-// The resolver tries, in order:
-//
-//  1. A 5-minute in-process cache keyed by (mode, servers, host).
-//  2. The configured SSHCustom DNS servers, queried directly via UDP. For
-//     "device" mode, we read carrier DNS IPs out of Android system properties
-//     (net.dns1, net.rmnet_data0.dns1, etc.) — these are the same IPs the
-//     network stack assigns when data connects.
-//  3. Shell tools as a last resort: getent ahostsv4, toybox getent, ping.
-//     These run as subprocesses and parse IPv4 addresses from output.
-//
-// Cache eviction is callable from the outside (EvictHost) so the caller can
-// flush a hostname after detecting a CDN rate-limit response (HTTP 301/302/503
-// during payload probing).
+// On Android there is no usable /etc/resolv.conf, so Go's net package tries
+// 127.0.0.1:53 and [::1]:53, which have no listener (DNS is served by
+// netd/bionic, not a local UDP socket). Worse, when IPv6 is disabled
+// system-wide (ipv6=false), [::1] becomes unreachable entirely. This resolver
+// instead reads the carrier's IPv4 DNS servers directly from Android system
+// properties (getprop) and performs raw UDP DNS queries against them, with a
+// small in-process cache and public fallback servers.
 package dnsx
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"os/exec"
 	"strings"
@@ -40,332 +24,325 @@ import (
 	"time"
 )
 
-// cacheEntry holds the resolved IPs and the resolver method used to obtain
-// them. The method is included in the cache so callers can distinguish
-// between e.g. "we got these from the carrier DNS" vs "we got them from a
-// shell ping fallback" without re-resolving.
-type cacheEntry struct {
-	ips     []string
-	method  string
-	expires time.Time
-}
-
-var hostCache struct {
-	sync.Mutex
-	entries map[string]cacheEntry
-}
-
-// androidPropCache stores the carrier DNS server IPs read from getprop.
-// getprop is fast (~1ms) but we still avoid calling it dozens of times.
-// 2-minute TTL is plenty: data changes rarely change carrier DNS within
-// a single app session.
-var androidPropCache struct {
-	sync.Mutex
-	servers []string
-	expires time.Time
-}
-
-// Mode is the DNS resolution preset. The same set of values flows from
-// config.json straight through to here without translation.
-type Mode string
-
 const (
-	ModeDevice     Mode = "device"
-	ModeGoogle     Mode = "google"
-	ModeCloudflare Mode = "cloudflare"
-	ModeCustom     Mode = "custom"
+	cacheTTL      = 5 * time.Minute
+	queryTimeout  = 5 * time.Second
+	serversMaxAge = 30 * time.Second
+	// tcpKeepAlive enables SO_KEEPALIVE on tunnel sockets so the carrier/NAT/
+	// WebSocket path stays mapped at the TCP layer (OpenSSH sets TCPKeepAlive
+	// by default; we did not, which contributed to idle drops).
+	tcpKeepAlive = 15 * time.Second
 )
 
-// Config is the subset of daemon config that controls resolution.
-type Config struct {
-	Mode    Mode
-	Servers []string // ip:port list when Mode==Custom
+// fallbackServers are tried only after carrier DNS. A carrier "bug host"
+// (e.g. www.bc.gam) will NOT resolve on these public servers — only the
+// carrier's own DNS can answer for it — but they remain useful for real
+// hostnames.
+var fallbackServers = []string{"8.8.8.8:53", "1.1.1.1:53"}
+
+var (
+	defaultResolver *Resolver
+	once            sync.Once
+)
+
+// Resolver performs Android-aware DNS resolution with caching.
+type Resolver struct {
+	mu        sync.Mutex
+	cache     map[string]cacheEntry
+	servers   []string
+	serversAt time.Time
 }
 
-// ResolveHost returns IPv4 addresses for host, or (nil, "dns_failed") on
-// total failure. The returned method string is descriptive and shows up in
-// the dashboard so users can see which path was used for a given lookup.
-func ResolveHost(ctx context.Context, cfg Config, host string) ([]string, string) {
-	host = strings.ToLower(strings.TrimSpace(host))
-	cacheKey := cacheKey(cfg, host)
+type cacheEntry struct {
+	ips     []net.IP
+	expires time.Time
+}
 
-	hostCache.Lock()
-	if hostCache.entries == nil {
-		hostCache.entries = make(map[string]cacheEntry)
-	}
-	if e, ok := hostCache.entries[cacheKey]; ok && time.Now().Before(e.expires) {
-		hostCache.Unlock()
-		log.Printf("dnsx: resolved %s from cache mode=%s -> %v", host, cfg.Mode, e.ips)
-		return e.ips, "dns_cached_" + e.method
-	}
-	hostCache.Unlock()
+// New returns the shared resolver instance. The cache is process-wide so it
+// survives across reconnect attempts in the tunnel retry loop.
+func New() *Resolver {
+	once.Do(func() {
+		defaultResolver = &Resolver{cache: make(map[string]cacheEntry)}
+	})
+	return defaultResolver
+}
 
-	servers, method := configuredServers(ctx, cfg)
-	if len(servers) > 0 {
-		if ips := resolveViaDirectDNS(ctx, host, servers); len(ips) > 0 {
-			cache(cacheKey, ips, method)
-			return ips, method
+// DialContext resolves the host portion of addr using Android carrier DNS and
+// dials the first reachable resolved IPv4 address. If host is already an IP
+// literal it is dialed directly.
+func (r *Resolver) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, fmt.Errorf("dnsx: split %q: %w", addr, err)
+	}
+
+	// Already an IP literal — no resolution needed.
+	if net.ParseIP(host) != nil {
+		d := net.Dialer{KeepAlive: tcpKeepAlive}
+		return d.DialContext(ctx, network, addr)
+	}
+
+	ips, err := r.Lookup(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("dnsx: resolve %q: %w", host, err)
+	}
+
+	d := net.Dialer{KeepAlive: tcpKeepAlive}
+	var lastErr error
+	for _, ip := range ips {
+		target := net.JoinHostPort(ip.String(), port)
+		conn, derr := d.DialContext(ctx, network, target)
+		if derr == nil {
+			log.Printf("[dnsx] %s -> %s (dial %s)", host, ip, target)
+			return conn, nil
 		}
+		lastErr = derr
 	}
-
-	if ips := shellResolve(ctx, host); len(ips) > 0 {
-		cache(cacheKey, ips, "android_shell_dns")
-		return ips, "android_shell_dns"
+	if lastErr == nil {
+		lastErr = errors.New("no addresses")
 	}
-
-	return nil, "dns_failed"
+	return nil, lastErr
 }
 
-// EvictHost removes any cache entries for host across all modes/server sets.
-// Callers fire this after observing a CDN rate-limit response so the next
-// reconnect attempt re-resolves and (likely) lands on a different IP.
-func EvictHost(host string) {
-	host = strings.ToLower(strings.TrimSpace(host))
-	if host == "" {
-		return
-	}
-	hostCache.Lock()
-	for key := range hostCache.entries {
-		// Cache keys end with "|<host>"; match the suffix to evict every
-		// (mode, servers) variation for this hostname.
-		if strings.HasSuffix(key, "|"+host) {
-			delete(hostCache.entries, key)
-		}
-	}
-	hostCache.Unlock()
-	log.Printf("dnsx: cache evicted for %s", host)
-}
+// Lookup resolves host to one or more IPv4 addresses using carrier DNS, with
+// cache and public fallback.
+func (r *Resolver) Lookup(ctx context.Context, host string) ([]net.IP, error) {
+	host = strings.TrimSuffix(host, ".")
 
-// NormalizeServers cleans a config-provided server list: strips whitespace,
-// adds a default port 53 if absent, deduplicates, and rejects entries that
-// don't parse as IP addresses.
-func NormalizeServers(in []string) []string {
-	out := make([]string, 0, len(in))
-	seen := map[string]bool{}
-	for _, s := range in {
-		s = strings.TrimSpace(s)
-		if s == "" {
+	// Cache hit?
+	r.mu.Lock()
+	if e, ok := r.cache[host]; ok && time.Now().Before(e.expires) {
+		ips := e.ips
+		r.mu.Unlock()
+		return ips, nil
+	}
+	r.mu.Unlock()
+
+	servers := r.dnsServers()
+	var lastErr error
+	for _, srv := range servers {
+		ips, err := queryA(ctx, srv, host)
+		if err != nil {
+			lastErr = err
 			continue
 		}
-		if _, _, err := net.SplitHostPort(s); err != nil {
-			s = net.JoinHostPort(s, "53")
+		if len(ips) > 0 {
+			log.Printf("[dnsx] resolved %s via %s -> %v", host, srv, ips)
+			r.mu.Lock()
+			r.cache[host] = cacheEntry{ips: ips, expires: time.Now().Add(cacheTTL)}
+			r.mu.Unlock()
+			return ips, nil
 		}
-		if !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
 	}
-	return out
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no A records for %s", host)
+	}
+	return nil, lastErr
 }
 
-func cacheKey(cfg Config, host string) string {
-	servers := strings.Join(NormalizeServers(cfg.Servers), ",")
-	return string(cfg.Mode) + "|" + servers + "|" + host
-}
-
-func cache(key string, ips []string, method string) {
-	hostCache.Lock()
-	if hostCache.entries == nil {
-		hostCache.entries = make(map[string]cacheEntry)
-	}
-	hostCache.entries[key] = cacheEntry{
-		ips:     ips,
-		method:  method,
-		expires: time.Now().Add(5 * time.Minute),
-	}
-	hostCache.Unlock()
-}
-
-// configuredServers returns the DNS server list to query and a descriptive
-// method name. For "device" mode it consults Android system properties.
-func configuredServers(ctx context.Context, cfg Config) ([]string, string) {
-	switch cfg.Mode {
-	case ModeGoogle:
-		return NormalizeServers([]string{"8.8.8.8", "8.8.4.4"}), "google_dns"
-	case ModeCloudflare:
-		return NormalizeServers([]string{"1.1.1.1", "1.0.0.1"}), "cloudflare_dns"
-	case ModeCustom:
-		return NormalizeServers(cfg.Servers), "custom_dns"
-	default:
-		return AndroidCarrierDNS(ctx), "android_real_dns"
-	}
-}
-
-// AndroidCarrierDNS reads the actual carrier DNS server IPs from Android
-// system properties. These are the IPs the network stack assigns when data
-// connects, and they bypass dnsproxyd entirely.
-//
-// We try a long list of known property names because Android stores DNS
-// under different keys depending on version, carrier, and modem driver:
-// net.dns* for legacy stack, net.rmnet_data*.dns* for modern radios,
-// dhcp.wlan0.dns* for Wi-Fi.
-func AndroidCarrierDNS(ctx context.Context) []string {
-	androidPropCache.Lock()
-	if time.Now().Before(androidPropCache.expires) && len(androidPropCache.servers) > 0 {
-		s := androidPropCache.servers
-		androidPropCache.Unlock()
+// dnsServers returns the ordered list of DNS servers to try: carrier DNS first
+// (from getprop), then public fallbacks. The result is cached briefly.
+func (r *Resolver) dnsServers() []string {
+	r.mu.Lock()
+	if len(r.servers) > 0 && time.Now().Before(r.serversAt.Add(serversMaxAge)) {
+		s := r.servers
+		r.mu.Unlock()
 		return s
 	}
-	androidPropCache.Unlock()
+	r.mu.Unlock()
 
-	props := []string{
-		"net.dns1", "net.dns2", "net.dns3", "net.dns4",
-		"net.rmnet0.dns1", "net.rmnet0.dns2",
-		"net.rmnet_data0.dns1", "net.rmnet_data0.dns2",
-		"net.rmnet_data1.dns1", "net.rmnet_data1.dns2",
-		"net.rmnet_data2.dns1", "net.rmnet_data2.dns2",
-		"dhcp.rmnet_data0.dns1", "dhcp.rmnet_data0.dns2",
-		"dhcp.wlan0.dns1", "dhcp.wlan0.dns2",
+	servers := append(readCarrierDNS(), fallbackServers...)
+
+	// De-duplicate, preserving order.
+	seen := make(map[string]bool, len(servers))
+	uniq := make([]string, 0, len(servers))
+	for _, s := range servers {
+		if !seen[s] {
+			seen[s] = true
+			uniq = append(uniq, s)
+		}
+	}
+
+	r.mu.Lock()
+	r.servers = uniq
+	r.serversAt = time.Now()
+	r.mu.Unlock()
+	return uniq
+}
+
+// readCarrierDNS parses `getprop` output for any *.dns* properties holding an
+// IPv4 address, returning them as "ip:53". IPv6 entries are skipped because
+// IPv6 is typically disabled while the tunnel is active.
+func readCarrierDNS() []string {
+	out, err := exec.Command("/system/bin/getprop").Output()
+	if err != nil {
+		return nil
 	}
 	var servers []string
-	seen := map[string]bool{}
-	for _, prop := range props {
-		cctx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
-		out, err := exec.CommandContext(cctx, "getprop", prop).Output()
-		cancel()
-		if err != nil {
+	seen := make(map[string]bool)
+	for _, line := range strings.Split(string(out), "\n") {
+		// Property dump format: [net.dns1]: [8.8.8.8]
+		lb := strings.IndexByte(line, '[')
+		rb := strings.IndexByte(line, ']')
+		if lb < 0 || rb <= lb {
 			continue
 		}
-		ip := strings.TrimSpace(string(out))
-		if ip == "" || ip == "0.0.0.0" {
+		key := line[lb+1 : rb]
+		if !strings.Contains(key, "dns") {
 			continue
 		}
-		if net.ParseIP(ip) == nil {
+		rest := line[rb+1:]
+		vb := strings.IndexByte(rest, '[')
+		ve := strings.IndexByte(rest, ']')
+		if vb < 0 || ve <= vb {
 			continue
 		}
-		addr := net.JoinHostPort(ip, "53")
-		if !seen[addr] {
-			seen[addr] = true
-			servers = append(servers, addr)
+		val := strings.TrimSpace(rest[vb+1 : ve])
+		ip := net.ParseIP(val)
+		if ip == nil || ip.To4() == nil {
+			continue // empty or IPv6
 		}
-		// Three real DNS servers is plenty; stop scanning so we don't waste
-		// time on every getprop key when carrier already gave us enough.
-		if len(servers) >= 3 {
-			break
+		s := net.JoinHostPort(val, "53")
+		if !seen[s] {
+			seen[s] = true
+			servers = append(servers, s)
 		}
-	}
-	if len(servers) > 0 {
-		log.Printf("dnsx: android carrier DNS servers: %v", servers)
-		androidPropCache.Lock()
-		androidPropCache.servers = servers
-		androidPropCache.expires = time.Now().Add(2 * time.Minute)
-		androidPropCache.Unlock()
 	}
 	return servers
 }
 
-// resolveViaDirectDNS sends an A query directly to each server via UDP.
-// This bypasses Android's dnsproxyd entirely. We use Go's pure-Go resolver
-// path because we control the Dial function and feed it the right address.
-func resolveViaDirectDNS(ctx context.Context, host string, servers []string) []string {
-	res := &net.Resolver{
-		PreferGo: true,
-		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			var lastErr error
-			for _, srv := range servers {
-				d := &net.Dialer{Timeout: 3 * time.Second}
-				c, err := d.DialContext(ctx, "udp", srv)
-				if err == nil {
-					return c, nil
-				}
-				lastErr = err
-			}
-			return nil, lastErr
-		},
-	}
-	addrs, err := res.LookupHost(ctx, host)
+// queryA performs a single A-record query over UDP against server (host:port).
+func queryA(ctx context.Context, server, host string) ([]net.IP, error) {
+	id := uint16(rand.Uint32())
+	msg, err := buildQuery(id, host)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	var ips []string
-	for _, a := range addrs {
-		if ip := net.ParseIP(a); ip != nil && ip.To4() != nil {
-			ips = appendUnique(ips, ip.String())
-		}
+
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "udp", server)
+	if err != nil {
+		return nil, err
 	}
-	return ips
+	defer conn.Close()
+
+	deadline := time.Now().Add(queryTimeout)
+	if dl, ok := ctx.Deadline(); ok && dl.Before(deadline) {
+		deadline = dl
+	}
+	_ = conn.SetDeadline(deadline)
+
+	if _, err := conn.Write(msg); err != nil {
+		return nil, err
+	}
+
+	buf := make([]byte, 1500)
+	n, err := conn.Read(buf)
+	if err != nil {
+		return nil, err
+	}
+	return parseA(buf[:n], id)
 }
 
-// shellResolve falls back to subprocess tools. Order matters:
-//   - getent ahostsv4: fastest when available (Bionic libc 9+).
-//   - toybox getent: AOSP toybox shipped with most modern devices.
-//   - ping -c 1: brute-force IPv4 extraction from ping output. Almost
-//     always works because ping resolves through whatever DNS the kernel
-//     network stack uses, which is the same path ICMP would take.
-func shellResolve(ctx context.Context, host string) []string {
-	cmds := [][]string{
-		{"getent", "ahostsv4", host},
-		{"toybox", "getent", "ahostsv4", host},
-		{"ping", "-c", "1", "-W", "2", host},
-	}
-	for _, c := range cmds {
-		cctx, cancel := context.WithTimeout(ctx, 3500*time.Millisecond)
-		out, err := exec.CommandContext(cctx, c[0], c[1:]...).CombinedOutput()
-		cancel()
-		if err != nil && len(out) == 0 {
+// buildQuery builds a DNS query message for the A record of host.
+func buildQuery(id uint16, host string) ([]byte, error) {
+	b := make([]byte, 0, 32+len(host))
+	// Header: ID, flags (RD=1), QDCOUNT=1, others 0
+	b = append(b, byte(id>>8), byte(id))
+	b = append(b, 0x01, 0x00)
+	b = append(b, 0x00, 0x01)
+	b = append(b, 0x00, 0x00)
+	b = append(b, 0x00, 0x00)
+	b = append(b, 0x00, 0x00)
+	// QNAME
+	for _, label := range strings.Split(host, ".") {
+		if label == "" {
 			continue
 		}
-		ips := ExtractIPv4s(string(out))
-		if len(ips) > 0 {
-			log.Printf("dnsx: resolved %s via %s -> %v", host, strings.Join(c, " "), ips)
-			return ips
+		if len(label) > 63 {
+			return nil, fmt.Errorf("label too long: %q", label)
 		}
+		b = append(b, byte(len(label)))
+		b = append(b, label...)
 	}
-	return nil
+	b = append(b, 0x00)       // root label
+	b = append(b, 0x00, 0x01) // QTYPE = A
+	b = append(b, 0x00, 0x01) // QCLASS = IN
+	return b, nil
 }
 
-// ExtractIPv4s pulls every dotted-quad IPv4 out of arbitrary text. Useful
-// for parsing ping output, getent output, and any other shell tool's
-// stdout. Exported because the daemon's transport-probe code uses the
-// same logic for HTTP response inspection.
-func ExtractIPv4s(s string) []string {
-	fields := strings.FieldsFunc(s, func(r rune) bool {
-		return !(r == '.' || (r >= '0' && r <= '9'))
-	})
-	var out []string
-	for _, f := range fields {
-		ip := net.ParseIP(f)
-		if ip != nil && ip.To4() != nil {
-			out = appendUnique(out, ip.String())
+// parseA parses a DNS response and returns its A records.
+func parseA(msg []byte, wantID uint16) ([]net.IP, error) {
+	if len(msg) < 12 {
+		return nil, errors.New("dns: short response")
+	}
+	if id := uint16(msg[0])<<8 | uint16(msg[1]); id != wantID {
+		return nil, errors.New("dns: id mismatch")
+	}
+	if rcode := msg[3] & 0x0f; rcode != 0 {
+		return nil, fmt.Errorf("dns: rcode %d", rcode)
+	}
+	qd := int(uint16(msg[4])<<8 | uint16(msg[5]))
+	an := int(uint16(msg[6])<<8 | uint16(msg[7]))
+
+	off := 12
+	var err error
+	for i := 0; i < qd; i++ {
+		off, err = skipName(msg, off)
+		if err != nil {
+			return nil, err
+		}
+		off += 4 // QTYPE + QCLASS
+		if off > len(msg) {
+			return nil, errors.New("dns: truncated question")
 		}
 	}
-	return out
-}
 
-// SanitizeIPv4List trims, validates, and deduplicates an IPv4 address list.
-// Used by the daemon to clean up bypass IP lists before installing iptables
-// rules where invalid entries would either be no-ops or fail the chain.
-func SanitizeIPv4List(in []string) []string {
-	var out []string
-	for _, s := range in {
-		s = strings.TrimSpace(s)
-		ip := net.ParseIP(s)
-		if ip == nil || ip.To4() == nil {
-			continue
+	var ips []net.IP
+	for i := 0; i < an; i++ {
+		off, err = skipName(msg, off)
+		if err != nil {
+			return nil, err
 		}
-		out = appendUnique(out, ip.String())
+		if off+10 > len(msg) {
+			break
+		}
+		typ := uint16(msg[off])<<8 | uint16(msg[off+1])
+		rdlen := int(uint16(msg[off+8])<<8 | uint16(msg[off+9]))
+		off += 10
+		if off+rdlen > len(msg) {
+			break
+		}
+		if typ == 1 && rdlen == 4 { // A record
+			ips = append(ips, net.IPv4(msg[off], msg[off+1], msg[off+2], msg[off+3]))
+		}
+		off += rdlen
 	}
-	return out
+	if len(ips) == 0 {
+		return nil, errors.New("dns: no A records")
+	}
+	return ips, nil
 }
 
-// RotateIPs returns the input rotated by a time-based offset. Used for
-// load-spreading across CDN A records: every reconnect attempt starts at
-// a different position so two devices behind the same NAT don't both hit
-// the same edge.
-func RotateIPs(in []string) []string {
-	if len(in) <= 1 {
-		return in
-	}
-	out := append([]string(nil), in...)
-	off := int(time.Now().UnixNano() % int64(len(out)))
-	return append(out[off:], out[:off]...)
-}
-
-func appendUnique(xs []string, v string) []string {
-	for _, x := range xs {
-		if x == v {
-			return xs
+// skipName advances past a (possibly compressed) DNS name, returning the offset
+// just after it.
+func skipName(msg []byte, off int) (int, error) {
+	for {
+		if off >= len(msg) {
+			return 0, errors.New("dns: name overflow")
+		}
+		b := msg[off]
+		switch {
+		case b == 0:
+			return off + 1, nil
+		case b&0xc0 == 0xc0:
+			// compression pointer — the name ends after the 2-byte pointer
+			if off+2 > len(msg) {
+				return 0, errors.New("dns: bad pointer")
+			}
+			return off + 2, nil
+		default:
+			off += int(b) + 1
 		}
 	}
-	return append(xs, v)
 }

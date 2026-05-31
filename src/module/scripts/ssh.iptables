@@ -1,0 +1,677 @@
+#!/system/bin/sh
+# ssh.iptables — SSHCustom traffic interception rules
+# Modeled after boxproxy/box scripts/box.iptables
+#
+# Usage: ssh.iptables {enable|disable|renew}
+# All custom chains use SSHC_ prefix to avoid collisions.
+
+scripts_dir="${0%/*}"
+. /data/adb/sshcustom/settings.ini
+
+runtime_env="${box_run_state}/runtime.iptables.env"
+cap_cache="${box_run_state}/iptables.cap.env"
+
+# ── iptables commands (Android 11+ needs -w 100) ─────────────────────────────
+_build_major="$(getprop ro.build.version.release 2>/dev/null | cut -d. -f1)"
+if [ "${_build_major:-0}" -ge 11 ] 2>/dev/null; then
+  IPV="iptables -w 100"
+  IP6V="ip6tables -w 100"
+else
+  IPV="iptables"
+  IP6V="ip6tables"
+fi
+
+
+# ── fwmark / policy routing constants ────────────────────────────────────────
+fwmark="16777216/16777216"
+table="2024"
+pref="100"
+tun_bypass_mark="33554432/33554432"
+tun_bypass_pref="98"
+tun_route_mark="50331648/50331648"
+tun_route_table="2025"
+tun_route_pref="99"
+
+# ── intranet subnets (always bypass) ─────────────────────────────────────────
+intranet="0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16
+172.16.0.0/12 192.0.0.0/24 192.168.0.0/16 198.18.0.0/15
+224.0.0.0/4 240.0.0.0/4 255.255.255.255/32"
+intranet6="::1/128 fc00::/7 fe80::/10 ff00::/8"
+
+# ── probe_user_group ──────────────────────────────────────────────────────────
+probe_user_group() {
+  if [ -f "${box_pid}" ]; then
+    local PID
+    PID="$(cat "${box_pid}" 2>/dev/null)"
+    if [ -n "${PID}" ] && kill -0 "${PID}" 2>/dev/null; then
+      box_user="$(stat -c '%U' /proc/"${PID}" 2>/dev/null || echo root)"
+      box_group="$(stat -c '%G' /proc/"${PID}" 2>/dev/null || echo root)"
+      return 0
+    fi
+  fi
+  box_user="root"; box_group="root"
+  log Warning "iptables: daemon not running, using root:root"
+  return 1
+}
+
+
+# ── Capability probe ──────────────────────────────────────────────────────────
+cap_has_target() {
+  local fam="$1" tgt="$2"
+  local f="/proc/net/ip_tables_targets"
+  [ "${fam}" = "6" ] && f="/proc/net/ip6_tables_targets"
+  [ -r "${f}" ] && busybox grep -qw "${tgt}" "${f}"
+}
+
+cap_has_match() {
+  local fam="$1" m="$2"
+  local f="/proc/net/ip_tables_matches"
+  [ "${fam}" = "6" ] && f="/proc/net/ip6_tables_matches"
+  [ -r "${f}" ] && busybox grep -qw "${m}" "${f}"
+}
+
+ip6_nat_supported() {
+  ip6tables -t nat -L >/dev/null 2>&1
+}
+
+probe_capabilities() {
+  # Check boot_id cache for freshness.
+  # Use POSIX-safe tr: strip hyphens only (no \n escape — file is single line)
+  local current_bid prev_bid
+  current_bid="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null | tr -d '-')"
+  current_bid="${current_bid%"${current_bid##*[! ]}"}"  # strip trailing whitespace
+
+  if [ -f "${cap_cache}" ]; then
+    prev_bid="$(busybox grep '^boot_id=' "${cap_cache}" 2>/dev/null | cut -d'"' -f2)"
+    if [ -n "${current_bid}" ] && [ "${current_bid}" = "${prev_bid}" ]; then
+      . "${cap_cache}"
+      log Debug "cap: loaded from cache"
+      return 0
+    fi
+  fi
+
+  cap_tproxy4="false"; cap_tproxy6="false"
+  cap_conntrack="false"; cap_connmark="false"
+  cap_ipset="false"; cap_ip6_nat="false"
+
+  cap_has_target 4 TPROXY && cap_tproxy4="true"
+  cap_has_target 6 TPROXY && cap_tproxy6="true"
+  { cap_has_match 4 conntrack || cap_has_match 6 conntrack; } && cap_conntrack="true"
+  { cap_has_match 4 connmark  || cap_has_match 6 connmark; }  && cap_connmark="true"
+  command -v ipset >/dev/null 2>&1 && cap_ipset="true"
+  ip6_nat_supported && cap_ip6_nat="true"
+
+  mkdir -p "${box_run_state}" >/dev/null 2>&1 || true
+  {
+    printf 'boot_id="%s"\n'       "${current_bid}"
+    printf 'cap_tproxy4="%s"\n'   "${cap_tproxy4}"
+    printf 'cap_tproxy6="%s"\n'   "${cap_tproxy6}"
+    printf 'cap_conntrack="%s"\n' "${cap_conntrack}"
+    printf 'cap_connmark="%s"\n'  "${cap_connmark}"
+    printf 'cap_ipset="%s"\n'     "${cap_ipset}"
+    printf 'cap_ip6_nat="%s"\n'   "${cap_ip6_nat}"
+  } > "${cap_cache}"
+
+  log Debug "cap: tproxy4=${cap_tproxy4} tproxy6=${cap_tproxy6} conntrack=${cap_conntrack} connmark=${cap_connmark} ipset=${cap_ipset} ip6_nat=${cap_ip6_nat}"
+}
+
+apply_capability_downgrades() {
+  probe_capabilities
+  local orig_mode="${network_mode}" orig_dns="${dns_hijack_mode}"
+
+  if [ "${network_mode}" = "tproxy" ] && [ "${cap_tproxy4}" != "true" ]; then
+    log Warning "cap: TPROXY not supported — downgrading to redirect"
+    network_mode="redirect"
+  fi
+  if [ "${dns_hijack_mode}" = "tproxy" ] && [ "${cap_tproxy4}" != "true" ]; then
+    log Warning "cap: TPROXY not supported — downgrading dns_hijack_mode to redirect"
+    dns_hijack_mode="redirect"
+  fi
+
+  [ "${orig_mode}" != "${network_mode}" ] && log Info "cap: final network_mode=${network_mode}"
+  [ "${orig_dns}"  != "${dns_hijack_mode}" ] && log Info "cap: final dns_hijack_mode=${dns_hijack_mode}"
+}
+
+
+# ── DNS-through-tunnel chain (SSHC_DNS) ──────────────────────────────────────
+# Redirects device UDP:53 traffic to our local forwarder (sshcustomd at
+# 127.0.0.1:5353), which proxies queries through the SSH tunnel as TCP DNS.
+# CRITICAL: Skip uid 0 so the SSH daemon's own dnsx queries (also uid 0) go
+# direct to carrier DNS — otherwise they'd loop through this chain back into
+# themselves.
+setup_dns_forward() {
+  ${IPV} -t nat -N SSHC_DNS >/dev/null 2>&1 || true
+  ${IPV} -t nat -F SSHC_DNS >/dev/null 2>&1 || true
+  ${IPV} -t nat -A SSHC_DNS -m owner --uid-owner 0 -j RETURN >/dev/null 2>&1 || true
+  ${IPV} -t nat -A SSHC_DNS -p udp --dport 53 -j DNAT --to-destination 127.0.0.1:5353 >/dev/null 2>&1 || true
+  ${IPV} -t nat -C OUTPUT -p udp --dport 53 -j SSHC_DNS >/dev/null 2>&1 || \
+    ${IPV} -t nat -A OUTPUT -p udp --dport 53 -j SSHC_DNS >/dev/null 2>&1 || true
+  log Info "iptables: DNS-through-tunnel enabled (UDP:53 → 127.0.0.1:5353, uid 0 bypass)"
+}
+
+cleanup_dns_forward() {
+  ${IPV} -t nat -D OUTPUT -p udp --dport 53 -j SSHC_DNS >/dev/null 2>&1 || true
+  ${IPV} -t nat -F SSHC_DNS >/dev/null 2>&1 || true
+  ${IPV} -t nat -X SSHC_DNS >/dev/null 2>&1 || true
+}
+
+
+# ── sysctl helpers ────────────────────────────────────────────────────────────
+disable_ipv6() {
+  sysctl -w net.ipv4.ip_forward=1                 >/dev/null 2>&1 || true
+  sysctl -w net.ipv6.conf.all.disable_ipv6=1      >/dev/null 2>&1 || true
+  sysctl -w net.ipv6.conf.default.disable_ipv6=1  >/dev/null 2>&1 || true
+  sysctl -w net.ipv6.conf.all.forwarding=0         >/dev/null 2>&1 || true
+  ip -6 rule show pref "${pref}" 2>/dev/null | busybox grep -q "unreachable" || \
+    ip -6 rule add unreachable pref "${pref}" >/dev/null 2>&1 || true
+}
+
+enable_ipv6() {
+  sysctl -w net.ipv4.ip_forward=1                 >/dev/null 2>&1 || true
+  sysctl -w net.ipv6.conf.all.disable_ipv6=0      >/dev/null 2>&1 || true
+  sysctl -w net.ipv6.conf.default.disable_ipv6=0  >/dev/null 2>&1 || true
+  sysctl -w net.ipv6.conf.all.forwarding=1         >/dev/null 2>&1 || true
+  ip -6 rule del unreachable pref "${pref}" >/dev/null 2>&1 || true
+}
+
+# ── Chain helpers ─────────────────────────────────────────────────────────────
+ensure_chain() {
+  local tbl="$1" chain="$2"
+  ${iptables} -t "${tbl}" -N "${chain}" >/dev/null 2>&1 || true
+  ${iptables} -t "${tbl}" -F "${chain}" >/dev/null 2>&1 || true
+}
+
+cleanup_chain() {
+  local tbl="$1" chain="$2"
+  ${iptables} -t "${tbl}" -F "${chain}" >/dev/null 2>&1 || true
+  ${iptables} -t "${tbl}" -X "${chain}" >/dev/null 2>&1 || true
+}
+
+ensure_jump() {
+  local tbl="$1" parent="$2" target="$3"
+  ${iptables} -t "${tbl}" -C "${parent}" -j "${target}" >/dev/null 2>&1 || \
+    ${iptables} -t "${tbl}" -I "${parent}" -j "${target}" >/dev/null 2>&1 || true
+}
+
+del_jump() {
+  local tbl="$1" parent="$2" target="$3"
+  ${iptables} -t "${tbl}" -D "${parent}" -j "${target}" >/dev/null 2>&1 || true
+}
+
+# ── ip rule / route helpers ───────────────────────────────────────────────────
+ensure_ip_rule() {
+  local ipcmd="$1" mark="$2" tbl="$3" pri="$4"
+  ${ipcmd} rule show pref "${pri}" 2>/dev/null | busybox grep -q "fwmark" || \
+    ${ipcmd} rule add fwmark "${mark}" table "${tbl}" pref "${pri}" >/dev/null 2>&1 || true
+}
+
+del_ip_rule() {
+  local ipcmd="$1" pri="$2"
+  ${ipcmd} rule del pref "${pri}" >/dev/null 2>&1 || true
+}
+
+ensure_ip_route_local() {
+  local ipcmd="$1" tbl="$2"
+  ${ipcmd} route show table "${tbl}" 2>/dev/null | busybox grep -q "^local default" || \
+    ${ipcmd} route add local default dev lo table "${tbl}" >/dev/null 2>&1 || true
+}
+
+
+# ── QUIC block (UDP 443/80) ───────────────────────────────────────────────────
+# Uses DROP not REJECT — REJECT requires ipt_REJECT module which is not always
+# available on Android kernels and causes "Invalid argument" errors.
+apply_quic_block() {
+  [ "${quic}" = "disable" ] || return 0
+  ${iptables} -t filter -C OUTPUT -p udp --dport 443 -j DROP >/dev/null 2>&1 || \
+    ${iptables} -t filter -A OUTPUT -p udp --dport 443 -j DROP >/dev/null 2>&1 || true
+  ${iptables} -t filter -C OUTPUT -p udp --dport 80  -j DROP >/dev/null 2>&1 || \
+    ${iptables} -t filter -A OUTPUT -p udp --dport 80  -j DROP >/dev/null 2>&1 || true
+  [ "${iptables}" = "${IPV}" ] && log Info "iptables: QUIC (UDP 443/80) blocked via DROP"
+  return 0  # non-fatal
+}
+
+cleanup_quic_block() {
+  ${iptables} -t filter -D OUTPUT -p udp --dport 443 -j DROP >/dev/null 2>&1 || true
+  ${iptables} -t filter -D OUTPUT -p udp --dport 80  -j DROP >/dev/null 2>&1 || true
+}
+
+# ── DNS hijack ────────────────────────────────────────────────────────────────
+setup_dns_hijack() {
+  [ "${dns_hijack_mode}" = "redirect" ] || return 0
+  if [ "${iptables}" = "${IP6V}" ] && [ "${cap_ip6_nat}" != "true" ]; then return 0; fi
+
+  local chain="SSHC_DNS_HIJACK"
+  [ "${iptables}" = "${IP6V}" ] && chain="SSHC_DNS_HIJACK6"
+  ensure_chain nat "${chain}"
+  ${iptables} -t nat -A "${chain}" -m owner --uid-owner "${box_user}" --gid-owner "${box_group}" -j RETURN 2>/dev/null || true
+  [ "${dns_hijack_tcp}" = "true" ] && \
+    ${iptables} -t nat -A "${chain}" -p tcp --dport 53 -j REDIRECT --to-ports "${redir_port}" >/dev/null 2>&1 || true
+  [ "${dns_hijack_udp}" = "true" ] && \
+    ${iptables} -t nat -A "${chain}" -p udp --dport 53 -j REDIRECT --to-ports "${redir_port}" >/dev/null 2>&1 || true
+  ensure_jump nat PREROUTING "${chain}"
+  ensure_jump nat OUTPUT "${chain}"
+  return 0
+}
+
+cleanup_dns_hijack() {
+  for chain in SSHC_DNS_HIJACK SSHC_DNS_HIJACK6; do
+    del_jump nat PREROUTING "${chain}"
+    del_jump nat OUTPUT "${chain}"
+    cleanup_chain nat "${chain}"
+  done
+}
+
+
+# ══════════════════════════════════════════════════════════
+# MODE 1: REDIRECT (nat, TCP only, most compatible)
+# ══════════════════════════════════════════════════════════
+start_redirect() {
+  if [ "${iptables}" = "${IP6V}" ] && [ "${cap_ip6_nat}" != "true" ]; then
+    [ "${ipv6}" = "true" ] && log Warning "redirect: ip6tables NAT unavailable, skipping IPv6"
+    return 0
+  fi
+
+  local ext="SSHC_EXTERNAL" loc="SSHC_LOCAL"
+  [ "${iptables}" = "${IP6V}" ] && ext="SSHC_EXTERNAL6" && loc="SSHC_LOCAL6"
+
+  ensure_chain nat "${ext}"
+  ${iptables} -t nat -A "${ext}" -m owner --uid-owner "${box_user}" --gid-owner "${box_group}" -j RETURN 2>/dev/null || true
+  for sn in ${intranet}; do
+    ${iptables} -t nat -A "${ext}" -d "${sn}" -j RETURN >/dev/null 2>&1 || true
+  done
+  [ "${proxy_tcp}" = "true" ] && \
+    ${iptables} -t nat -A "${ext}" -p tcp -j REDIRECT --to-ports "${redir_port}" >/dev/null 2>&1 || true
+  ensure_jump nat PREROUTING "${ext}"
+
+  ensure_chain nat "${loc}"
+  ${iptables} -t nat -A "${loc}" -m owner --uid-owner "${box_user}" --gid-owner "${box_group}" -j RETURN 2>/dev/null || true
+  for sn in ${intranet}; do
+    ${iptables} -t nat -A "${loc}" -d "${sn}" -j RETURN >/dev/null 2>&1 || true
+  done
+  [ "${proxy_tcp}" = "true" ] && \
+    ${iptables} -t nat -A "${loc}" -p tcp -j REDIRECT --to-ports "${redir_port}" >/dev/null 2>&1 || true
+  ensure_jump nat OUTPUT "${loc}"
+
+  # Hotspot sharing — v1.0.1-style: per-interface PREROUTING REDIRECT using the
+  # same SSHC_EXTERNAL chain (which already has private-CIDR returns + bypass IPs
+  # from the daemon) so tethered clients route through the SSH tunnel identically
+  # to the device's own traffic. Requires ip_forward=1 and FORWARD ACCEPT.
+  # This is the exact approach confirmed working on the user's device.
+  if [ "${hotspot_sharing:-false}" = "true" ] && [ "${proxy_tcp}" = "true" ] && [ "${iptables}" = "${IPV}" ]; then
+    local ext="SSHC_EXTERNAL"
+    # ip_forward required for kernel to forward packets between interfaces
+    sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+    # FORWARD ACCEPT: without this Android/netd's default-drop FORWARD policy
+    # kills all tethered traffic before it even reaches NAT PREROUTING.
+    # This is the rule v1.0.1's Go iptables.go inserted — the key difference.
+    ${iptables} -C FORWARD -j ACCEPT >/dev/null 2>&1 || \
+      ${iptables} -I FORWARD -j ACCEPT >/dev/null 2>&1 || true
+    # Hook the existing SSHC_EXTERNAL chain (already built above with all
+    # private-CIDR returns + bypass IPs + REDIRECT to redir_port) into
+    # PREROUTING per hotspot interface.
+    for iface in wlan0 wlan1 ap0 swlan0 rndis0 ncm0 bt-pan; do
+      ${iptables} -t nat -C PREROUTING -i "${iface}" -p tcp -j "${ext}" >/dev/null 2>&1 || \
+        ${iptables} -t nat -I PREROUTING 1 -i "${iface}" -p tcp -j "${ext}" >/dev/null 2>&1 || true
+    done
+    log Info "redirect: hotspot sharing enabled (v1.0.1 FORWARD+PREROUTING method)"
+  fi
+
+  setup_dns_hijack
+  apply_quic_block
+  log Info "redirect: rules applied (port=${redir_port})"
+  return 0
+}
+
+stop_redirect() {
+  # Remove per-interface hotspot PREROUTING jumps (v1.0.1 method uses SSHC_EXTERNAL)
+  for iface in wlan0 wlan1 ap0 swlan0 rndis0 ncm0 bt-pan; do
+    ${iptables} -t nat -D PREROUTING -i "${iface}" -p tcp -j SSHC_EXTERNAL >/dev/null 2>&1 || true
+    # Legacy cleanup (previous SSHC_HOTSPOT approach)
+    ${iptables} -t nat -D PREROUTING -i "${iface}" -j SSHC_HOTSPOT >/dev/null 2>&1 || true
+    ${iptables} -t nat -D PREROUTING -i "${iface}" -j SSHC_HOTSPOT6 >/dev/null 2>&1 || true
+  done
+  # Remove FORWARD ACCEPT rule added for hotspot
+  ${iptables} -D FORWARD -j ACCEPT >/dev/null 2>&1 || true
+  for chain in SSHC_EXTERNAL SSHC_LOCAL SSHC_EXTERNAL6 SSHC_LOCAL6 SSHC_HOTSPOT SSHC_HOTSPOT6; do
+    del_jump nat PREROUTING "${chain}"
+    del_jump nat OUTPUT "${chain}"
+    cleanup_chain nat "${chain}"
+  done
+  cleanup_dns_hijack
+  cleanup_quic_block
+}
+
+# ══════════════════════════════════════════════════════════
+# MODE 2: TPROXY (mangle, TCP+UDP, needs kernel support)
+# ══════════════════════════════════════════════════════════
+start_tproxy() {
+  if [ "${cap_tproxy4}" != "true" ]; then
+    log Error "tproxy: kernel TPROXY not available"
+    return 1
+  fi
+  if [ "${iptables}" = "${IP6V}" ] && [ "${cap_tproxy6}" != "true" ]; then
+    [ "${ipv6}" = "true" ] && log Warning "tproxy: no IPv6 TPROXY, skipping ip6tables"
+    return 0
+  fi
+
+  # Policy routing
+  if [ "${iptables}" = "${IPV}" ]; then
+    ensure_ip_rule ip "${fwmark}" "${table}" "${pref}"
+    ensure_ip_route_local ip "${table}"
+  else
+    ensure_ip_rule "ip -6" "${fwmark}" "${table}" "${pref}"
+    ensure_ip_route_local "ip -6" "${table}"
+  fi
+
+  local ext="SSHC_TP_EXT" loc="SSHC_TP_LOC"
+  [ "${iptables}" = "${IP6V}" ] && ext="SSHC_TP_EXT6" && loc="SSHC_TP_LOC6"
+
+  ensure_chain mangle "${ext}"
+  for sn in ${intranet}; do
+    ${iptables} -t mangle -A "${ext}" -d "${sn}" -j RETURN >/dev/null 2>&1 || true
+  done
+  [ "${proxy_tcp}" = "true" ] && \
+    ${iptables} -t mangle -A "${ext}" -p tcp -j TPROXY --on-port "${tproxy_port}" --tproxy-mark "${fwmark}" >/dev/null 2>&1 || true
+  [ "${proxy_udp}" = "true" ] && \
+    ${iptables} -t mangle -A "${ext}" -p udp -j TPROXY --on-port "${tproxy_port}" --tproxy-mark "${fwmark}" >/dev/null 2>&1 || true
+  ensure_jump mangle PREROUTING "${ext}"
+
+  ensure_chain mangle "${loc}"
+  ${iptables} -t mangle -A "${loc}" -m owner --uid-owner "${box_user}" --gid-owner "${box_group}" -j RETURN 2>/dev/null || true
+  for sn in ${intranet}; do
+    ${iptables} -t mangle -A "${loc}" -d "${sn}" -j RETURN >/dev/null 2>&1 || true
+  done
+  [ "${proxy_tcp}" = "true" ] && \
+    ${iptables} -t mangle -A "${loc}" -p tcp -j MARK --set-xmark "${fwmark}" >/dev/null 2>&1 || true
+  [ "${proxy_udp}" = "true" ] && \
+    ${iptables} -t mangle -A "${loc}" -p udp -j MARK --set-xmark "${fwmark}" >/dev/null 2>&1 || true
+  ensure_jump mangle OUTPUT "${loc}"
+
+  apply_quic_block
+  log Info "tproxy: rules applied (port=${tproxy_port})"
+  return 0
+}
+
+stop_tproxy() {
+  for chain in SSHC_TP_EXT SSHC_TP_LOC SSHC_TP_EXT6 SSHC_TP_LOC6; do
+    del_jump mangle PREROUTING "${chain}"
+    del_jump mangle OUTPUT "${chain}"
+    cleanup_chain mangle "${chain}"
+  done
+  if [ "${iptables}" = "${IPV}" ]; then
+    del_ip_rule ip "${pref}"
+    ip route flush table "${table}" >/dev/null 2>&1 || true
+  else
+    del_ip_rule "ip -6" "${pref}"
+    ip -6 route flush table "${table}" >/dev/null 2>&1 || true
+  fi
+  cleanup_quic_block
+}
+
+
+# ══════════════════════════════════════════════════════════
+# MODE 3 & 4: TUN / TUN+UDPGW
+# ══════════════════════════════════════════════════════════
+start_tun_bypass() {
+  local pre="SSHC_TUN_PRE" out="SSHC_TUN_OUT"
+  [ "${iptables}" = "${IP6V}" ] && pre="SSHC_TUN_PRE6" && out="SSHC_TUN_OUT6"
+
+  ensure_chain mangle "${pre}"
+  ${iptables} -t mangle -A "${pre}" -i "${tun_device}" -j RETURN >/dev/null 2>&1 || true
+  [ "${dns_hijack_tcp}" = "true" ] && \
+    ${iptables} -t mangle -A "${pre}" -p tcp --dport 53 -j MARK --set-xmark "${tun_route_mark}" >/dev/null 2>&1 || true
+  [ "${dns_hijack_udp}" = "true" ] && \
+    ${iptables} -t mangle -A "${pre}" -p udp --dport 53 -j MARK --set-xmark "${tun_route_mark}" >/dev/null 2>&1 || true
+  for sn in ${intranet}; do
+    ${iptables} -t mangle -A "${pre}" -d "${sn}" -j RETURN >/dev/null 2>&1 || true
+  done
+  ${iptables} -t mangle -A "${pre}" -j MARK --set-xmark "${tun_route_mark}" >/dev/null 2>&1 || true
+  ensure_jump mangle PREROUTING "${pre}"
+
+  ensure_chain mangle "${out}"
+  ${iptables} -t mangle -A "${out}" -m owner --uid-owner "${box_user}" --gid-owner "${box_group}" -j RETURN 2>/dev/null || true
+  [ "${dns_hijack_tcp}" = "true" ] && \
+    ${iptables} -t mangle -A "${out}" -p tcp --dport 53 -j MARK --set-xmark "${tun_route_mark}" >/dev/null 2>&1 || true
+  [ "${dns_hijack_udp}" = "true" ] && \
+    ${iptables} -t mangle -A "${out}" -p udp --dport 53 -j MARK --set-xmark "${tun_route_mark}" >/dev/null 2>&1 || true
+  for sn in ${intranet}; do
+    ${iptables} -t mangle -A "${out}" -d "${sn}" -j RETURN >/dev/null 2>&1 || true
+  done
+  ${iptables} -t mangle -A "${out}" -j MARK --set-xmark "${tun_route_mark}" >/dev/null 2>&1 || true
+  ensure_jump mangle OUTPUT "${out}"
+
+  # Policy routing
+  if [ "${iptables}" = "${IPV}" ]; then
+    ensure_ip_rule ip "${tun_bypass_mark}" "main" "${tun_bypass_pref}"
+    ensure_ip_rule ip "${tun_route_mark}"  "${tun_route_table}" "${tun_route_pref}"
+    ip route replace default dev "${tun_device}" table "${tun_route_table}" >/dev/null 2>&1 || true
+  else
+    ensure_ip_rule "ip -6" "${tun_bypass_mark}" "main" "${tun_bypass_pref}"
+    ensure_ip_rule "ip -6" "${tun_route_mark}"  "${tun_route_table}" "${tun_route_pref}"
+    ip -6 route replace default dev "${tun_device}" table "${tun_route_table}" >/dev/null 2>&1 || true
+  fi
+
+  # Forward rules for tun device
+  ${iptables} -t filter -C FORWARD -i "${tun_device}" -j ACCEPT >/dev/null 2>&1 || \
+    ${iptables} -t filter -I FORWARD -i "${tun_device}" -j ACCEPT >/dev/null 2>&1 || true
+  ${iptables} -t filter -C FORWARD -o "${tun_device}" -j ACCEPT >/dev/null 2>&1 || \
+    ${iptables} -t filter -I FORWARD -o "${tun_device}" -j ACCEPT >/dev/null 2>&1 || true
+
+  sysctl -w net.ipv4.ip_forward=1               >/dev/null 2>&1 || true
+  sysctl -w net.ipv4.conf.default.rp_filter=2   >/dev/null 2>&1 || true
+  sysctl -w net.ipv4.conf.all.rp_filter=2       >/dev/null 2>&1 || true
+
+  log Info "tun: rules applied (device=${tun_device})"
+  return 0
+}
+
+stop_tun_bypass() {
+  for chain in SSHC_TUN_PRE SSHC_TUN_OUT SSHC_TUN_PRE6 SSHC_TUN_OUT6; do
+    del_jump mangle PREROUTING "${chain}"
+    del_jump mangle OUTPUT "${chain}"
+    cleanup_chain mangle "${chain}"
+  done
+
+  if [ "${iptables}" = "${IPV}" ]; then
+    del_ip_rule ip "${tun_bypass_pref}"
+    del_ip_rule ip "${tun_route_pref}"
+    ip route flush table "${tun_route_table}" >/dev/null 2>&1 || true
+  else
+    del_ip_rule "ip -6" "${tun_bypass_pref}"
+    del_ip_rule "ip -6" "${tun_route_pref}"
+    ip -6 route flush table "${tun_route_table}" >/dev/null 2>&1 || true
+  fi
+
+  ${iptables} -t filter -D FORWARD -i "${tun_device}" -j ACCEPT >/dev/null 2>&1 || true
+  ${iptables} -t filter -D FORWARD -o "${tun_device}" -j ACCEPT >/dev/null 2>&1 || true
+
+  # Tear down TUN device
+  ip link set "${tun_device}" down 2>/dev/null || true
+  ip tuntap del "${tun_device}" mode tun 2>/dev/null || \
+    ip link del "${tun_device}" 2>/dev/null || true
+}
+
+
+# ── VPN Chain cleanup (always run — even if vpnchain stop wasn't called) ──────
+cleanup_vpnchain() {
+  ${iptables} -t mangle -D OUTPUT -m owner --uid-owner 10000-99999 -j MARK --set-mark 0x1 2>/dev/null || true
+  ${iptables} -t mangle -D OUTPUT -p udp --dport 53 -m owner --uid-owner 10000-99999 -j MARK --set-mark 0x1 2>/dev/null || true
+  ${iptables} -t nat -D OUTPUT -m owner --uid-owner 10000-99999 -j RETURN 2>/dev/null || true
+  ${iptables} -t nat -D POSTROUTING -o tun0 -j MASQUERADE 2>/dev/null || true
+  ip rule del fwmark 0x1 table 200 2>/dev/null || true
+  ip route flush table 200 2>/dev/null || true
+}
+
+# ── Full cleanup (all modes) ──────────────────────────────────────────────────
+cleanup_all() {
+  stop_redirect    2>/dev/null || true
+  stop_tproxy      2>/dev/null || true
+  stop_tun_bypass  2>/dev/null || true
+  cleanup_vpnchain 2>/dev/null || true
+  cleanup_quic_block 2>/dev/null || true
+  cleanup_dns_hijack 2>/dev/null || true
+  cleanup_dns_forward 2>/dev/null || true
+}
+
+# ── Runtime snapshot ──────────────────────────────────────────────────────────
+runtime_save() {
+  mkdir -p "${box_run_state}" >/dev/null 2>&1 || true
+  {
+    printf 'network_mode="%s"\n'   "${network_mode}"
+    printf 'ipv6="%s"\n'           "${ipv6}"
+    printf 'dns_hijack_mode="%s"\n' "${dns_hijack_mode}"
+    printf 'quic="%s"\n'           "${quic}"
+    printf 'proxy_tcp="%s"\n'      "${proxy_tcp}"
+    printf 'proxy_udp="%s"\n'      "${proxy_udp}"
+    printf 'tproxy_port="%s"\n'    "${tproxy_port}"
+    printf 'redir_port="%s"\n'     "${redir_port}"
+    printf 'socks_port="%s"\n'     "${socks_port}"
+    printf 'tun_device="%s"\n'     "${tun_device}"
+    printf 'box_user="%s"\n'       "${box_user:-root}"
+    printf 'box_group="%s"\n'      "${box_group:-root}"
+  } > "${runtime_env}"
+}
+
+runtime_load() {
+  [ -f "${runtime_env}" ] || return 1
+  . "${runtime_env}"
+}
+
+
+# ── Apply helpers (per-family) ────────────────────────────────────────────────
+apply_redirect_family() {
+  if start_redirect; then
+    log Info "iptables: ${iptables} REDIRECT rules applied"
+  else
+    log Warning "iptables: ${iptables} REDIRECT had errors (non-fatal, continuing)"
+  fi
+}
+
+apply_tproxy_family() {
+  if start_tproxy; then
+    log Info "iptables: ${iptables} TPROXY rules applied"
+  else
+    log Warning "iptables: ${iptables} TPROXY failed — attempting redirect fallback"
+    network_mode="redirect"
+    apply_redirect_family
+  fi
+}
+
+apply_tun_family() {
+  if start_tun_bypass; then
+    log Info "iptables: ${iptables} TUN rules applied"
+  else
+    log Warning "iptables: ${iptables} TUN rules had errors (non-fatal)"
+  fi
+}
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+case "${1:-}" in
+  enable|renew)
+    # VPN Chain (socks-only) mode: OpenVPN owns device routing via
+    # vpnchain.iptables, and the SSH side only needs to provide the SOCKS
+    # uplink. So skip the SSH device-redirect rules entirely.
+    if [ -f "${box_run}/vpnchain.active" ]; then
+      log Info "iptables: vpnchain active — socks-only mode, skipping SSH device redirect"
+      exit 0
+    fi
+
+    [ "${1}" = "renew" ] && log Warning "iptables: renew — cleaning first"
+    apply_capability_downgrades
+    probe_user_group
+
+    # Disable Android captive portal detection so the system marks the network
+    # as validated immediately. Without this, apps (YouTube, Chrome, etc.) show
+    # "no internet" even though TCP works fine through the tunnel. This is what
+    # HTTP Injector / box / HTTP Custom do under the hood.
+    settings put global captive_portal_mode 0 >/dev/null 2>&1 || true
+    settings put global captive_portal_detection_enabled 0 >/dev/null 2>&1 || true
+    settings put global captive_portal_use_https 0 >/dev/null 2>&1 || true
+    settings put global captive_portal_server localhost >/dev/null 2>&1 || true
+    settings put global captive_portal_http_url "http://localhost/generate_204" >/dev/null 2>&1 || true
+    settings put global captive_portal_https_url "http://localhost/generate_204" >/dev/null 2>&1 || true
+    ndc resolver clearnetdns 2>/dev/null || true
+
+    log Info "iptables: mode=${network_mode} dns=${dns_hijack_mode} quic=${quic} ipv6=${ipv6}"
+
+    # Clean existing rules (errors here are non-fatal — chains may not exist yet)
+    iptables="${IPV}"  cleanup_all 2>/dev/null || true
+    iptables="${IP6V}" cleanup_all 2>/dev/null || true
+
+    case "${network_mode}" in
+      redirect)
+        iptables="${IPV}" apply_redirect_family
+        if [ "${ipv6}" = "true" ]; then
+          enable_ipv6
+          iptables="${IP6V}" apply_redirect_family
+        else
+          disable_ipv6
+        fi
+        ;;
+      tproxy)
+        iptables="${IPV}" apply_tproxy_family
+        if [ "${ipv6}" = "true" ]; then
+          enable_ipv6
+          iptables="${IP6V}" apply_tproxy_family
+        else
+          disable_ipv6
+        fi
+        ;;
+      tun|tun_udpgw)
+        iptables="${IPV}" apply_tun_family
+        if [ "${ipv6}" = "true" ]; then
+          enable_ipv6
+          iptables="${IP6V}" apply_tun_family
+        else
+          disable_ipv6
+        fi
+        ;;
+      *)
+        log Error "iptables: unknown network_mode '${network_mode}'"
+        exit 1
+        ;;
+    esac
+
+    # DNS-through-tunnel: redirect device UDP:53 to our local forwarder so
+    # DNS rides the SSH tunnel (and Android's connectivity check sees the
+    # network as validated). Added LAST so cleanup_all above doesn't tear it
+    # down. The chain skips uid 0 — the SSH daemon's own dnsx queries must
+    # still go direct to carrier DNS to avoid a self-loop.
+    setup_dns_forward
+
+    runtime_save
+    [ "${1}" = "renew" ] && log Info "iptables: renew complete"
+    # Explicit success: the preceding test returns non-zero when $1=enable,
+    # which would otherwise leak as a false "iptables enable returned non-zero".
+    exit 0
+    ;;
+
+  disable)
+    runtime_load 2>/dev/null || true
+    enable_ipv6
+
+    # Restore captive portal detection — but NOT when transitioning to VPN Chain
+    # (the marker is present and the tunnel is still active via OpenVPN).
+    if [ ! -f "${box_run}/vpnchain.active" ]; then
+      settings put global captive_portal_mode 1 >/dev/null 2>&1 || true
+      settings put global captive_portal_detection_enabled 1 >/dev/null 2>&1 || true
+      settings put global captive_portal_use_https 1 >/dev/null 2>&1 || true
+      settings delete global captive_portal_server >/dev/null 2>&1 || true
+      settings delete global captive_portal_http_url >/dev/null 2>&1 || true
+      settings delete global captive_portal_https_url >/dev/null 2>&1 || true
+    fi
+    probe_user_group
+    log Warning "iptables: disabling — cleaning all rules"
+
+    iptables="${IPV}"  cleanup_all 2>/dev/null || true
+    iptables="${IP6V}" cleanup_all 2>/dev/null || true
+
+    rm -f "${runtime_env}"
+    log Info "iptables: all rules removed — device in clean state"
+    ;;
+
+  *)
+    printf 'Usage: %s {enable|disable|renew}\n' "$0" >&2
+    exit 1
+    ;;
+esac

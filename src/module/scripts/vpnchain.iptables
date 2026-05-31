@@ -1,0 +1,82 @@
+#!/system/bin/sh
+# vpnchain.iptables — route app traffic through the OpenVPN tun (tun1).
+#
+# Android uses per-network policy routing (NOT the main table) for the default
+# route, so we add a HIGH-priority ip rule (low pref number, evaluated before
+# Android's per-network rules) that sends APP traffic (uid 10000-99999) to a
+# table whose default is tun1. System/root traffic (uid 0-9999, including the
+# SSH daemon and OpenVPN's own SOCKS uplink) is left on Android's normal routing
+# so SSH->bug-host keeps working and there is no loop. We never touch Android's
+# default routing, so there is nothing to "restore" and no network-unreachable
+# state after stopping.
+#
+# Usage: vpnchain.iptables {enable|disable|force-disable}
+
+scripts_dir="${0%/*}"
+. /data/adb/sshcustom/settings.ini
+
+OVPN_TUN="tun1"
+VPN_TABLE="9041"
+VPN_PREF="9041"
+APP_UIDS="10000-99999"
+
+_build_major="$(getprop ro.build.version.release 2>/dev/null | cut -d. -f1)"
+if [ "${_build_major:-0}" -ge 11 ] 2>/dev/null; then
+  IPV="iptables -w 100"
+else
+  IPV="iptables"
+fi
+
+enable_chain() {
+  # Default route via the OpenVPN tun in our own routing table.
+  ip route replace default dev "${OVPN_TUN}" table "${VPN_TABLE}" 2>/dev/null || \
+    ip route add default dev "${OVPN_TUN}" table "${VPN_TABLE}" 2>/dev/null || true
+
+  # App traffic (uid 10000+) -> tun table. Higher priority than Android's
+  # per-network rules. System/root keep Android's normal routing (carrier).
+  ip rule del pref "${VPN_PREF}" 2>/dev/null || true
+  ip rule add pref "${VPN_PREF}" uidrange "${APP_UIDS}" lookup "${VPN_TABLE}" 2>/dev/null || true
+
+  # Force app DNS through the tunnel (carrier/private DNS IPs are unreachable
+  # via the VPN, so pin to 8.8.8.8 which resolves through Windscribe).
+  ${IPV} -t nat -N SSHC_VPNDNS 2>/dev/null || true
+  ${IPV} -t nat -F SSHC_VPNDNS 2>/dev/null || true
+  ${IPV} -t nat -A SSHC_VPNDNS -m owner --uid-owner ${APP_UIDS} -p udp --dport 53 -j DNAT --to-destination 8.8.8.8:53 2>/dev/null || true
+  ${IPV} -t nat -A SSHC_VPNDNS -m owner --uid-owner ${APP_UIDS} -p tcp --dport 53 -j DNAT --to-destination 8.8.8.8:53 2>/dev/null || true
+  ${IPV} -t nat -C OUTPUT -j SSHC_VPNDNS 2>/dev/null || \
+    ${IPV} -t nat -A OUTPUT -j SSHC_VPNDNS 2>/dev/null || true
+
+  # Keep captive portal detection disabled while the chain is active.
+  settings put global captive_portal_mode 0 >/dev/null 2>&1 || true
+  settings put global captive_portal_detection_enabled 0 >/dev/null 2>&1 || true
+
+  sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+  log Info "vpnchain: app traffic (uid ${APP_UIDS}) routed via ${OVPN_TUN}"
+  return 0
+}
+
+disable_chain() {
+  ip rule del pref "${VPN_PREF}" 2>/dev/null || true
+  ip route flush table "${VPN_TABLE}" 2>/dev/null || true
+  ${IPV} -t nat -D OUTPUT -j SSHC_VPNDNS 2>/dev/null || true
+  ${IPV} -t nat -F SSHC_VPNDNS 2>/dev/null || true
+  ${IPV} -t nat -X SSHC_VPNDNS 2>/dev/null || true
+  log Info "vpnchain: tun routing removed (Android default routing untouched)"
+  return 0
+}
+
+force_disable_chain() {
+  killall openvpn 2>/dev/null || true
+  ip link set "${OVPN_TUN}" down 2>/dev/null || true
+  ip link del "${OVPN_TUN}" 2>/dev/null || true
+  disable_chain
+  return 0
+}
+
+case "${1:-}" in
+  enable)        enable_chain ;;
+  disable)       disable_chain ;;
+  force-disable) force_disable_chain ;;
+  *) printf 'Usage: %s {enable|disable|force-disable}\n' "$0" >&2; exit 1 ;;
+esac
+exit 0
