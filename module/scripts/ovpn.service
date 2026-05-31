@@ -53,8 +53,11 @@ start_ovpn() {
 
   # Validate auth.txt — must exist with at least 2 lines (user + pass).
   # The file is managed manually by the user.
-  if [ ! -f "${AUTH_FILE}" ] || [ "$(wc -l < "${AUTH_FILE}" 2>/dev/null)" -lt 2 ]; then
-    log Error "vpnchain: auth.txt missing or incomplete — put username on line 1, password on line 2"
+  local _auth_user _auth_pass
+  _auth_user="$(sed -n '1p' "${AUTH_FILE}" 2>/dev/null | tr -d '\r')"
+  _auth_pass="$(sed -n '2p' "${AUTH_FILE}" 2>/dev/null | tr -d '\r')"
+  if [ ! -f "${AUTH_FILE}" ] || [ -z "${_auth_user}" ] || [ -z "${_auth_pass}" ]; then
+    log Error "vpnchain: auth.txt invalid — need username on line 1, password on line 2"
     rm -f "${MARKER}"
     sh "${SSH_IPT}" enable >> "${box_log}" 2>&1 || true
     return 1
