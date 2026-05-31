@@ -42,6 +42,9 @@ func (s *SOCKS5Server) ListenAndServe(ctx context.Context) error {
 				return err
 			}
 		}
+		if tc, ok := conn.(*net.TCPConn); ok {
+			tc.SetNoDelay(true)
+		}
 		go s.handle(ctx, conn)
 	}
 }

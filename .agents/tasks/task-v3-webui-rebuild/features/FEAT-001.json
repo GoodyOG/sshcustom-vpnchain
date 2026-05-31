@@ -1,0 +1,41 @@
+{
+  "id": "FEAT-001",
+  "type": "chore",
+  "description": "Phase 0 + Phase 1: Create branch, bump version, implement daemon engine fixes (SSH connection pool, TCP_NODELAY, network standby, VPN chain state, hotspot fix, OpenVPN flag cleanup)",
+  "status": "in_progress",
+  "steps": [
+    "Create and checkout branch v3.0.0-webui from main",
+    "Update VERSION file to 3.0.0",
+    "Update module/module.prop: version=v3.0.0, versionCode=30000",
+    "Create daemon/internal/ssh/pool.go with Pool struct: fields []*Client, size int, mu sync.Mutex, idx uint32. Methods: Dial(ctx, cfg ConnectConfig) error, Pick() *Client (round-robin among alive via atomic idx, skip nil/closed), CloseAll(), Healthy() int, Size() int. Pool.Dial establishes N connections using the same ConnectConfig.",
+    "In daemon/cmd/sshcustomd/main.go tunnelLoop: replace single issh.Dial with pool.Dial (create pool of size cfg.ChannelPoolSize). Store pool reference. Change curClient (which is the func() *issh.Client passed to proxy servers) to call pool.Pick() instead of clientPtr.Load(). Keep the transparent reconnect logic: on SSH loss, CloseAll the pool and re-Dial on reconnect.",
+    "Add pool size and healthy count to State struct fields: poolSize int, poolHealthy int. Update metricsLoop to populate these from the pool.",
+    "In daemon/internal/proxy/socks5.go ListenAndServe: after ln.Accept(), type-assert conn to *net.TCPConn and call SetNoDelay(true). Same in transparent.go ListenAndServe and tproxy.go ListenAndServe (for tproxy, after lc.Listen accept).",
+    "In daemon/cmd/sshcustomd/main.go: add hasDefaultRoute() func that runs exec.Command('ip', 'route', 'get', '1.1.1.1') and returns true if err==nil. In tunnelLoop before dialing: check hasDefaultRoute(). If no route for 2 consecutive checks (20s gap), enter STANDBY mode: teardownSession(), set state standby=true, update module.prop to standby emoji, then poll every 10s until route returns, then resume loop.",
+    "Add Standby bool to State struct. Add to StatusSnapshot: Standby bool json:standby.",
+    "Add VPN chain state fields to State: vpnChainState string, vpnChainExitIP string, vpnChainLocation string. Add to StatusSnapshot: VpnChainState string, VpnChainExitIP string, VpnChainLocation string.",
+    "Add background goroutine vpnChainWatcher(ctx, workDir, st *State): checks workDir+/run/vpnchain.active marker every 3s. If present: run ovpn.service status to get state, read openvpn.log for 'Initialization Sequence Completed'. Update State fields accordingly. If marker absent, set state to 'off'.",
+    "In module/scripts/ssh.iptables: In the hotspot_sharing=true block within enable|renew (inside start_redirect), after the PREROUTING rules for hotspot interfaces, add: ${IPV} -I FORWARD -j ACCEPT and sysctl -w net.ipv4.ip_forward=1. In disable section, add cleanup: ${IPV} -D FORWARD -j ACCEPT 2>/dev/null",
+    "In module/scripts/ovpn.service: Remove the flags --tun-mtu 1280 --mssfix 1200 --sndbuf 524288 --rcvbuf 524288 from the nohup openvpn command. Keep everything else."
+  ],
+  "acceptance_criteria": [
+    "daemon/internal/ssh/pool.go exists with Pool struct implementing Dial, Pick, CloseAll, Healthy, Size",
+    "proxy/socks5.go, proxy/transparent.go, proxy/tproxy.go all call SetNoDelay(true) after Accept",
+    "main.go tunnelLoop uses pool.Dial and pool.Pick instead of single client",
+    "main.go has hasDefaultRoute() and standby logic in tunnelLoop",
+    "State struct has Standby, VpnChainState, VpnChainExitIP, VpnChainLocation fields",
+    "StatusSnapshot has all new fields with json tags",
+    "vpnChainWatcher goroutine is started in runCmd",
+    "ssh.iptables hotspot block has FORWARD -j ACCEPT and ip_forward sysctl",
+    "ovpn.service no longer has --tun-mtu, --mssfix, --sndbuf, --rcvbuf flags",
+    "VERSION is 3.0.0, module.prop is v3.0.0 versionCode=30000",
+    "Code compiles with GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build"
+  ],
+  "verification": [
+    "GOROOT=/root/.local/share/mise/installs/go/1.23.8 PATH=/root/.local/share/mise/installs/go/1.23.8/bin:$PATH GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w -X main.version=3.0.0' -o /tmp/sshcustomd ./cmd/sshcustomd/ (run from daemon/ dir)",
+    "GOROOT=/root/.local/share/mise/installs/go/1.23.8 PATH=/root/.local/share/mise/installs/go/1.23.8/bin:$PATH GOOS=android GOARCH=arm64 CGO_ENABLED=0 go vet ./... (run from daemon/ dir)",
+    "sh -n module/scripts/ssh.iptables && sh -n module/scripts/ovpn.service"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

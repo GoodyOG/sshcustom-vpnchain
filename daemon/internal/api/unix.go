@@ -29,6 +29,10 @@ type StatusSnapshot struct {
 	UpKbps           float64 `json:"up_kbps"`
 	DownKbps         float64 `json:"down_kbps"`
 	LastError        string  `json:"last_error,omitempty"`
+	Standby          bool    `json:"standby"`
+	VpnChainState    string  `json:"vpn_chain_state"`
+	VpnChainExitIP   string  `json:"vpn_chain_exit_ip,omitempty"`
+	VpnChainLocation string  `json:"vpn_chain_location,omitempty"`
 }
 
 // ControlRequest is a request from the Android app.

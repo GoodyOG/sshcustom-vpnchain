@@ -117,6 +117,14 @@ type State struct {
 	wanIP        string
 	wanCountry   string
 	version      string
+	poolSize     int
+	poolHealthy  int
+	standby      bool
+
+	// VPN chain state
+	vpnChainState    string
+	vpnChainExitIP   string
+	vpnChainLocation string
 }
 
 func (s *State) set(fn func(*State)) {
@@ -151,6 +159,12 @@ func (s *State) snapshot() api.StatusSnapshot {
 		UpKbps:           s.upBps / 1024,
 		DownKbps:         s.downBps / 1024,
 		LastError:        s.lastError,
+		ChannelPoolSize:  s.poolSize,
+		ChannelPoolAvail: s.poolHealthy,
+		Standby:          s.standby,
+		VpnChainState:    s.vpnChainState,
+		VpnChainExitIP:   s.vpnChainExitIP,
+		VpnChainLocation: s.vpnChainLocation,
 	}
 }
 
@@ -231,6 +245,9 @@ func runCmd() {
 	// Metrics ticker
 	go metricsLoop(ctx, st, &sshClient)
 
+	// VPN chain state watcher
+	go vpnChainWatcher(ctx, *workDir, st)
+
 	// Start tunnel unless idle
 	if !*idle {
 		go tunnelLoop(ctx, atomicCfg, *cfgPath, *workDir, st, &sshClient)
@@ -275,11 +292,20 @@ func tunnelLoop(
 		reconnectGiveUp = 15 * time.Minute
 	)
 	iptables := workDir + "/scripts/ssh.iptables"
-	curClient := func() *issh.Client { return clientPtr.Load() }
+
+	// Pool replaces the single client. curClient() calls pool.Pick() so proxy
+	// servers and DNS forwarder get round-robin selection among alive connections.
+	var pool *issh.Pool
+	curClient := func() *issh.Client {
+		if pool == nil {
+			return nil
+		}
+		return pool.Pick()
+	}
 
 	// A "session" = the local listeners + iptables. It is brought up once on the
 	// first successful connect and KEPT UP across transparent SSH reconnects, so
-	// a brief SSH drop no longer flaps routing — apps just stall ~1s with no
+	// a brief SSH drop no longer flaps routing -- apps just stall ~1s with no
 	// leak (fail-closed), exactly like a VpnService app whose tun stays up.
 	var (
 		listenerCancel context.CancelFunc
@@ -300,6 +326,7 @@ func tunnelLoop(
 
 	delay := time.Duration(0)
 	var downSince time.Time // when the tunnel was lost while a session was up
+	noRouteCount := 0       // consecutive checks with no default route
 
 	for {
 		select {
@@ -310,16 +337,61 @@ func tunnelLoop(
 
 		cfg := atomicCfg.Get()
 		if cfg.SSHHost == "" || cfg.SSHUser == "" {
-			log.Println("[tunnel] ssh_host/ssh_user not configured — waiting")
+			log.Println("[tunnel] ssh_host/ssh_user not configured -- waiting")
 			delay = 10 * time.Second
 			continue
 		}
 
+		// Network standby: check for a default route before dialing.
+		if !hasDefaultRoute() {
+			noRouteCount++
+			if noRouteCount >= 2 {
+				log.Println("[tunnel] no default route -- entering standby")
+				teardownSession()
+				if pool != nil {
+					pool.CloseAll()
+					pool = nil
+				}
+				clientPtr.Store(nil)
+				st.set(func(s *State) {
+					s.standby = true
+					s.connected = false
+					s.lastEvent = "standby"
+				})
+				updateModuleProp("standby", "")
+				// Poll every 10s until route returns
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(10 * time.Second):
+					}
+					if hasDefaultRoute() {
+						log.Println("[tunnel] default route restored -- resuming")
+						st.set(func(s *State) { s.standby = false; s.lastEvent = "resuming" })
+						noRouteCount = 0
+						break
+					}
+				}
+				delay = 0
+				continue
+			}
+			delay = 20 * time.Second
+			continue
+		}
+		noRouteCount = 0
+
 		log.Printf("[tunnel] connecting to %s:%d mode=%s", cfg.SSHHost, cfg.SSHPort, cfg.SSHMode)
 		st.set(func(s *State) { s.lastError = ""; s.lastEvent = "connecting" })
 
+		poolSize := cfg.ChannelPoolSize
+		if poolSize < 1 || !cfg.ChannelPool {
+			poolSize = 1
+		}
+		pool = issh.NewPool(poolSize)
+
 		dialCtx, dialCancel := context.WithTimeout(ctx, 30*time.Second)
-		c, err := issh.Dial(dialCtx, issh.ConnectConfig{
+		err := pool.Dial(dialCtx, issh.ConnectConfig{
 			Host:              cfg.SSHHost,
 			Port:              cfg.SSHPort,
 			User:              cfg.SSHUser,
@@ -343,17 +415,18 @@ func tunnelLoop(
 				s.lastError = err.Error()
 				s.lastEvent = "connect_failed"
 			})
-			// Keep the session (iptables + listeners) UP across retries —
+			pool = nil
+			// Keep the session (iptables + listeners) UP across retries --
 			// fail-closed, no traffic leak. But if we've been unable to reconnect
 			// for too long, release routing so the device isn't blocked forever.
 			if iptablesUp && !downSince.IsZero() && time.Since(downSince) > reconnectGiveUp {
-				log.Println("[tunnel] reconnect gave up after timeout — releasing routing until tunnel returns")
+				log.Println("[tunnel] reconnect gave up after timeout -- releasing routing until tunnel returns")
 				teardownSession()
 				sessionMode = ""
 			}
 			// 302 = carrier blocked the host; use longer backoff to avoid hammering
 			if strings.Contains(err.Error(), "302") {
-				log.Println("[tunnel] carrier block detected (302) — backing off 60s")
+				log.Println("[tunnel] carrier block detected (302) -- backing off 60s")
 				if delay < 60*time.Second {
 					delay = 60 * time.Second
 				} else {
@@ -365,7 +438,8 @@ func tunnelLoop(
 			continue
 		}
 
-		// Connected.
+		// Connected. Store one client for backward compat (metrics uses it).
+		c := pool.Pick()
 		clientPtr.Store(c)
 		downSince = time.Time{}
 		st.set(func(s *State) {
@@ -375,8 +449,10 @@ func tunnelLoop(
 			s.netMode = cfg.NetworkMode
 			s.lastError = ""
 			s.lastEvent = "connected"
+			s.poolSize = pool.Size()
+			s.poolHealthy = pool.Healthy()
 		})
-		log.Printf("[tunnel] connected")
+		log.Printf("[tunnel] connected (pool size=%d healthy=%d)", pool.Size(), pool.Healthy())
 		updateModuleProp("running", cfg.NetworkMode)
 
 		// Bring the session up once, or rebuild it if the network mode changed.
@@ -400,7 +476,7 @@ func tunnelLoop(
 		go func() { waitDone <- c.Wait() }()
 		select {
 		case <-ctx.Done():
-			c.Close()
+			pool.CloseAll()
 			clientPtr.Store(nil)
 			updateModuleProp("stopped", "")
 			return // defer teardownSession removes routing on explicit stop
@@ -412,8 +488,9 @@ func tunnelLoop(
 
 		// Transparent reconnect: keep listeners + iptables UP, clear the client,
 		// and re-dial. Listeners refuse connections during the gap (fail-closed).
-		log.Println("[tunnel] connection lost — reconnecting (routing kept up)")
-		c.Close()
+		log.Println("[tunnel] connection lost -- reconnecting (routing kept up)")
+		pool.CloseAll()
+		pool = nil
 		clientPtr.Store(nil)
 		downSince = time.Now()
 		st.set(func(s *State) {
@@ -421,6 +498,7 @@ func tunnelLoop(
 			s.wanIP = ""
 			s.wanCountry = ""
 			s.lastEvent = "reconnecting"
+			s.poolHealthy = 0
 		})
 		updateModuleProp("reconnecting", "")
 		if ctx.Err() != nil {
@@ -591,6 +669,64 @@ func forwardOneDNSQuery(
 }
 
 
+
+// hasDefaultRoute checks if the device currently has a default route by running
+// `ip route get 1.1.1.1`. Returns true if the command succeeds (route exists).
+func hasDefaultRoute() bool {
+	cmd := exec.Command("ip", "route", "get", "1.1.1.1")
+	return cmd.Run() == nil
+}
+
+// vpnChainWatcher monitors the vpnchain.active marker file and updates State
+// with the VPN chain status. It checks every 3 seconds.
+func vpnChainWatcher(ctx context.Context, workDir string, st *State) {
+	marker := workDir + "/run/vpnchain.active"
+	ovpnLog := workDir + "/run/openvpn.log"
+	ovpnService := workDir + "/scripts/ovpn.service"
+
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		if _, err := os.Stat(marker); os.IsNotExist(err) {
+			st.set(func(s *State) {
+				s.vpnChainState = "off"
+				s.vpnChainExitIP = ""
+				s.vpnChainLocation = ""
+			})
+			continue
+		}
+
+		// Marker exists - check status via ovpn.service
+		state := "connecting"
+		out, err := exec.CommandContext(ctx, "/system/bin/sh", ovpnService, "status").Output()
+		if err == nil {
+			status := strings.TrimSpace(string(out))
+			if status == "connected" || status == "connecting" || status == "stopped" {
+				state = status
+			}
+		}
+
+		// Fallback: check openvpn.log for completion
+		if state == "connecting" {
+			if logData, err := os.ReadFile(ovpnLog); err == nil {
+				if strings.Contains(string(logData), "Initialization Sequence Completed") {
+					state = "connected"
+				}
+			}
+		}
+
+		st.set(func(s *State) {
+			s.vpnChainState = state
+		})
+	}
+}
 
 // wanIPRefresher caches the tunnel-side public IP (refreshes every 5 min),
 // using whatever client is current.
@@ -945,6 +1081,8 @@ func updateModuleProp(status, networkMode string) {
 		desc = "[ \xf0\x9f\x9f\xa1 ] SSHCustom-VPNChain reconnecting..."
 	case "stopped":
 		desc = "[ \xf0\x9f\x94\xb4 ] SSHCustom-VPNChain stopped"
+	case "standby":
+		desc = "[ \xf0\x9f\x92\xa4 ] SSHCustom-VPNChain standby (no route)"
 	default:
 		desc = "[ \xf0\x9f\x92\xa4 ] SSHCustom-VPNChain idle"
 	}

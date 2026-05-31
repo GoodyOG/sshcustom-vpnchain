@@ -1,7 +1,7 @@
 id=sshcustom-vpnchain
 name=SSHCustom-VPNChain
-version=v2.3.13
-versionCode=20313
+version=v3.0.0
+versionCode=30000
 author=GoodyOG
 description=[ 💤 ] SSHCustom-VPNChain idle
 updateJson=https://raw.githubusercontent.com/GoodyOG/sshcustom-vpnchain/main/module/update.json

@@ -58,6 +58,9 @@ func (t *TProxyServer) ListenAndServe(ctx context.Context) error {
 				return err
 			}
 		}
+		if tc, ok := conn.(*net.TCPConn); ok {
+			tc.SetNoDelay(true)
+		}
 		go t.handle(ctx, conn)
 	}
 }
