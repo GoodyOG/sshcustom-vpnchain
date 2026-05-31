@@ -93,10 +93,11 @@ else
   ui_print "  NOTE: new options may be available — see module docs"
 fi
 
-# ── VPN Chain: auth placeholder (only if not present) ─────────────────────────
-if [ ! -f "${WORK_DIR}/vpnchain/auth.txt" ]; then
-  cp -f "${MODPATH}/vpnchain/auth.txt" "${WORK_DIR}/vpnchain/auth.txt"
+# ── VPN Chain: auth template (create if missing or still template) ────────────
+if [ ! -f "${WORK_DIR}/vpnchain/auth.txt" ] || grep -q "^username$" "${WORK_DIR}/vpnchain/auth.txt" 2>/dev/null; then
+  printf 'username\npassword\n' > "${WORK_DIR}/vpnchain/auth.txt"
   chmod 600 "${WORK_DIR}/vpnchain/auth.txt"
+  ui_print "  VPN Chain: edit vpnchain/auth.txt with your OpenVPN credentials"
 fi
 
 # ── Migration from old path ───────────────────────────────────────────────────

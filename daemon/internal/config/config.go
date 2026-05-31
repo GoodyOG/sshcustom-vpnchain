@@ -33,12 +33,10 @@ type Config struct {
 	Payload        string
 
 	// Network
-	NetworkMode string // redirect | tproxy | tun | tun_udpgw
+	NetworkMode string // redirect | tproxy
 	SocksPort   int
 	TProxyPort  int
 	RedirPort   int
-	TunDevice   string
-	UDPGWServer string
 
 	// Proxy behaviour
 	ProxyTCP bool
@@ -97,7 +95,6 @@ func DefaultConfig() *Config {
 		SocksPort:       1080,
 		TProxyPort:      9898,
 		RedirPort:       9797,
-		TunDevice:       "tun0",
 		ProxyTCP:        true,
 		ProxyUDP:        false,
 		QUIC:            "disable",
@@ -174,8 +171,6 @@ func (c *Config) apply(key, val string) {
 	case "socks_port":      c.SocksPort = n(val, 1080)
 	case "tproxy_port":     c.TProxyPort = n(val, 9898)
 	case "redir_port":      c.RedirPort = n(val, 9797)
-	case "tun_device":      c.TunDevice = val
-	case "udpgw_server":    c.UDPGWServer = val
 	case "proxy_tcp":       c.ProxyTCP = b(val)
 	case "proxy_udp":       c.ProxyUDP = b(val)
 	case "quic":            c.QUIC = val

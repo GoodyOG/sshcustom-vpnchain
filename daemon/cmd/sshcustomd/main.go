@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -351,7 +350,17 @@ func tunnelLoop(
 				teardownSession()
 				sessionMode = ""
 			}
-			delay = nextDelay(delay, baseDelay, maxDelay)
+			// 302 = carrier blocked the host; use longer backoff to avoid hammering
+			if strings.Contains(err.Error(), "302") {
+				log.Println("[tunnel] carrier block detected (302) — backing off 60s")
+				if delay < 60*time.Second {
+					delay = 60 * time.Second
+				} else {
+					delay = minDuration(delay*2, 5*time.Minute)
+				}
+			} else {
+				delay = nextDelay(delay, baseDelay, maxDelay)
+			}
 			continue
 		}
 
@@ -429,9 +438,8 @@ func nextDelay(cur, base, max time.Duration) time.Duration {
 }
 
 // startListeners brings up the SOCKS5 + mode-specific transparent/tproxy
-// listeners + the DNS forwarder. They are bound to the CURRENT SSH client via
-// curClient(), so they keep running and pick up the new client across
-// transparent reconnects.
+// listeners. They are bound to the CURRENT SSH client via curClient(), so they
+// keep running and pick up the new client across transparent reconnects.
 func startListeners(ctx context.Context, cfg *config.Config, curClient func() *issh.Client) {
 	socks := &proxy.SOCKS5Server{
 		Addr:   fmt.Sprintf("127.0.0.1:%d", cfg.SocksPort),
@@ -442,9 +450,6 @@ func startListeners(ctx context.Context, cfg *config.Config, curClient func() *i
 			log.Printf("[socks5] %v", err)
 		}
 	}()
-
-	// DNS forwarder — redirects device UDP DNS to TCP DNS through the tunnel
-	go dnsForwarder(ctx, curClient)
 
 	switch cfg.NetworkMode {
 	case "tproxy":
@@ -472,83 +477,7 @@ func startListeners(ctx context.Context, cfg *config.Config, curClient func() *i
 	}
 }
 
-// dnsForwarder listens on 127.0.0.1:5353 UDP, accepts DNS queries, forwards
-// them as TCP DNS through the SSH tunnel to 8.8.8.8:53, and returns the
-// response. This ensures DNS always resolves through the tunnel, fixing
-// "no internet" issues in YouTube/Chrome when system DNS is broken.
-func dnsForwarder(ctx context.Context, curClient func() *issh.Client) {
-	pc, err := net.ListenPacket("udp", "127.0.0.1:5353")
-	if err != nil {
-		log.Printf("[dns] failed to listen on 127.0.0.1:5353: %v", err)
-		return
-	}
-	log.Printf("[dns] forwarder listening on 127.0.0.1:5353")
-	go func() {
-		<-ctx.Done()
-		pc.Close()
-	}()
 
-	buf := make([]byte, 4096)
-	for {
-		n, addr, err := pc.ReadFrom(buf)
-		if err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			continue
-		}
-		query := make([]byte, n)
-		copy(query, buf[:n])
-		go func(q []byte, src net.Addr) {
-			resp, err := forwardDNSviaTunnel(ctx, curClient, q)
-			if err != nil {
-				return
-			}
-			pc.WriteTo(resp, src)
-		}(query, addr)
-	}
-}
-
-// forwardDNSviaTunnel sends a DNS query as TCP (length-prefixed) to 8.8.8.8:53
-// through the SSH tunnel and returns the response payload.
-func forwardDNSviaTunnel(ctx context.Context, curClient func() *issh.Client, query []byte) ([]byte, error) {
-	c := curClient()
-	if c == nil {
-		return nil, fmt.Errorf("no ssh client")
-	}
-	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	conn, err := c.DialTCP(dialCtx, "tcp", "8.8.8.8:53")
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(5 * time.Second))
-
-	// TCP DNS: 2-byte length prefix + query
-	lenbuf := []byte{byte(len(query) >> 8), byte(len(query))}
-	if _, err := conn.Write(lenbuf); err != nil {
-		return nil, err
-	}
-	if _, err := conn.Write(query); err != nil {
-		return nil, err
-	}
-
-	// Read 2-byte length prefix
-	respLen := make([]byte, 2)
-	if _, err := io.ReadFull(conn, respLen); err != nil {
-		return nil, err
-	}
-	rlen := int(respLen[0])<<8 | int(respLen[1])
-	if rlen < 12 || rlen > 4096 {
-		return nil, fmt.Errorf("invalid dns response length: %d", rlen)
-	}
-	resp := make([]byte, rlen)
-	if _, err := io.ReadFull(conn, resp); err != nil {
-		return nil, err
-	}
-	return resp, nil
-}
 
 // wanIPRefresher caches the tunnel-side public IP (refreshes every 5 min),
 // using whatever client is current.

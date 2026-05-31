@@ -542,15 +542,6 @@ case "${1:-}" in
       exit 0
     fi
 
-    # DNS-through-tunnel: redirect all device UDP port 53 to the local DNS
-    # forwarder at 127.0.0.1:5353 so DNS always resolves through the tunnel.
-    ${IPV} -t nat -N SSHC_DNS >/dev/null 2>&1 || true
-    ${IPV} -t nat -F SSHC_DNS >/dev/null 2>&1 || true
-    ${IPV} -t nat -A SSHC_DNS -p udp --dport 53 -j DNAT --to-destination 127.0.0.1:5353 >/dev/null 2>&1 || true
-    ${IPV} -t nat -C OUTPUT -p udp --dport 53 -j SSHC_DNS >/dev/null 2>&1 || \
-      ${IPV} -t nat -I OUTPUT -p udp --dport 53 -j SSHC_DNS >/dev/null 2>&1 || true
-    log Info "iptables: DNS-through-tunnel enabled (UDP:53 → 127.0.0.1:5353)"
-
     [ "${1}" = "renew" ] && log Warning "iptables: renew — cleaning first"
     apply_capability_downgrades
     probe_user_group
@@ -618,11 +609,6 @@ case "${1:-}" in
     settings put global captive_portal_detection_enabled 1 >/dev/null 2>&1 || true
     probe_user_group
     log Warning "iptables: disabling — cleaning all rules"
-
-    # DNS-through-tunnel cleanup
-    ${IPV} -t nat -D OUTPUT -p udp --dport 53 -j SSHC_DNS >/dev/null 2>&1 || true
-    ${IPV} -t nat -F SSHC_DNS >/dev/null 2>&1 || true
-    ${IPV} -t nat -X SSHC_DNS >/dev/null 2>&1 || true
 
     iptables="${IPV}"  cleanup_all 2>/dev/null || true
     iptables="${IP6V}" cleanup_all 2>/dev/null || true
