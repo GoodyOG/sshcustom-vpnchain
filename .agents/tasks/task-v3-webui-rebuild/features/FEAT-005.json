@@ -1,0 +1,30 @@
+{
+  "id": "FEAT-005",
+  "type": "chore",
+  "description": "Phase 6: Final build verification, fix all compile errors, commit everything, ensure all scripts pass sh -n",
+  "status": "completed",
+  "steps": [
+    "Run full daemon build: GOROOT=/root/.local/share/mise/installs/go/1.23.8 PATH=/root/.local/share/mise/installs/go/1.23.8/bin:$PATH GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w -X main.version=3.0.0' -o /tmp/sshcustomd ./cmd/sshcustomd/ (from daemon/ directory). Fix ALL errors until it passes.",
+    "Run go vet: GOROOT=/root/.local/share/mise/installs/go/1.23.8 PATH=/root/.local/share/mise/installs/go/1.23.8/bin:$PATH GOOS=android GOARCH=arm64 CGO_ENABLED=0 go vet ./... (from daemon/ directory). Fix ALL warnings.",
+    "Run sh -n on all module scripts: sh -n module/scripts/ssh.iptables && sh -n module/scripts/ovpn.service && sh -n module/scripts/ssh.service && sh -n module/scripts/ssh.tool && sh -n module/scripts/vpnchain.iptables && sh -n module/service.sh && sh -n module/customize.sh && sh -n module/action.sh && sh -n module/uninstall.sh. Fix any syntax errors.",
+    "Verify file command on the binary shows aarch64: file /tmp/sshcustomd",
+    "Ensure daemon/internal/webui/index.html matches module/webroot/index.html (copy if different)",
+    "git add -A && git commit with message 'feat: SSHCustom-VPNChain v3.0.0 - WebUI-only rebuild' (include details about SSH connection pool, standby mode, CORS API, profiles CRUD, Material 3 WebUI, app removal)"
+  ],
+  "acceptance_criteria": [
+    "go build succeeds with zero errors for GOOS=android GOARCH=arm64",
+    "go vet passes with zero issues",
+    "All shell scripts pass sh -n",
+    "Binary is arm64/aarch64",
+    "All changes committed on v3.0.0-webui branch",
+    "Commit message is descriptive"
+  ],
+  "verification": [
+    "GOROOT=/root/.local/share/mise/installs/go/1.23.8 PATH=/root/.local/share/mise/installs/go/1.23.8/bin:$PATH GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w -X main.version=3.0.0' -o /tmp/sshcustomd ./cmd/sshcustomd/",
+    "GOROOT=/root/.local/share/mise/installs/go/1.23.8 PATH=/root/.local/share/mise/installs/go/1.23.8/bin:$PATH GOOS=android GOARCH=arm64 CGO_ENABLED=0 go vet ./...",
+    "file /tmp/sshcustomd | grep -q aarch64",
+    "git -C /projects/sandbox/sshcustom-vpnchain status --porcelain | wc -l (should be 0)"
+  ],
+  "blocked_reason": null,
+  "findings": "Build passes cleanly for GOOS=android GOARCH=arm64 with zero errors. Go vet passes with zero warnings. All 9 shell scripts pass sh -n syntax check. Binary confirmed as ELF 64-bit ARM aarch64. module/webroot/index.html and daemon/internal/webui/index.html are identical (same md5). The /tmp path is not writable in this sandbox so the binary was verified locally in daemon/ dir instead."
+}

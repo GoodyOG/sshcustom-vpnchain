@@ -1,0 +1,37 @@
+{
+  "id": "FEAT-004",
+  "type": "chore",
+  "description": "Phase 4 + Phase 5: App removal, module packaging cleanup, and CI/CD changes - delete app/ directory, update .gitignore/.gitattributes, ensure module structure, update build.yml to remove APK job and include webroot",
+  "status": "completed",
+  "steps": [
+    "Delete the entire app/ directory (rm -rf app/)",
+    "Update .gitignore: remove app-related entries (app/.gradle/, app/build/, app/local.properties, *.keystore, *.jks, app/release/). Keep everything else.",
+    "Update .gitattributes: remove Kotlin-specific entries (*.kt text eol=lf, *.kts text eol=lf). Keep everything else.",
+    "Ensure module/ directory structure has: META-INF/, bin/ (with .gitkeep), scripts/, webroot/, vpnchain/configs/ (with .gitkeep), settings.ini, module.prop, customize.sh, service.sh, uninstall.sh, update.json, action.sh. Create any missing .gitkeep files.",
+    "In .github/workflows/build.yml: REMOVE the entire build-apk job. REMOVE APK from release assets (dist/*.apk line). In build-daemon job: before go build step, add a step to copy module/webroot/index.html to daemon/internal/webui/index.html (mkdir -p daemon/internal/webui && cp module/webroot/index.html daemon/internal/webui/index.html). In package-module job: ensure webroot/ is included in the ZIP (it already should be since zip -r9 includes everything). In release job: update needs: array to remove build-apk. Only upload ZIP. Update release body to remove APK installation instructions.",
+    "Update module/customize.sh version string from v2.0.0 to v3.0.0. Add webroot installation step: copy webroot/ to WORK_DIR/webroot/.",
+    "Update module/update.json with version v3.0.0, versionCode 30000, and updated zipUrl pointing to v3.0.0 release."
+  ],
+  "acceptance_criteria": [
+    "app/ directory no longer exists",
+    ".gitignore has no app-specific entries",
+    ".gitattributes has no Kotlin entries",
+    "module/bin/.gitkeep and module/vpnchain/configs/.gitkeep exist",
+    "module/webroot/ directory exists with index.html, config.json, icon.png",
+    "build.yml has no build-apk job",
+    "build.yml release job does not reference APK",
+    "build.yml build-daemon copies webroot/index.html to daemon/internal/webui/",
+    "build.yml release needs only [build-openvpn, build-daemon, package-module] (adjusted for removed APK job)",
+    "customize.sh references v3.0.0 and installs webroot",
+    "update.json has v3.0.0"
+  ],
+  "verification": [
+    "test ! -d /projects/sandbox/sshcustom-vpnchain/app && echo 'app/ removed'",
+    "grep -c 'build-apk' /projects/sandbox/sshcustom-vpnchain/.github/workflows/build.yml | grep '^0$'",
+    "grep -q 'webui' /projects/sandbox/sshcustom-vpnchain/.github/workflows/build.yml && echo 'webui copy step exists'",
+    "GOROOT=/root/.local/share/mise/installs/go/1.23.8 PATH=/root/.local/share/mise/installs/go/1.23.8/bin:$PATH GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w -X main.version=3.0.0' -o /tmp/sshcustomd ./cmd/sshcustomd/ (from daemon/ dir)",
+    "sh -n /projects/sandbox/sshcustom-vpnchain/module/scripts/ssh.iptables && sh -n /projects/sandbox/sshcustom-vpnchain/module/scripts/ovpn.service && sh -n /projects/sandbox/sshcustom-vpnchain/module/scripts/ssh.service"
+  ],
+  "blocked_reason": null,
+  "findings": "All verifications passed: app/ deleted, build.yml has no build-apk references, webui step exists in build-daemon, Go build compiles successfully, all shell scripts pass sh -n. The .gitattributes also had *.apk and *.aab binary entries removed since they are no longer relevant."
+}

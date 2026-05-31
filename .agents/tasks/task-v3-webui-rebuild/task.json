@@ -1,0 +1,7 @@
+{
+  "task_id": "task-v3-webui-rebuild",
+  "task_description": "SSHCustom-VPNChain v3.0.0 complete WebUI-only rebuild: SSH connection pool, network standby, CORS API expansion (VPN chain, logs, profiles, config, latency), Material 3 single-file WebUI, app deletion, CI cleanup",
+  "status": "in_progress",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004", "FEAT-005"],
+  "blocked_reason": null
+}

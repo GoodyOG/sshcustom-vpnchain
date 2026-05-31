@@ -1,0 +1,34 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Phase 2: Daemon API expansion - CORS middleware, enriched status, VPN chain endpoints, logs endpoints, profiles CRUD, config patch, latency endpoint, WebUI static file serving with embedded fallback",
+  "status": "completed",
+  "steps": [
+    "In daemon/cmd/sshcustomd/main.go buildHTTPMux: wrap the returned mux with a CORS middleware handler function. The wrapper should set Access-Control-Allow-Origin: *, Access-Control-Allow-Methods: GET,POST,DELETE,OPTIONS, Access-Control-Allow-Headers: Content-Type on every response. For OPTIONS requests, respond with 204 and return immediately. Apply this wrapper in the httpSrv.Handler assignment.",
+    "Enrich api.StatusSnapshot in daemon/internal/api/unix.go: add fields VpnChainState string json:vpn_chain_state, VpnChainExitIP string json:vpn_chain_exit_ip, VpnChainLocation string json:vpn_chain_location, Standby bool json:standby, PoolSize int json:pool_size, PoolHealthy int json:pool_healthy, LatencyGoogleMs int json:latency_google_ms, LatencyCloudflareMs int json:latency_cloudflare_ms. Update st.snapshot() in main.go to populate these from State struct.",
+    "Add VPN Chain endpoints in buildHTTPMux: GET /api/v1/vpnchain/status returns {state, exit_ip, location} from State. GET /api/v1/vpnchain/locations lists *.ovpn files from workDir+/vpnchain/configs/. POST /api/v1/vpnchain/start accepts {location, username, password} body, writes auth.txt to workDir+/vpnchain/auth.txt, then runs ovpn.service start <location>. POST /api/v1/vpnchain/stop runs ovpn.service stop. POST /api/v1/vpnchain/switch stops then starts. GET /api/v1/vpnchain/log?lines=100 tails workDir+/run/openvpn.log.",
+    "Add Logs endpoints in buildHTTPMux: GET /api/v1/logs/{type}?lines=200 where type maps: core->run/sshcustom.log, boot->run/boot.log, tool->run/tool.log, openvpn->run/openvpn.log. Use path parsing to extract type from URL. POST /api/v1/logs/{type}/clear truncates the mapped file.",
+    "Add Profiles CRUD endpoints. Store profiles as JSON array in workDir+/profiles.json. GET /api/v1/profiles returns the array. POST /api/v1/profiles creates or updates a profile (body has id, name, host, port, user, password, mode, sni_host, proxy_host, proxy_port, payload_enabled, payload). DELETE /api/v1/profiles/{id} removes by id. POST /api/v1/profiles/{id}/activate writes the profile fields to settings.ini (updating each key= line with sed or direct file rewrite) and sends SIGHUP to self for config reload.",
+    "Add POST /api/v1/config endpoint: accepts partial key/value JSON map, writes each key to settings.ini (read file, update matching key= lines, write back), then sends SIGHUP to self for reload.",
+    "Add POST /api/v1/network/ping endpoint: measures TCP connect time to google.com:443 and 1.1.1.1:443 through the SSH pool (using pool.Pick().DialTCP), returns {google_ms, cloudflare_ms}. Store latest values in State for StatusSnapshot.",
+    "Update WebUI serving in buildHTTPMux: serve static files from workDir+/webroot/ at / using http.FileServer with http.StripPrefix. API routes (/api/*, /health) take priority. Create daemon/internal/webui/ directory with embed.go that uses //go:embed to embed a fallback index.html. If workDir+/webroot/index.html does not exist, serve the embedded fallback. Create a minimal placeholder daemon/internal/webui/index.html for now (will be replaced in FEAT-003)."
+  ],
+  "acceptance_criteria": [
+    "CORS headers are set on all API responses",
+    "OPTIONS requests return 204 with CORS headers",
+    "StatusSnapshot has all new fields populated",
+    "/api/v1/vpnchain/status, /locations, /start, /stop, /switch, /log endpoints exist",
+    "/api/v1/logs/{type} and /api/v1/logs/{type}/clear endpoints exist",
+    "/api/v1/profiles GET/POST/DELETE and /api/v1/profiles/{id}/activate work",
+    "/api/v1/config POST writes to settings.ini and signals SIGHUP",
+    "/api/v1/network/ping endpoint measures latency through tunnel",
+    "Static file serving from workDir/webroot/ with embedded fallback",
+    "Code compiles with GOOS=android GOARCH=arm64 CGO_ENABLED=0"
+  ],
+  "verification": [
+    "GOROOT=/root/.local/share/mise/installs/go/1.23.8 PATH=/root/.local/share/mise/installs/go/1.23.8/bin:$PATH GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w -X main.version=3.0.0' -o /tmp/sshcustomd ./cmd/sshcustomd/ (run from daemon/ dir)",
+    "GOROOT=/root/.local/share/mise/installs/go/1.23.8 PATH=/root/.local/share/mise/installs/go/1.23.8/bin:$PATH GOOS=android GOARCH=arm64 CGO_ENABLED=0 go vet ./... (run from daemon/ dir)"
+  ],
+  "blocked_reason": null,
+  "findings": "Build and vet pass cleanly for GOOS=android GOARCH=arm64 CGO_ENABLED=0. Binary verified as ARM aarch64 ELF. CORS middleware wraps the mux at httpSrv.Handler level. All existing endpoints preserved. Config endpoint now handles both GET (read) and POST (patch). The /api/v1/profiles endpoint (no trailing slash) handles GET/POST, while /api/v1/profiles/ (with trailing slash) handles DELETE and activate by ID. Log tailFile reads entire file then returns last N lines. patchSettingsINI preserves existing file structure and appends unknown keys. The webui.IndexHTML embed uses blank import of embed package."
+}

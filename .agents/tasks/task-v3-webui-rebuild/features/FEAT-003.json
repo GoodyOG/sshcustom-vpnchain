@@ -1,0 +1,37 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "Phase 3: Create the WebUI - single-file Material 3 mobile-first dashboard at module/webroot/index.html, config.json, and icon.png placeholder",
+  "status": "completed",
+  "steps": [
+    "Create directory module/webroot/ if not exists",
+    "Create module/webroot/index.html - a single-file Material 3 dark-theme mobile-first dashboard. NO frameworks, NO external CDN. Everything inline (CSS + JS + HTML). Requirements: Material 3 design tokens as CSS custom properties. Progressive Material You: detect WebUI-X injected --md-sys-color-* variables; if absent use curated Material 3 dark palette (dark default, light via prefers-color-scheme). Safe-area insets via --window-inset-top/bottom/left/right CSS variables. Bottom navigation bar with 5 tabs: Home, VPN Chain, Logs, Settings, Profiles. Smooth page transitions (opacity + transform). Mobile viewport optimized (max-width, touch targets 48px min). Toasts for action feedback. All interaction via fetch() to http://127.0.0.1:9190/api/v1/...",
+    "HOME page: Large status card with colored dot icon + status text (Running/Standby/Stopped/Idle) + uptime. Start/Stop/Restart buttons in a row (disable inappropriate ones based on state). Info grid: WAN IP, Exit IP (when chained), upload speed, download speed, CPU%, Mem MB, Pool (healthy/total), Active connections. Latency card (full width): Google Xms | Cloudflare Xms | Ping button. Auto-refresh status every 2s.",
+    "VPN CHAIN page: Location dropdown populated from /api/v1/vpnchain/locations. Username + Password fields. Connect/Disconnect buttons. Status: state + exit IP. Log viewer (monospace, scrollable, from /api/v1/vpnchain/log?lines=100). Auto-refresh every 3s.",
+    "LOGS page: Dropdown selector: Core/Boot/Tool/OpenVPN. Monospace terminal-style log viewer (scrollable, auto-scroll to bottom). Clear button. Auto-refresh every 3s when visible.",
+    "SETTINGS page: Network Mode: Redirect/TPROXY (radio buttons). Hotspot Sharing toggle. QUIC Block toggle. DNS Hijack: TCP toggle, UDP toggle, Mode dropdown (disable/redirect). IPv6 toggle. Autostart toggle. Pool Size (number input, 1-8). About section: SSHCustom v3.0.0, Developer: GoodyOG, Source link. Save button that POSTs to /api/v1/config.",
+    "PROFILES page: List of saved profiles (cards with name, host:port, mode badge). Active profile highlighted. Add/Edit/Delete/Activate actions. Edit opens a bottom-sheet/modal form with all profile fields (id, name, host, port, user, password, mode, sni_host, proxy_host, proxy_port, payload_enabled, payload). Uses /api/v1/profiles endpoints.",
+    "Create module/webroot/config.json with content: {\"title\":\"SSHCustom\",\"icon\":\"icon.png\",\"windowResize\":true,\"backInterceptor\":\"javascript\"}",
+    "Create module/webroot/icon.png - a 1x1 pixel transparent PNG (base64 decode the minimal PNG bytes and write to file)",
+    "Copy module/webroot/index.html to daemon/internal/webui/index.html (so the go:embed picks it up for fallback)"
+  ],
+  "acceptance_criteria": [
+    "module/webroot/index.html exists and is a complete single-file webapp under 100KB",
+    "HTML contains all 5 pages: Home, VPN Chain, Logs, Settings, Profiles",
+    "CSS uses Material 3 design tokens and dark palette as default",
+    "JS uses fetch() to /api/v1/ endpoints for all data operations",
+    "Bottom navigation with 5 tabs is implemented",
+    "module/webroot/config.json exists with correct content",
+    "module/webroot/icon.png exists as a valid PNG file",
+    "daemon/internal/webui/index.html matches module/webroot/index.html"
+  ],
+  "verification": [
+    "test -f /projects/sandbox/sshcustom-vpnchain/module/webroot/index.html && echo 'index.html exists'",
+    "test -f /projects/sandbox/sshcustom-vpnchain/module/webroot/config.json && echo 'config.json exists'",
+    "test -f /projects/sandbox/sshcustom-vpnchain/module/webroot/icon.png && echo 'icon.png exists'",
+    "test -f /projects/sandbox/sshcustom-vpnchain/daemon/internal/webui/index.html && echo 'embedded fallback exists'",
+    "wc -c < /projects/sandbox/sshcustom-vpnchain/module/webroot/index.html"
+  ],
+  "blocked_reason": null,
+  "findings": "WebUI is 30KB total (well under 100KB limit). Single HTML file with all CSS and JS inline. Build passes with go:embed. All 5 pages implemented with proper API endpoints via fetch(). Material 3 dark theme default with light mode via prefers-color-scheme. Progressive Material You detection checks for WebUI-X injected CSS variables. icon.png is a valid 1x1 transparent PNG (68 bytes)."
+}

@@ -1,0 +1,33 @@
+{
+  "project_type": "Go daemon (Android arm64) + Magisk module + WebUI",
+  "language": "Go 1.23, Shell (POSIX sh)",
+  "build_system": "Go modules, shell scripts, GitHub Actions",
+  "test_framework": "No test framework currently in use; validation is via go build + go vet + sh -n",
+  "build_command": "GOROOT=/root/.local/share/mise/installs/go/1.23.8 PATH=/root/.local/share/mise/installs/go/1.23.8/bin:$PATH GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w -X main.version=3.0.0' -o /tmp/sshcustomd ./cmd/sshcustomd/",
+  "test_command": "GOROOT=/root/.local/share/mise/installs/go/1.23.8 PATH=/root/.local/share/mise/installs/go/1.23.8/bin:$PATH GOOS=android GOARCH=arm64 CGO_ENABLED=0 go vet ./...",
+  "verification_instructions": "1. Build daemon with GOOS=android GOARCH=arm64 CGO_ENABLED=0. 2. Run go vet ./... 3. Verify binary is arm64 with file command. 4. Run sh -n on all module/scripts/*",
+  "snapshot_or_generated_files": null,
+  "setup_instructions": "Use Go 1.23.8 at /root/.local/share/mise/installs/go/1.23.8/bin/go. Set GOROOT appropriately. The go.mod is in daemon/ directory.",
+  "environment_constraints": "OPEN_INTERNET network. Go 1.23.8 available via mise. Must cross-compile for GOOS=android GOARCH=arm64 CGO_ENABLED=0. No Android device available for runtime testing. Use go vet and build success as validation.",
+  "contribution_requirements": "Go module path: github.com/GoodyOG/SSHCustom_Magisk. Ports: socks 1081, redir 9799, tproxy 9899, HTTP API 9190. iptables chains: SSHC_ prefix. Module data path: /data/adb/sshcustom/",
+  "key_patterns": "Daemon uses atomic.Pointer[issh.Client] for current SSH client. Proxy servers accept func() *issh.Client for getting current client. tunnelLoop manages transparent reconnect - keeps iptables and listeners UP across SSH drops. State struct with mu sync.RWMutex for concurrent access. buildHTTPMux creates HTTP API handlers. Config uses AtomicConfig with Load+swap pattern.",
+  "relevant_files": [
+    "daemon/cmd/sshcustomd/main.go",
+    "daemon/internal/ssh/client.go",
+    "daemon/internal/proxy/socks5.go",
+    "daemon/internal/proxy/transparent.go",
+    "daemon/internal/proxy/tproxy.go",
+    "daemon/internal/api/unix.go",
+    "daemon/internal/config/config.go",
+    "daemon/internal/dnsx/dnsx.go",
+    "daemon/go.mod",
+    "module/scripts/ssh.iptables",
+    "module/scripts/ovpn.service",
+    "module/scripts/ssh.service",
+    "module/settings.ini",
+    "module/module.prop",
+    ".github/workflows/build.yml",
+    "VERSION"
+  ],
+  "directory_structure": "daemon/ - Go source (cmd/sshcustomd/main.go entry, internal/ packages). module/ - Magisk module (scripts/, bin/, META-INF/, vpnchain/, settings.ini, module.prop, service.sh). app/ - Kotlin Android app (TO BE DELETED). .github/workflows/ - CI. docs/ - documentation."
+}
