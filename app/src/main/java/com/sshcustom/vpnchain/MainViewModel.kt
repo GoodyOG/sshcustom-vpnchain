@@ -132,9 +132,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var logPollingJob: Job? = null
 
     private val LOG_PATHS = mapOf(
-        "core" to "/data/adb/sshcustom/run/sshcustom.log",
-        "boot" to "/data/adb/sshcustom/run/boot.log",
-        "tool" to "/data/adb/sshcustom/run/tool.log",
+        "core"    to "/data/adb/sshcustom/run/sshcustom.log",
+        "boot"    to "/data/adb/sshcustom/run/boot.log",
+        "tool"    to "/data/adb/sshcustom/run/tool.log",
+        "openvpn" to "/data/adb/sshcustom/run/openvpn.log",
     )
 
     fun switchLog(type: String) {

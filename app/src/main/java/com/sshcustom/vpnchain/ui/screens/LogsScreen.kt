@@ -18,8 +18,8 @@ import top.yukonga.miuix.kmp.extra.SuperDropdown
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 // Log file selector — keys match ViewModel.LOG_PATHS, labels shown in the dropdown
-private val LOG_KEYS   = listOf("core", "boot", "tool")
-private val LOG_LABELS = listOf("Core", "Boot", "Tool")
+private val LOG_KEYS   = listOf("core", "boot", "tool", "openvpn")
+private val LOG_LABELS = listOf("Core", "Boot", "Tool", "OpenVPN")
 
 @Composable
 fun LogsScreen(
