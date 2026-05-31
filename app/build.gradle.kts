@@ -13,8 +13,8 @@ android {
         applicationId = "com.sshcustom.vpnchain"
         minSdk = 28
         targetSdk = 35
-        versionCode = 20001
-        versionName = "2.0.1"
+        versionCode = 20305
+        versionName = "2.3.5"
     }
 
     signingConfigs {

@@ -29,8 +29,6 @@ private const val KEY_PROFILES = "profiles_json"
 private const val KEY_ACTIVE   = "active_profile_id"
 private const val KEY_SETTINGS = "app_settings_json"
 private const val KEY_VPN_CONFIG = "vpn_selected_config"
-private const val KEY_VPN_USER   = "vpn_user"
-private const val KEY_VPN_PASS   = "vpn_pass"
 private const val KEY_LAST_CONN    = "last_connected"
 private const val KEY_LAST_SSHMODE = "last_ssh_mode"
 private const val KEY_LAST_NETMODE = "last_net_mode"
@@ -178,11 +176,6 @@ class DaemonRepository(private val context: Context) {
 
     fun loadVpnConfig(): String = prefs.getString(KEY_VPN_CONFIG, "") ?: ""
     fun saveVpnConfig(name: String) { prefs.edit().putString(KEY_VPN_CONFIG, name).apply() }
-    fun loadVpnUser(): String = prefs.getString(KEY_VPN_USER, "") ?: ""
-    fun loadVpnPass(): String = prefs.getString(KEY_VPN_PASS, "") ?: ""
-    fun saveVpnCreds(user: String, pass: String) {
-        prefs.edit().putString(KEY_VPN_USER, user).putString(KEY_VPN_PASS, pass).apply()
-    }
 
     /**
      * The exit IP as seen through the full chain. When the VPN Chain is up the

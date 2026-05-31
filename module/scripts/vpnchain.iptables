@@ -8,6 +8,9 @@
 # runs as root (uid 0), so we mark its traffic and route it via a side table
 # that points at the real carrier link.
 #
+# On enable we SAVE the current carrier default route so that on disable we can
+# RESTORE it — preventing "network unreachable" after stopping VPN Chain.
+#
 # Usage: vpnchain.iptables {enable|disable}
 
 scripts_dir="${0%/*}"
@@ -17,6 +20,8 @@ VPN_MARK="0x9040"
 VPN_TABLE="9040"
 VPN_PREF="9040"
 SSH_UID="0" # SSH daemon runs as root
+
+CARRIER_ROUTE_FILE="/data/adb/sshcustom/run/state/carrier_route.env"
 
 _build_major="$(getprop ro.build.version.release 2>/dev/null | cut -d. -f1)"
 if [ "${_build_major:-0}" -ge 11 ] 2>/dev/null; then
@@ -29,15 +34,18 @@ intranet="127.0.0.0/8 10.0.0.0/8 100.64.0.0/10 169.254.0.0/16 172.16.0.0/12 192.
 
 real_default() {
   # The real (carrier) default route, excluding the OpenVPN tun device.
-  ip route show table main default 2>/dev/null | grep -v "tun1" | head -1
+  ip route show table main default 2>/dev/null | grep -v "tun" | head -1
 }
 
 enable_chain() {
-  # Side table with the real default so the SSH daemon's bug-host traffic
-  # bypasses the OpenVPN tun.
+  # Save the current carrier default route BEFORE adding the side table.
+  mkdir -p "$(dirname "${CARRIER_ROUTE_FILE}")" 2>/dev/null || true
   local rd
   rd="$(real_default)"
   if [ -n "${rd}" ]; then
+    printf '%s\n' "${rd}" > "${CARRIER_ROUTE_FILE}" 2>/dev/null || true
+    # Side table with the real default so the SSH daemon's bug-host traffic
+    # bypasses the OpenVPN tun.
     # shellcheck disable=SC2086
     ip route replace table "${VPN_TABLE}" ${rd} >/dev/null 2>&1 || true
   else
@@ -64,11 +72,25 @@ enable_chain() {
 }
 
 disable_chain() {
+  # Remove iptables rules first
   ${IPV} -t mangle -D OUTPUT -j SSHC_VPNCHAIN >/dev/null 2>&1 || true
   ${IPV} -t mangle -F SSHC_VPNCHAIN >/dev/null 2>&1 || true
   ${IPV} -t mangle -X SSHC_VPNCHAIN >/dev/null 2>&1 || true
   ip rule del pref "${VPN_PREF}" >/dev/null 2>&1 || true
   ip route flush table "${VPN_TABLE}" >/dev/null 2>&1 || true
+
+  # Restore the carrier default route from the saved file.
+  if [ -f "${CARRIER_ROUTE_FILE}" ]; then
+    local saved_route
+    saved_route="$(cat "${CARRIER_ROUTE_FILE}" 2>/dev/null)"
+    if [ -n "${saved_route}" ]; then
+      # shellcheck disable=SC2086
+      ip route replace ${saved_route} >/dev/null 2>&1 || true
+      log Info "vpnchain: carrier route restored: ${saved_route}"
+    fi
+    rm -f "${CARRIER_ROUTE_FILE}" 2>/dev/null || true
+  fi
+
   log Info "vpnchain: routing removed"
   return 0
 }

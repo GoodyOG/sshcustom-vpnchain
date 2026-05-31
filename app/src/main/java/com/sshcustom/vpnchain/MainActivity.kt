@@ -71,8 +71,6 @@ fun MainAppContent() {
     val selectedVpnCfg  by vm.selectedVpnConfig.collectAsState()
     val vpnChainState   by vm.vpnChainState.collectAsState()
     val chainExitIp     by vm.chainExitIp.collectAsState()
-    val vpnUser         by vm.vpnUser.collectAsState()
-    val vpnPass         by vm.vpnPass.collectAsState()
     val vpnBusy         by vm.vpnBusy.collectAsState()
 
     // Latency
@@ -123,11 +121,8 @@ fun MainAppContent() {
                 selectedConfig = selectedVpnCfg,
                 state = vpnChainState,
                 exitIp = chainExitIp,
-                vpnUser = vpnUser,
-                vpnPass = vpnPass,
                 busy = vpnBusy,
                 onSelectConfig = vm::selectVpnConfig,
-                onSaveCreds = vm::saveVpnCreds,
                 onRefreshConfigs = vm::refreshVpnConfigs,
                 onConnect = vm::startVpnChain,
                 onDisconnect = vm::stopVpnChain,
