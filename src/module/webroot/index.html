@@ -494,6 +494,15 @@
             <span class="supporting-text" id="perfMeta">CPU and memory unavailable</span>
           </div>
         </div>
+        <div class="card info-card">
+          <svg class="info-card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <div class="info-card__text">
+            <p class="info-label">⚡ Latency</p>
+            <p class="info-value" id="latencyValue">--</p>
+            <span class="supporting-text" id="latencyMeta">tap to measure via tunnel</span>
+          </div>
+          <button class="md3-text" onclick="checkLatency()" style="align-self:center;margin-left:8px">Ping</button>
+        </div>
       </section>
 
       <!-- PROFILES -->
@@ -617,27 +626,22 @@
 
       <!-- SETTINGS -->
       <section id="page-settings" hidden>
-        <h2 class="section-pill">DNS</h2>
+        <h2 class="section-pill">Ports</h2>
         <div class="list-container">
           <div class="list-item">
-            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></div>
-            <div class="list-item-content">
-              <div class="toggle-text">DNS Mode</div>
-              <span class="supporting-text">Applies to SSHCustom endpoint resolution. Device DNS is unaffected.</span>
-            </div>
-            <select id="dnsMode" class="select-shell" style="max-width:150px">
-              <option value="device">Device default</option>
-              <option value="google">Google DNS</option>
-              <option value="cloudflare">Cloudflare DNS</option>
-              <option value="custom">Custom DNS</option>
-            </select>
+            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
+            <div class="list-item-content"><div class="toggle-text">WebUI / HTTP API</div></div>
+            <span class="chip">9190</span>
           </div>
-          <div class="list-item" id="customDnsRow" hidden>
-            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
-            <div class="list-item-content">
-              <div class="toggle-text">Custom Resolvers</div>
-            </div>
-            <input id="customDnsServers" class="field" placeholder="1.1.1.1, 8.8.8.8">
+          <div class="list-item">
+            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></div>
+            <div class="list-item-content"><div class="toggle-text">SOCKS5 Proxy</div></div>
+            <span class="chip" id="portSocks">1081</span>
+          </div>
+          <div class="list-item">
+            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+            <div class="list-item-content"><div class="toggle-text">Transparent Redirect Port</div></div>
+            <span class="chip" id="portRedir">9799</span>
           </div>
         </div>
 
@@ -650,20 +654,6 @@
               <span class="supporting-text">Tether IPv4 TCP through SSHCustom for connected clients.</span>
             </div>
             <button id="hotspotSwitch" class="switch" onclick="toggleHotspot()" aria-label="Toggle hotspot"></button>
-          </div>
-          <div class="list-item">
-            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
-            <div class="list-item-content">
-              <div class="toggle-text">Transparent IPv4 TCP</div>
-              <span class="supporting-text" id="transparentMeta">iptables REDIRECT status unavailable</span>
-            </div>
-          </div>
-          <div class="list-item">
-            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg></div>
-            <div class="list-item-content">
-              <div class="toggle-text">SOCKS5 Local Proxy</div>
-              <span class="supporting-text" id="socksMeta">SOCKS status unavailable</span>
-            </div>
           </div>
         </div>
         <h2 class="section-pill">Boot</h2>
@@ -692,6 +682,14 @@
           </div>
           <a class="list-item" href="https://github.com/GoodyOG/sshcustom-vpnchain" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;cursor:pointer">
             <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22"/></svg></div>
+            <div class="list-item-content">
+              <div class="toggle-text">Repository</div>
+              <span class="supporting-text">github.com/GoodyOG/sshcustom-vpnchain</span>
+            </div>
+          </a>
+        </div>
+        <p class="supporting-text" style="margin:4px 0 0;padding-left:14px;font-size:0.7rem;opacity:0.6">Licensed under Apache-2.0</p>
+      </section> 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22"/></svg></div>
             <div class="list-item-content">
               <div class="toggle-text">Repository</div>
               <span class="supporting-text">github.com/GoodyOG/sshcustom-vpnchain</span>
@@ -1056,14 +1054,13 @@
 
     function renderNetworkConfig(cfg) {
       if (!cfg) return;
-      const dns = cfg.dns || {};
-      $('dnsMode').value = dns.mode || 'device';
-      $('customDnsRow').hidden = $('dnsMode').value !== 'custom';
-      $('customDnsServers').value = (dns.servers || []).join(', ');
       const hotspot = cfg.hotspot || {};
       $('hotspotSwitch').classList.toggle('on', !!(hotspot.enabled && hotspot.tcp));
+      // Update port display
+      if (cfg.socks_port) $('portSocks') && ($('portSocks').textContent = cfg.socks_port);
+      if (cfg.redir_port) $('portRedir') && ($('portRedir').textContent = cfg.redir_port);
     }
-    $('dnsMode').addEventListener('change', () => $('customDnsRow').hidden = $('dnsMode').value !== 'custom');
+    $('dnsMode') && $('dnsMode').addEventListener('change', () => $('customDnsRow').hidden = $('dnsMode').value !== 'custom');
     function toggleHotspot() { $('hotspotSwitch').classList.toggle('on'); }
     async function toggleAutostart() {
       const sw = $('autostartSwitch');
@@ -1085,16 +1082,13 @@
     }
     async function saveNetwork() {
       try {
-        const mode = $('dnsMode').value;
         const enabled = $('hotspotSwitch').classList.contains('on');
-        const dns = { mode };
-        if (mode === 'custom') dns.servers = $('customDnsServers').value.split(',').map(s => s.trim()).filter(Boolean);
-        await postV1('/config', { dns, hotspot: { enabled, tcp: enabled, dns: false }, restart: true }, 12000);
-        toast('Network settings saved. Restarting tunnel...');
+        await postV1('/config', { hotspot: { enabled, tcp: enabled, dns: false }, restart: true }, 12000);
+        toast('Settings saved. Restarting tunnel...');
         showRestarting();
         setTimeout(loadStatus, 3000);
       } catch (e) {
-        toast('Network save failed: ' + e.message, 'error');
+        toast('Save failed: ' + e.message, 'error');
       }
     }
 
@@ -1256,10 +1250,10 @@
 
     function setLogKind(kind) {
       currentLog = kind;
-      $('coreLogTab').classList.toggle('primary', kind === 'core');
-      $('controlLogTab').classList.toggle('primary', kind === 'control');
-      $('actionLogTab').classList.toggle('primary', kind === 'action');
-      $('openvpnLogTab').classList.toggle('primary', kind === 'openvpn');
+      ['core','control','action','openvpn'].forEach(k => {
+        const el = $(k + 'LogTab');
+        if (el) el.classList.toggle('primary', kind === k);
+      });
       loadLog();
     }
     async function loadLog() {
@@ -1323,6 +1317,22 @@
       logVisible = !logVisible;
       $('runtimeLog').hidden = !logVisible;
       $('logToggleBtn').textContent = logVisible ? 'Hide' : 'Show';
+    }
+
+    // Latency check via /api/v1/latency
+    async function checkLatency() {
+      if ($('latencyValue')) $('latencyValue').textContent = '...';
+      if ($('latencyMeta')) $('latencyMeta').textContent = 'measuring via tunnel...';
+      try {
+        const data = await v1('/latency', { timeout: 15000 });
+        const g = data.google >= 0 ? data.google + 'ms' : 'timeout';
+        const cf = data.cloudflare >= 0 ? data.cloudflare + 'ms' : 'timeout';
+        if ($('latencyValue')) $('latencyValue').textContent = g;
+        if ($('latencyMeta')) $('latencyMeta').textContent = 'Google ' + g + '  ·  Cloudflare ' + cf;
+      } catch (e) {
+        if ($('latencyValue')) $('latencyValue').textContent = '--';
+        if ($('latencyMeta')) $('latencyMeta').textContent = 'tunnel not connected';
+      }
     }
 
     loadStatus();

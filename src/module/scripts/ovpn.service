@@ -1,0 +1,182 @@
+#!/system/bin/sh
+# ovpn.service — VPN Chain lifecycle.
+#
+# Runs OpenVPN (Windscribe config) tunneled THROUGH SSHCustom: OpenVPN's
+# connection to the Windscribe server is routed via the SSH daemon's SOCKS5
+# proxy (so it rides the free bug-host path), and OpenVPN becomes the device
+# default route so the exit IP is Windscribe's.
+#
+# Requires: SSHCustom already connected, and a TCP Windscribe .ovpn config in
+# /data/adb/sshcustom/vpnchain/configs/  (SSH carries TCP only).
+#
+# Usage: ovpn.service {start <config-filename>|stop|status}
+
+scripts_dir="${0%/*}"
+. /data/adb/sshcustom/settings.ini
+
+OVPN_BIN="${bin_dir}/openvpn"
+VPN_DIR="${box_dir}/vpnchain"
+CONFIG_DIR="${VPN_DIR}/configs"
+AUTH_FILE="${VPN_DIR}/auth.txt"
+OVPN_PID="${box_run}/openvpn.pid"
+OVPN_LOG="${box_run}/openvpn.log"
+MARKER="${box_run}/vpnchain.active"
+VPNCHAIN_IPT="${scripts_dir}/vpnchain.iptables"
+SSH_IPT="${scripts_dir}/ssh.iptables"
+OVPN_TUN="tun1"  # Use tun1 for VPN Chain (tun0 reserved for future use)
+
+ovpn_alive() {
+  local p
+  p="$(cat "${OVPN_PID}" 2>/dev/null)"
+  [ -n "${p}" ] && kill -0 "${p}" 2>/dev/null
+}
+
+start_ovpn() {
+  local cfg_name="$1"
+  [ -n "${cfg_name}" ] || { log Error "vpnchain: no config specified"; return 1; }
+  local cfg="${CONFIG_DIR}/${cfg_name}"
+  if [ ! -f "${cfg}" ]; then
+    log Error "vpnchain: config not found: ${cfg_name}"
+    return 1
+  fi
+  if [ ! -x "${OVPN_BIN}" ]; then
+    log Error "vpnchain: openvpn binary missing (${OVPN_BIN}) — reflash the module ZIP"
+    return 1
+  fi
+  if ovpn_alive; then
+    log Warning "vpnchain: already running"
+    return 0
+  fi
+
+  mkdir -p "${box_run}" >/dev/null 2>&1 || true
+  : > "${OVPN_LOG}"
+
+  # Validate auth.txt — must exist with at least 2 lines (user + pass).
+  # The file is managed manually by the user.
+  local _auth_user _auth_pass
+  _auth_user="$(sed -n '1p' "${AUTH_FILE}" 2>/dev/null | tr -d '\r')"
+  _auth_pass="$(sed -n '2p' "${AUTH_FILE}" 2>/dev/null | tr -d '\r')"
+  if [ ! -f "${AUTH_FILE}" ] || [ -z "${_auth_user}" ] || [ -z "${_auth_pass}" ]; then
+    log Error "vpnchain: auth.txt invalid — need username on line 1, password on line 2"
+    rm -f "${MARKER}"
+    sh "${SSH_IPT}" enable >> "${box_log}" 2>&1 || true
+    return 1
+  fi
+
+  # Mark VPN Chain active → ssh.iptables goes socks-only; drop SSH device redirect.
+  touch "${MARKER}"
+  sh "${SSH_IPT}" disable >> "${box_log}" 2>&1 || true
+
+  local auth_arg="--auth-user-pass ${AUTH_FILE}"
+
+  # OpenVPN reaches the Windscribe server through the SSH SOCKS5 proxy (free
+  # bug-host path). --dev is forced so vpnchain.iptables and OpenVPN agree.
+  # We DROP redirect-gateway/dhcp-option/tcp-nodelay/socket-flags via
+  # --pull-filter (OpenVPN-on-Android can't apply them, and rejecting them with
+  # --route-nopull blocks the tun config too). vpnchain.iptables handles
+  # device-default-route policy via fwmark, so we don't need redirect-gateway.
+  # shellcheck disable=SC2086
+  nohup "${OVPN_BIN}" \
+    --config "${cfg}" \
+    --dev "${OVPN_TUN}" \
+    --socks-proxy 127.0.0.1 "${socks_port}" \
+    --tun-mtu 1280 \
+    --mssfix 1200 \
+    --sndbuf 524288 \
+    --rcvbuf 524288 \
+    --pull-filter ignore "redirect-gateway" \
+    --pull-filter ignore "dhcp-option" \
+    --pull-filter ignore "tcp-nodelay" \
+    --pull-filter ignore "socket-flags" \
+    ${auth_arg} \
+    --auth-nocache \
+    --persist-tun \
+    --mute-replay-warnings \
+    --log "${OVPN_LOG}" \
+    --verb 3 \
+    >> "${OVPN_LOG}" 2>&1 &
+  echo "$!" > "${OVPN_PID}"
+  log Info "vpnchain: openvpn started (config=${cfg_name}) via SOCKS 127.0.0.1:${socks_port}"
+
+  # Connect-watcher: waits up to ~30s for the tunnel to come up, then enables
+  # VPN Chain routing. CRITICAL — this runs in a DETACHED subshell with ALL fds
+  # redirected to /dev/null so the caller (the app's single libsu root shell)
+  # returns IMMEDIATELY and its I/O stream is never held open by a background
+  # job. A bare `&` on the start command (v2.3.12) left the shell's pipes open,
+  # which poisoned every subsequent status poll on that same shell — so the VPN
+  # Chain tab was stuck on "Off" even though the tunnel was up. With the watcher
+  # detached and silenced, the start call returns clean and the app's `status`
+  # poll reliably observes connecting -> connected.
+  (
+    i=0
+    while [ "${i}" -lt 30 ]; do
+      if busybox grep -q "Initialization Sequence Completed" "${OVPN_LOG}" 2>/dev/null; then
+        sh "${VPNCHAIN_IPT}" enable >> "${box_log}" 2>&1 || true
+        log Info "vpnchain: connected — exit via OpenVPN/Windscribe"
+        break
+      fi
+      if busybox grep -q "AUTH_FAILED" "${OVPN_LOG}" 2>/dev/null; then
+        log Error "vpnchain: authentication failed — check Windscribe OpenVPN credentials"
+        stop_ovpn
+        break
+      fi
+      if ! ovpn_alive; then
+        log Error "vpnchain: openvpn exited during startup — check ${OVPN_LOG}"
+        rm -f "${MARKER}"
+        sh "${SSH_IPT}" enable >> "${box_log}" 2>&1 || true
+        break
+      fi
+      sleep 1
+      i=$((i + 1))
+    done
+  ) >/dev/null 2>&1 &
+
+  # Return immediately; the detached watcher drives the rest. The app polls
+  # `ovpn.service status` (every 2s) to reflect Connecting -> Connected.
+  return 0
+}
+
+stop_ovpn() {
+  # Kill OpenVPN FIRST so the tun device goes away before we restore routing.
+  local p
+  p="$(cat "${OVPN_PID}" 2>/dev/null)"
+  if [ -n "${p}" ] && kill -0 "${p}" 2>/dev/null; then
+    kill -TERM "${p}" 2>/dev/null || true
+    local i=0
+    while [ "${i}" -lt 5 ]; do
+      kill -0 "${p}" 2>/dev/null || break
+      sleep 1; i=$((i + 1))
+    done
+    kill -0 "${p}" 2>/dev/null && kill -KILL "${p}" 2>/dev/null || true
+  fi
+  killall openvpn 2>/dev/null || true
+  rm -f "${OVPN_PID}"
+
+  # Now disable vpnchain routing (restores carrier route from saved file).
+  # force-disable does aggressive cleanup: kill openvpn, drop tun1, restore
+  # carrier route. Safe even if some of those already happened above.
+  sh "${VPNCHAIN_IPT}" force-disable >> "${box_log}" 2>&1 || true
+
+  # Remove marker and restore SSH iptables.
+  rm -f "${MARKER}"
+  sh "${SSH_IPT}" enable >> "${box_log}" 2>&1 || true
+  log Info "vpnchain: stopped — SSH-only routing restored"
+  return 0
+}
+
+status_ovpn() {
+  if ovpn_alive && busybox grep -q "Initialization Sequence Completed" "${OVPN_LOG}" 2>/dev/null; then
+    printf 'connected\n'
+  elif ovpn_alive; then
+    printf 'connecting\n'
+  else
+    printf 'stopped\n'
+  fi
+}
+
+case "${1:-}" in
+  start)  start_ovpn "$2" ;;
+  stop)   stop_ovpn ;;
+  status) status_ovpn ;;
+  *) printf 'Usage: %s {start <config>|stop|status}\n' "$0" >&2; exit 1 ;;
+esac
