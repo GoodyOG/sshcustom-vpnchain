@@ -174,12 +174,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _chainExitIp = MutableStateFlow("—")
     val chainExitIp: StateFlow<String> = _chainExitIp
 
-    private val _vpnUser = MutableStateFlow("")
-    val vpnUser: StateFlow<String> = _vpnUser
-
-    private val _vpnPass = MutableStateFlow("")
-    val vpnPass: StateFlow<String> = _vpnPass
-
     private val _vpnBusy = MutableStateFlow(false)
     val vpnBusy: StateFlow<Boolean> = _vpnBusy
 
@@ -222,8 +216,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _activeProfileId.value = repo.loadActiveProfileId()
         _settings.value       = repo.loadSettings()
         _selectedVpnConfig.value = repo.loadVpnConfig()
-        _vpnUser.value        = repo.loadVpnUser()
-        _vpnPass.value        = repo.loadVpnPass()
     }
 
     private fun bindRootService() {
@@ -365,15 +357,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         repo.saveVpnConfig(name)
     }
 
-    fun saveVpnCreds(user: String, pass: String) {
-        _vpnUser.value = user
-        _vpnPass.value = pass
-        repo.saveVpnCreds(user, pass)
-        viewModelScope.launch(Dispatchers.IO) {
-            try { rootBinder?.saveVpnAuth(user, pass) } catch (_: Exception) {}
-        }
-    }
-
     fun startVpnChain() = viewModelScope.launch {
         if (!status.value.connected) {
             _vpnChainState.value = VpnChainState.Error("Connect SSHCustom first")
@@ -388,15 +371,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _vpnChainState.value = VpnChainState.Connecting
         withContext(Dispatchers.IO) {
             try {
-                // Always write auth file before starting — binder or direct shell
-                val user = _vpnUser.value.replace("'", "'\\''" )
-                val pass = _vpnPass.value.replace("'", "'\\''")
-                val authCmd = "mkdir -p /data/adb/sshcustom/vpnchain && " +
-                    "printf '%s\\n%s\\n' '$user' '$pass' > /data/adb/sshcustom/vpnchain/auth.txt && " +
-                    "chmod 600 /data/adb/sshcustom/vpnchain/auth.txt"
-                rootBinder?.saveVpnAuth(_vpnUser.value, _vpnPass.value)
-                    ?: Shell.cmd(authCmd).exec()
-
                 val safeCfg = cfg.replace("'", "'\\''")
                 rootBinder?.startVpnChain(cfg)
                     ?: Shell.cmd("sh /data/adb/sshcustom/scripts/ovpn.service start '$safeCfg'").exec()

@@ -25,22 +25,12 @@ class SSHControlService : RootService() {
         private val ovpnService = "/data/adb/sshcustom/scripts/ovpn.service"
         private val ovpnLog = "/data/adb/sshcustom/run/openvpn.log"
         private val vpnConfigDir = "/data/adb/sshcustom/vpnchain/configs"
-        private val vpnAuthFile = "/data/adb/sshcustom/vpnchain/auth.txt"
 
         // ── VPN Chain (OpenVPN over SSHCustom) ────────────────────────────────
         /** List available .ovpn config filenames in the configs directory. */
         fun listVpnConfigs(): List<String> {
             val r = Shell.cmd("ls -1 '$vpnConfigDir' 2>/dev/null").exec()
             return r.out.map { it.trim() }.filter { it.endsWith(".ovpn", ignoreCase = true) }
-        }
-
-        /** Save Windscribe OpenVPN credentials to the auth file (user on line 1, pass on line 2). */
-        fun saveVpnAuth(user: String, pass: String): Boolean {
-            val u = user.replace("'", "'\\''")
-            val p = pass.replace("'", "'\\''")
-            // printf avoids trailing-newline/echo quirks; 0600 perms.
-            val cmd = "mkdir -p '$vpnConfigDir' && printf '%s\\n%s\\n' '$u' '$p' > '$vpnAuthFile' && chmod 600 '$vpnAuthFile'"
-            return Shell.cmd(cmd).exec().isSuccess
         }
 
         fun startVpnChain(config: String): String {

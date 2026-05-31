@@ -51,27 +51,29 @@ start_ovpn() {
   mkdir -p "${box_run}" >/dev/null 2>&1 || true
   : > "${OVPN_LOG}"
 
+  # Validate auth.txt — must exist with at least 2 lines (user + pass).
+  # The file is managed manually by the user.
+  if [ ! -f "${AUTH_FILE}" ] || [ "$(wc -l < "${AUTH_FILE}" 2>/dev/null)" -lt 2 ]; then
+    log Error "vpnchain: auth.txt missing or incomplete — put username on line 1, password on line 2"
+    rm -f "${MARKER}"
+    sh "${SSH_IPT}" enable >> "${box_log}" 2>&1 || true
+    return 1
+  fi
+
   # Mark VPN Chain active → ssh.iptables goes socks-only; drop SSH device redirect.
   touch "${MARKER}"
   sh "${SSH_IPT}" disable >> "${box_log}" 2>&1 || true
 
-  local auth_arg=""
-  if [ -f "${AUTH_FILE}" ] && [ "$(wc -l < "${AUTH_FILE}" 2>/dev/null)" -ge 2 ]; then
-    auth_arg="--auth-user-pass ${AUTH_FILE}"
-  else
-    # No valid auth file — create a placeholder so OpenVPN doesn't prompt
-    # (it will fail with AUTH_FAILED, which we catch below).
-    log Warning "vpnchain: auth.txt missing or empty — OpenVPN may fail auth"
-    printf 'nouser\nnopass\n' > "${AUTH_FILE}" 2>/dev/null
-    chmod 600 "${AUTH_FILE}" 2>/dev/null
-    auth_arg="--auth-user-pass ${AUTH_FILE}"
-  fi
+  local auth_arg="--auth-user-pass ${AUTH_FILE}"
 
   # OpenVPN reaches the Windscribe server through the SSH SOCKS5 proxy (free
   # bug-host path). --dev is forced so vpnchain.iptables and OpenVPN agree.
+  # --route-nopull prevents OpenVPN from adding routes (vpnchain.iptables
+  # handles routing via policy marks), fixing RTNETLINK errors.
   # shellcheck disable=SC2086
   nohup "${OVPN_BIN}" \
     --config "${cfg}" \
+    --route-nopull \
     --dev "${OVPN_TUN}" \
     --socks-proxy 127.0.0.1 "${socks_port}" \
     ${auth_arg} \
@@ -112,7 +114,7 @@ start_ovpn() {
 }
 
 stop_ovpn() {
-  sh "${VPNCHAIN_IPT}" disable >> "${box_log}" 2>&1 || true
+  # Kill OpenVPN FIRST so the tun device goes away before we restore routing.
   local p
   p="$(cat "${OVPN_PID}" 2>/dev/null)"
   if [ -n "${p}" ] && kill -0 "${p}" 2>/dev/null; then
@@ -125,8 +127,13 @@ stop_ovpn() {
     kill -0 "${p}" 2>/dev/null && kill -KILL "${p}" 2>/dev/null || true
   fi
   killall openvpn 2>/dev/null || true
-  rm -f "${OVPN_PID}" "${MARKER}"
-  # Restore SSH-only device redirect.
+  rm -f "${OVPN_PID}"
+
+  # Now disable vpnchain routing (restores carrier route from saved file).
+  sh "${VPNCHAIN_IPT}" disable >> "${box_log}" 2>&1 || true
+
+  # Remove marker and restore SSH iptables.
+  rm -f "${MARKER}"
   sh "${SSH_IPT}" enable >> "${box_log}" 2>&1 || true
   log Info "vpnchain: stopped — SSH-only routing restored"
   return 0

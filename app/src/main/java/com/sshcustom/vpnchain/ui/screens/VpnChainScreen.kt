@@ -2,16 +2,12 @@ package com.sshcustom.vpnchain.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sshcustom.vpnchain.domain.VpnChainState
@@ -40,11 +36,8 @@ fun VpnChainScreen(
     selectedConfig: String,
     state: VpnChainState,
     exitIp: String,
-    vpnUser: String,
-    vpnPass: String,
     busy: Boolean,
     onSelectConfig: (String) -> Unit,
-    onSaveCreds: (String, String) -> Unit,
     onRefreshConfigs: () -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
@@ -53,10 +46,6 @@ fun VpnChainScreen(
     val scrollBehavior = MiuixScrollBehavior()
 
     LaunchedEffect(Unit) { onRefreshConfigs() }
-
-    var user by remember(vpnUser) { mutableStateOf(vpnUser) }
-    var pass by remember(vpnPass) { mutableStateOf(vpnPass) }
-    var showPwd by remember { mutableStateOf(false) }
 
     val connected = state is VpnChainState.Connected
     val connecting = state is VpnChainState.Connecting || busy
@@ -145,66 +134,28 @@ fun VpnChainScreen(
                 )
             }
 
-            // Credentials
-            item { SmallTitle("Windscribe Credentials") }
-            item {
-                TextField(
-                    value = user,
-                    onValueChange = { user = it.trim() },
-                    label = "OpenVPN Username",
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            item {
-                TextField(
-                    value = pass,
-                    onValueChange = { pass = it },
-                    label = "OpenVPN Password",
-                    singleLine = true,
-                    visualTransformation = if (showPwd) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
+            // Start / Stop buttons — always visible side by side
+            item { Spacer(Modifier.height(2.dp)) }
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(
-                        text = if (showPwd) "Hide" else "Show",
-                        onClick = { showPwd = !showPwd },
+                        text = "Start",
+                        onClick = onConnect,
+                        enabled = sshConnected && configs.isNotEmpty() && !connected && !connecting,
                         modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.textButtonColorsPrimary(),
                     )
                     TextButton(
-                        text = "Save",
-                        onClick = { onSaveCreds(user, pass) },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-
-            // Connect / Disconnect
-            item { Spacer(Modifier.height(2.dp)) }
-            item {
-                if (connected || connecting) {
-                    TextButton(
-                        text = if (connecting && !connected) "Connecting…" else "Disconnect",
+                        text = "Stop",
                         onClick = onDisconnect,
-                        enabled = !connecting || connected,
-                        modifier = Modifier.fillMaxWidth(),
+                        enabled = connected || connecting,
+                        modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.textButtonColors(
                             color             = MiuixTheme.colorScheme.error,
                             textColor         = Color.White,
                             disabledColor     = MiuixTheme.colorScheme.disabledSecondaryVariant,
                             disabledTextColor = MiuixTheme.colorScheme.disabledOnSecondaryVariant,
                         ),
-                    )
-                } else {
-                    TextButton(
-                        text = "Connect VPN Chain",
-                        onClick = onConnect,
-                        enabled = sshConnected && configs.isNotEmpty(),
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.textButtonColorsPrimary(),
                     )
                 }
             }
@@ -217,6 +168,16 @@ fun VpnChainScreen(
                         modifier = Modifier.padding(horizontal = 4.dp),
                     )
                 }
+            }
+
+            // Credentials note
+            item {
+                Text(
+                    "Credentials: edit /data/adb/sshcustom/vpnchain/auth.txt (line 1 = user, line 2 = pass)",
+                    fontSize = 11.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                )
             }
         }
     }
