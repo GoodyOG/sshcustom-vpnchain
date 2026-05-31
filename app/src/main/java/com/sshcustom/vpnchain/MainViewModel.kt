@@ -388,9 +388,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _vpnChainState.value = VpnChainState.Connecting
         withContext(Dispatchers.IO) {
             try {
+                // Always write auth file before starting — binder or direct shell
+                val user = _vpnUser.value.replace("'", "'\\''" )
+                val pass = _vpnPass.value.replace("'", "'\\''")
+                val authCmd = "mkdir -p /data/adb/sshcustom/vpnchain && " +
+                    "printf '%s\\n%s\\n' '$user' '$pass' > /data/adb/sshcustom/vpnchain/auth.txt && " +
+                    "chmod 600 /data/adb/sshcustom/vpnchain/auth.txt"
                 rootBinder?.saveVpnAuth(_vpnUser.value, _vpnPass.value)
+                    ?: Shell.cmd(authCmd).exec()
+
+                val safeCfg = cfg.replace("'", "'\\''")
                 rootBinder?.startVpnChain(cfg)
-                    ?: Shell.cmd("sh /data/adb/sshcustom/scripts/ovpn.service start '$cfg'").exec()
+                    ?: Shell.cmd("sh /data/adb/sshcustom/scripts/ovpn.service start '$safeCfg'").exec()
             } catch (_: Exception) {}
         }
         _vpnBusy.value = false
