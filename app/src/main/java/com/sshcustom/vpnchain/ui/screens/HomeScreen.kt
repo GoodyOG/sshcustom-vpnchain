@@ -225,28 +225,24 @@ private fun ControlButtons(
     onStop: () -> Unit,
     onRestart: () -> Unit,
 ) {
-    val transitioning = isLoading ||
-        state is TunnelState.Starting || state is TunnelState.Stopping
-
-    if (transitioning) {
-        // Single full-width progress button while an action is in flight (box-style).
-        val label = when {
-            pendingAction == "stop"       -> "Stopping…"
-            pendingAction == "restart"    -> "Restarting…"
-            pendingAction == "start"      -> "Starting…"
-            state is TunnelState.Stopping -> "Stopping…"
-            else                          -> "Starting…"
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // Status label when an action is in flight
+        if (pendingAction != null) {
+            val spin = spinnerFrame(true)
+            val label = when (pendingAction) {
+                "stop" -> "Stopping\u2026"
+                "restart" -> "Restarting\u2026"
+                else -> "Starting\u2026"
+            }
+            Text(
+                text = "$spin$label",
+                fontSize = 13.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(horizontal = 4.dp),
+            )
         }
-        val spin = spinnerFrame(true)
-        TextButton(
-            text = "$spin$label",
-            onClick = {},
-            enabled = false,
-            modifier = Modifier.fillMaxWidth(),
-        )
-    } else {
-        // Idle: Start, Stop, Restart are always visible; non-applicable ones grey out.
-        val connected = state is TunnelState.Connected
+
+        // All three buttons always visible and always clickable
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -254,14 +250,12 @@ private fun ControlButtons(
             TextButton(
                 text = "Start",
                 onClick = onStart,
-                enabled = !connected,
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.textButtonColorsPrimary(),
             )
             TextButton(
                 text = "Stop",
                 onClick = onStop,
-                enabled = connected,
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.textButtonColors(
                     color             = MiuixTheme.colorScheme.error,
@@ -273,7 +267,6 @@ private fun ControlButtons(
             TextButton(
                 text = "Restart",
                 onClick = onRestart,
-                enabled = connected,
                 modifier = Modifier.weight(1f),
             )
         }

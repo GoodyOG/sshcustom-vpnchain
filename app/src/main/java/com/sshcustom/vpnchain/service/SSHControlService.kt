@@ -35,7 +35,7 @@ class SSHControlService : RootService() {
 
         fun startVpnChain(config: String): String {
             val safe = config.replace("'", "'\\''")
-            return shell("sh $ovpnService start '$safe'")
+            return shell("sh $ovpnService start '$safe' &")
         }
 
         fun stopVpnChain(): String = shell("sh $ovpnService stop")

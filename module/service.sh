@@ -33,6 +33,8 @@ mkdir -p "${RUN_DIR}"
   if [ -x "${SERVICE}" ]; then
     printf '%s starting daemon in idle mode\n' "$(date '+%Y-%m-%d %H:%M:%S')"
     sh "${SERVICE}" start-idle
+    # Set module.prop to idle state (daemon will update to running when tunnel connects)
+    sed -i 's|^description=.*|description=[ 💤 ] SSHCustom-VPNChain idle|' /data/adb/modules/sshcustom-vpnchain/module.prop 2>/dev/null || true
   else
     printf '%s ERROR: service script not found at %s\n' \
       "$(date '+%Y-%m-%d %H:%M:%S')" "${SERVICE}"
