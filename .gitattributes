@@ -10,13 +10,7 @@ module/META-INF/com/google/android/updater-script text eol=lf
 # Go source
 *.go text eol=lf
 
-# Kotlin source
-*.kt text eol=lf
-*.kts text eol=lf
-
 # Binaries
 *.zip binary
-*.apk binary
-*.aab binary
 module/bin/* binary
 third_party/**/* binary

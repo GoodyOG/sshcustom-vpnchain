@@ -17,12 +17,8 @@ daemon/*.test
 *.out
 
 # Android / Gradle
-app/.gradle/
-app/build/
-app/local.properties
 *.keystore
 *.jks
-app/release/
 
 # Credentials — NEVER commit real credentials
 module/vpnchain/auth.txt

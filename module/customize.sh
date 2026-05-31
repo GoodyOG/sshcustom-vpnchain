@@ -3,7 +3,7 @@
 SKIPUNZIP=1
 
 ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-ui_print "  SSHCustom-VPNChain v2.0.0"
+ui_print "  SSHCustom-VPNChain v3.0.0"
 ui_print "  SSH Transparent Proxy Module"
 ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
@@ -80,6 +80,16 @@ _install_script ssh.tool     || abort "Failed to install ssh.tool"
 _install_script ovpn.service || ui_print "  WARN: ovpn.service not installed (VPN Chain)"
 _install_script vpnchain.iptables || ui_print "  WARN: vpnchain.iptables not installed"
 
+# ── Install WebUI ─────────────────────────────────────────────────────────────
+ui_print "  Installing WebUI..."
+mkdir -p "${WORK_DIR}/webroot"
+if [ -d "${MODPATH}/webroot" ]; then
+  cp -rf "${MODPATH}/webroot/." "${WORK_DIR}/webroot/"
+  ui_print "  WebUI installed"
+else
+  ui_print "  WARN: webroot not found in ZIP"
+fi
+
 # ── Install settings.ini (preserve existing user config) ─────────────────────
 if [ ! -f "${WORK_DIR}/settings.ini" ]; then
   ui_print "  Installing default settings.ini..."
@@ -128,5 +138,5 @@ _verify "${WORK_DIR}/settings.ini"
 ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 ui_print "  Installation complete!"
 ui_print "  Configure: ${WORK_DIR}/settings.ini"
-ui_print "  Or open the companion app"
+ui_print "  WebUI: http://127.0.0.1:9190"
 ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

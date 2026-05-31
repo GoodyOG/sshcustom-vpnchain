@@ -100,6 +100,11 @@ jobs:
         run: |
           echo "VERSION=$(cat VERSION 2>/dev/null | tr -d '[:space:]' || echo '0.0.0-dev')" >> "$GITHUB_ENV"
 
+      - name: Prepare embedded WebUI
+        run: |
+          mkdir -p daemon/internal/webui
+          cp module/webroot/index.html daemon/internal/webui/index.html
+
       - name: Build daemon (android/arm64)
         env:
           GOOS: android
@@ -165,89 +170,11 @@ jobs:
           name: module-zip
           path: dist/SSHCustom-VPNChain-v${{ env.VERSION }}.zip
 
-  # ── 4. Build Android RELEASE APK (target: <5 MB arm64-only) ──────────────
-  build-apk:
-    name: Build Android APK (release)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept SDK licenses
-        run: yes | sdkmanager --licenses 2>/dev/null || true
-
-      # Generate a self-signed release keystore for signing.
-      # This is NOT a Play Store keystore — it just allows release builds.
-      # The generated key is deterministic from a random secret so it's reproducible
-      # across CI runs if KEYSTORE_PASS is set as a repo secret.
-      - name: Generate release keystore
-        run: |
-          PASS="${{ secrets.KEYSTORE_PASS }}"
-          # Fall back to a fixed dev password if the secret is not set
-          [ -z "$PASS" ] && PASS="sshcustom_dev_keystore_2024"
-          keytool -genkeypair \
-            -keystore /tmp/release.jks \
-            -alias release \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass "$PASS" \
-            -keypass  "$PASS" \
-            -dname "CN=SSHCustom, O=SSHCustom, C=US" \
-            -noprompt
-          echo "SIGNING_KEY_PATH=/tmp/release.jks" >> "$GITHUB_ENV"
-          echo "SIGNING_STORE_PASSWORD=$PASS"     >> "$GITHUB_ENV"
-          echo "SIGNING_KEY_ALIAS=release"         >> "$GITHUB_ENV"
-          echo "SIGNING_KEY_PASSWORD=$PASS"        >> "$GITHUB_ENV"
-
-      - name: Make gradlew executable
-        run: chmod +x gradlew
-        working-directory: app
-
-      - name: Build release APK
-        run: ./gradlew assembleRelease --no-daemon
-        working-directory: app
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
-          SIGNING_KEY_PATH:      ${{ env.SIGNING_KEY_PATH }}
-          SIGNING_STORE_PASSWORD: ${{ env.SIGNING_STORE_PASSWORD }}
-          SIGNING_KEY_ALIAS:     ${{ env.SIGNING_KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD:  ${{ env.SIGNING_KEY_PASSWORD }}
-
-      - name: Locate and stage APK
-        run: |
-          # Release APK has a predictable path — no find needed
-          APK="${GITHUB_WORKSPACE}/app/build/outputs/apk/release/app-arm64-v8a-release.apk"
-          if [ ! -f "$APK" ]; then
-            # Fallback: search for any release apk
-            APK=$(find "${GITHUB_WORKSPACE}" -path "*/release/*.apk" -type f 2>/dev/null | head -1)
-          fi
-          if [ -z "$APK" ] || [ ! -f "$APK" ]; then
-            echo "ERROR: No release APK found"
-            find "${GITHUB_WORKSPACE}/app/build/outputs" -name "*.apk" 2>/dev/null || true
-            exit 1
-          fi
-          echo "Found: $APK  ($(du -sh "$APK" | cut -f1))"
-          cp "$APK" "${GITHUB_WORKSPACE}/SSHCustom-VPNChain-release.apk"
-          ls -lh "${GITHUB_WORKSPACE}/SSHCustom-VPNChain-release.apk"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: app-release-apk
-          path: SSHCustom-VPNChain-release.apk
-
-  # ── 5. Create GitHub Release (tags only) ─────────────────────────────────
+  # ── 4. Create GitHub Release (tags only) ─────────────────────────────────
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [package-module, build-apk]
+    needs: [package-module]
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
@@ -259,10 +186,6 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with: { name: module-zip, path: dist/ }
-
-      - uses: actions/download-artifact@v4
-        continue-on-error: true
-        with: { name: app-release-apk, path: dist/ }
 
       - name: List release assets
         run: ls -lh dist/
@@ -277,29 +200,26 @@ jobs:
           overwrite_files:         true
           files: |
             dist/*.zip
-            dist/*.apk
           body: |
             ## SSHCustom-VPNChain ${{ github.ref_name }}
 
             ### Installation
             1. Flash `SSHCustom-VPNChain-v${{ env.VERSION }}.zip` via Magisk / KernelSU / APatch
             2. Reboot
-            3. Install `SSHCustom-VPNChain-release.apk`
-            4. Open app → KernelSU Superuser → grant root → configure SSH → **Start**
+            3. Open http://127.0.0.1:9190 in browser (or use WebUI-X)
 
-            ### What's fixed in this release
-            - ✅ Profile editor scroll bug (SuperBottomSheet — no more stuck form)
-            - ✅ Collapsing TopAppBar on every screen (miuix MiuixScrollBehavior)
-            - ✅ NavigatorSwitch home icon
-            - ✅ Settings — filled circle selection indicator (visible and clear)
-            - ✅ Release APK with R8 full mode — arm64-only, target **<5 MB**
-            - ✅ Logs — scroll-to-bottom FAB
+            ### What's new in this release
+            - WebUI dashboard (Material 3 mobile-first, served on port 9190)
+            - SSH pool with standby and transparent reconnect
+            - VPN Chain watcher with OpenVPN integration
+            - CORS-enabled REST API for full daemon control
 
             ### ZIP contents
             | File | Description |
             |---|---|
             | `bin/sshcustomd` | Go daemon ARM64, static, ~6 MB |
             | `bin/tun2proxy` | TUN proxy for tun/tun_udpgw modes |
+            | `webroot/index.html` | WebUI dashboard (Material 3) |
             | `scripts/ssh.service` | Lifecycle: start/stop/restart |
             | `scripts/ssh.iptables` | 4 modes + capability probe |
             | `scripts/ssh.tool` | BBR, TCP buffers, cgroup |
