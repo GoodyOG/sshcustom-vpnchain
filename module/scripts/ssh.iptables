@@ -296,6 +296,23 @@ start_redirect() {
   if [ "${hotspot_sharing:-false}" = "true" ] && [ "${proxy_tcp}" = "true" ]; then
     local hspot="SSHC_HOTSPOT"
     [ "${iptables}" = "${IP6V}" ] && hspot="SSHC_HOTSPOT6"
+
+    # CRITICAL for tethered clients (IPv4 only): a FORWARDED packet REDIRECTed to
+    # a 127.0.0.0/8 proxy port is dropped by the kernel's martian filter UNLESS
+    # route_localnet is enabled on the INGRESS (hotspot) interface. Without this,
+    # hotspot clients get no tunneled internet even though the REDIRECT rule is
+    # installed — the symptom of "tunnel not shared". Also ensure IP forwarding
+    # is on (Android tether usually sets it, but don't rely on it). These are
+    # gated behind hotspot_sharing=true so the normal (non-hotspot) path is
+    # untouched, and they are harmless to the device's own traffic.
+    if [ "${iptables}" = "${IPV}" ]; then
+      sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+      sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null 2>&1 || true
+      for hsif in wlan0 wlan1 ap0 swlan0 rndis0 ncm0 bt-pan; do
+        sysctl -w "net.ipv4.conf.${hsif}.route_localnet=1" >/dev/null 2>&1 || true
+      done
+    fi
+
     ensure_chain nat "${hspot}"
     for sn in ${intranet}; do
       ${iptables} -t nat -A "${hspot}" -d "${sn}" -j RETURN >/dev/null 2>&1 || true

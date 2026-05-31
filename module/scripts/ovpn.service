@@ -98,31 +98,42 @@ start_ovpn() {
   echo "$!" > "${OVPN_PID}"
   log Info "vpnchain: openvpn started (config=${cfg_name}) via SOCKS 127.0.0.1:${socks_port}"
 
-  # Wait up to ~30s for the connection to come up.
-  local i=0
-  while [ "${i}" -lt 30 ]; do
-    if busybox grep -q "Initialization Sequence Completed" "${OVPN_LOG}" 2>/dev/null; then
-      sh "${VPNCHAIN_IPT}" enable >> "${box_log}" 2>&1 || true
-      log Info "vpnchain: connected — exit via OpenVPN/Windscribe"
-      return 0
-    fi
-    if busybox grep -q "AUTH_FAILED" "${OVPN_LOG}" 2>/dev/null; then
-      log Error "vpnchain: authentication failed — check Windscribe OpenVPN credentials"
-      stop_ovpn
-      return 1
-    fi
-    if ! ovpn_alive; then
-      log Error "vpnchain: openvpn exited during startup — check ${OVPN_LOG}"
-      rm -f "${MARKER}"
-      sh "${SSH_IPT}" enable >> "${box_log}" 2>&1 || true
-      return 1
-    fi
-    sleep 1
-    i=$((i + 1))
-  done
+  # Connect-watcher: waits up to ~30s for the tunnel to come up, then enables
+  # VPN Chain routing. CRITICAL — this runs in a DETACHED subshell with ALL fds
+  # redirected to /dev/null so the caller (the app's single libsu root shell)
+  # returns IMMEDIATELY and its I/O stream is never held open by a background
+  # job. A bare `&` on the start command (v2.3.12) left the shell's pipes open,
+  # which poisoned every subsequent status poll on that same shell — so the VPN
+  # Chain tab was stuck on "Off" even though the tunnel was up. With the watcher
+  # detached and silenced, the start call returns clean and the app's `status`
+  # poll reliably observes connecting -> connected.
+  (
+    i=0
+    while [ "${i}" -lt 30 ]; do
+      if busybox grep -q "Initialization Sequence Completed" "${OVPN_LOG}" 2>/dev/null; then
+        sh "${VPNCHAIN_IPT}" enable >> "${box_log}" 2>&1 || true
+        log Info "vpnchain: connected — exit via OpenVPN/Windscribe"
+        break
+      fi
+      if busybox grep -q "AUTH_FAILED" "${OVPN_LOG}" 2>/dev/null; then
+        log Error "vpnchain: authentication failed — check Windscribe OpenVPN credentials"
+        stop_ovpn
+        break
+      fi
+      if ! ovpn_alive; then
+        log Error "vpnchain: openvpn exited during startup — check ${OVPN_LOG}"
+        rm -f "${MARKER}"
+        sh "${SSH_IPT}" enable >> "${box_log}" 2>&1 || true
+        break
+      fi
+      sleep 1
+      i=$((i + 1))
+    done
+  ) >/dev/null 2>&1 &
 
-  log Warning "vpnchain: not connected after 30s — check ${OVPN_LOG}"
-  return 1
+  # Return immediately; the detached watcher drives the rest. The app polls
+  # `ovpn.service status` (every 2s) to reflect Connecting -> Connected.
+  return 0
 }
 
 stop_ovpn() {

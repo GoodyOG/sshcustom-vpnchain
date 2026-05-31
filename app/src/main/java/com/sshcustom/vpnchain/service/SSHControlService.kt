@@ -34,8 +34,11 @@ class SSHControlService : RootService() {
         }
 
         fun startVpnChain(config: String): String {
+            // No trailing `&` — ovpn.service now backgrounds its own connect
+            // watcher internally (fully fd-redirected), so this returns fast and
+            // does NOT poison the shared libsu root shell used by status polls.
             val safe = config.replace("'", "'\\''")
-            return shell("sh $ovpnService start '$safe' &")
+            return shell("sh $ovpnService start '$safe'")
         }
 
         fun stopVpnChain(): String = shell("sh $ovpnService stop")
