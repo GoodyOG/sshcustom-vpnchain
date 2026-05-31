@@ -6,7 +6,7 @@
 #   3. Stamp module.prop with the version.
 #   4. Build a host validator and run it against the bundled config.
 #   5. Cross-compile the daemon for arm64 (only), statically linked.
-#   6. Cross-compile tun2socks for arm64.
+#   6. Download pre-built tun2socks for arm64.
 #   7. Download or build static openvpn for arm64.
 #   8. Package the module ZIP.
 set -euo pipefail
@@ -75,23 +75,20 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
   -o "$ARM64_BIN" \
   ./cmd/sshcustomd/
 
-echo "==> Building tun2socks for ARM64"
-# Clone tun2socks if not already present (pinned to v2.5.2 for stable build path)
-TUN2SOCKS_SRC="$DIST/tun2socks-src"
-if [ ! -d "$TUN2SOCKS_SRC" ]; then
-  git clone --depth 1 --branch v2.5.2 https://github.com/xjasonlyu/tun2socks.git "$TUN2SOCKS_SRC"
+echo "==> Downloading tun2socks for ARM64"
+if [ ! -f "$TUN2SOCKS_BIN" ]; then
+  TUN2SOCKS_VER="2.5.2"
+  TUN2SOCKS_URL="https://github.com/xjasonlyu/tun2socks/releases/download/v${TUN2SOCKS_VER}/tun2socks-linux-arm64.zip"
+  TUN2SOCKS_TMP="$DIST/tun2socks-download.zip"
+  echo "   Downloading tun2socks v${TUN2SOCKS_VER} from GitHub releases..."
+  curl -fsSL "$TUN2SOCKS_URL" -o "$TUN2SOCKS_TMP"
+  unzip -o "$TUN2SOCKS_TMP" -d "$DIST/tun2socks-extract" >/dev/null
+  # The zip contains a single binary named tun2socks-linux-arm64
+  find "$DIST/tun2socks-extract" -name "tun2socks*" -exec cp {} "$TUN2SOCKS_BIN" \;
+  chmod +x "$TUN2SOCKS_BIN"
+  rm -rf "$TUN2SOCKS_TMP" "$DIST/tun2socks-extract" "$DIST/tun2socks-src"
 fi
-(
-  cd "$TUN2SOCKS_SRC"
-  # tun2socks v2.5.x has main package at repo root
-  GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
-    -trimpath \
-    -buildvcs=false \
-    -ldflags="-s -w" \
-    -o "$TUN2SOCKS_BIN" \
-    .
-)
-echo "   tun2socks built: $(ls -lh "$TUN2SOCKS_BIN" | awk '{print $5}')"
+echo "   tun2socks: $(ls -lh "$TUN2SOCKS_BIN" | awk '{print $5}')"
 
 echo "==> Acquiring static OpenVPN for ARM64"
 # Download pre-built static openvpn for arm64 from a known source.
