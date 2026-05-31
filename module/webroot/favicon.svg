@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SSHCustom WebUI favicon. Same nested-tunnel mark as the Android
+  launcher icon, scaled and recoloured for an in-browser tab. Background
+  is a solid rounded square so the icon stays visible on light browser
+  themes; the strokes use Material You blue tones to match the WebUI
+  default palette.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" ry="14" fill="#1B2233"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 42 L32 16 L52 42" stroke="#8AB4F8" stroke-width="3.5"/>
+    <path d="M19 41 L32 24 L45 41" stroke="#ADC6FF" stroke-width="3.2"/>
+    <path d="M25 40 L32 31 L39 40" stroke="#DBE5FF" stroke-width="3"/>
+    <line x1="18" y1="54" x2="46" y2="54" stroke="#5C7AB8" stroke-width="1.6"/>
+  </g>
+  <circle cx="32" cy="48" r="2.7" fill="#ADC6FF"/>
+</svg>

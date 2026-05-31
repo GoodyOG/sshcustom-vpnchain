@@ -1,1 +1,7 @@
-{"title":"SSHCustom","icon":"icon.png","windowResize":true,"backInterceptor":"javascript"}
+{
+    "title": "SSHCustom-VPNChain",
+    "icon": "icon.png",
+    "windowResize": false,
+    "backInterceptor": "javascript",
+    "contentSecurityPolicy": "default-src 'self' data: blob: {domain}; script-src 'self' 'unsafe-inline' 'unsafe-eval' {domain}; style-src 'self' 'unsafe-inline' {domain}; connect-src *; img-src *;"
+}

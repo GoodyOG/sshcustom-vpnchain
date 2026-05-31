@@ -33,9 +33,8 @@ type Config struct {
 	Payload        string
 
 	// Network
-	NetworkMode string // redirect | tproxy
+	NetworkMode string // redirect
 	SocksPort   int
-	TProxyPort  int
 	RedirPort   int
 
 	// Proxy behaviour
@@ -47,6 +46,8 @@ type Config struct {
 	DNSHijackTCP  bool
 	DNSHijackUDP  bool
 	DNSHijackMode string // redirect | tproxy | disable
+	DNSMode       string // device | google | cloudflare | custom
+	DNSServers    string // comma-separated custom servers
 
 	// Speed boost
 	ChannelPool     bool
@@ -55,6 +56,9 @@ type Config struct {
 
 	// IPv6
 	IPv6 bool
+
+	// Hotspot sharing
+	HotspotSharing bool
 
 	// Paths
 	BoxDir string
@@ -93,8 +97,7 @@ func DefaultConfig() *Config {
 		HTTPProxyPort:   3128,
 		NetworkMode:     "redirect",
 		SocksPort:       1080,
-		TProxyPort:      9898,
-		RedirPort:       9797,
+		RedirPort:       9799,
 		ProxyTCP:        true,
 		ProxyUDP:        false,
 		QUIC:            "disable",
@@ -169,18 +172,20 @@ func (c *Config) apply(key, val string) {
 	case "payload":         c.Payload = val
 	case "network_mode":    c.NetworkMode = val
 	case "socks_port":      c.SocksPort = n(val, 1080)
-	case "tproxy_port":     c.TProxyPort = n(val, 9898)
-	case "redir_port":      c.RedirPort = n(val, 9797)
+	case "redir_port":      c.RedirPort = n(val, 9799)
 	case "proxy_tcp":       c.ProxyTCP = b(val)
 	case "proxy_udp":       c.ProxyUDP = b(val)
 	case "quic":            c.QUIC = val
 	case "dns_hijack_tcp":  c.DNSHijackTCP = b(val)
 	case "dns_hijack_udp":  c.DNSHijackUDP = b(val)
 	case "dns_hijack_mode": c.DNSHijackMode = val
+	case "dns_mode":        c.DNSMode = val
+	case "dns_servers":     c.DNSServers = val
 	case "channel_pool":    c.ChannelPool = b(val)
 	case "channel_pool_size": c.ChannelPoolSize = n(val, 8)
 	case "tcp_buffer_tuning": c.TCPBufferTuning = b(val)
 	case "ipv6":            c.IPv6 = b(val)
+	case "hotspot_sharing": c.HotspotSharing = b(val)
 	case "box_dir":         c.BoxDir = val
 	case "box_run":         c.BoxRun = val
 	case "box_log":         c.BoxLog = val

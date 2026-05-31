@@ -19,7 +19,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -255,9 +254,6 @@ func runCmd() {
 
 	// Metrics ticker
 	go metricsLoop(ctx, st, &sshClient)
-
-	// VPN chain state watcher
-	go vpnChainWatcher(ctx, *workDir, st)
 
 	// Start tunnel unless idle
 	if !*idle {
@@ -527,8 +523,8 @@ func nextDelay(cur, base, max time.Duration) time.Duration {
 	return minDuration(cur*2, max)
 }
 
-// startListeners brings up the SOCKS5 + mode-specific transparent/tproxy
-// listeners. They are bound to the CURRENT SSH client via curClient(), so they
+// startListeners brings up the SOCKS5 + transparent redirect listener.
+// They are bound to the CURRENT SSH client via curClient(), so they
 // keep running and pick up the new client across transparent reconnects.
 func startListeners(ctx context.Context, cfg *config.Config, curClient func() *issh.Client) {
 	socks := &proxy.SOCKS5Server{
@@ -541,30 +537,16 @@ func startListeners(ctx context.Context, cfg *config.Config, curClient func() *i
 		}
 	}()
 
-	switch cfg.NetworkMode {
-	case "tproxy":
-		tp := &proxy.TProxyServer{
-			Addr:    fmt.Sprintf("0.0.0.0:%d", cfg.TProxyPort),
-			Client:  curClient,
-			Timeout: 25 * time.Second,
-		}
-		go func() {
-			if err := tp.ListenAndServe(ctx); err != nil {
-				log.Printf("[tproxy] %v", err)
-			}
-		}()
-	default: // redirect
-		trans := &proxy.TransparentServer{
-			Addr:    fmt.Sprintf("0.0.0.0:%d", cfg.RedirPort),
-			Client:  curClient,
-			Timeout: 25 * time.Second,
-		}
-		go func() {
-			if err := trans.ListenAndServe(ctx); err != nil {
-				log.Printf("[transparent] %v", err)
-			}
-		}()
+	trans := &proxy.TransparentServer{
+		Addr:    fmt.Sprintf("0.0.0.0:%d", cfg.RedirPort),
+		Client:  curClient,
+		Timeout: 25 * time.Second,
 	}
+	go func() {
+		if err := trans.ListenAndServe(ctx); err != nil {
+			log.Printf("[transparent] %v", err)
+		}
+	}()
 
 	// DNS forwarder: ssh.iptables redirects device UDP:53 to 127.0.0.1:5353,
 	// where this listener proxies the query as TCP DNS through the current SSH
@@ -688,57 +670,6 @@ func hasDefaultRoute() bool {
 	return cmd.Run() == nil
 }
 
-// vpnChainWatcher monitors the vpnchain.active marker file and updates State
-// with the VPN chain status. It checks every 3 seconds.
-func vpnChainWatcher(ctx context.Context, workDir string, st *State) {
-	marker := workDir + "/run/vpnchain.active"
-	ovpnLog := workDir + "/run/openvpn.log"
-	ovpnService := workDir + "/scripts/ovpn.service"
-
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-
-		if _, err := os.Stat(marker); os.IsNotExist(err) {
-			st.set(func(s *State) {
-				s.vpnChainState = "off"
-				s.vpnChainExitIP = ""
-				s.vpnChainLocation = ""
-			})
-			continue
-		}
-
-		// Marker exists - check status via ovpn.service
-		state := "connecting"
-		out, err := exec.CommandContext(ctx, "/system/bin/sh", ovpnService, "status").Output()
-		if err == nil {
-			status := strings.TrimSpace(string(out))
-			if status == "connected" || status == "connecting" || status == "stopped" {
-				state = status
-			}
-		}
-
-		// Fallback: check openvpn.log for completion
-		if state == "connecting" {
-			if logData, err := os.ReadFile(ovpnLog); err == nil {
-				if strings.Contains(string(logData), "Initialization Sequence Completed") {
-					state = "connected"
-				}
-			}
-		}
-
-		st.set(func(s *State) {
-			s.vpnChainState = state
-		})
-	}
-}
-
 // wanIPRefresher caches the tunnel-side public IP (refreshes every 5 min),
 // using whatever client is current.
 func wanIPRefresher(ctx context.Context, curClient func() *issh.Client, st *State) {
@@ -797,20 +728,47 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// Profile represents a saved SSH connection profile.
+// Profile represents a saved SSH connection profile (v1.0.1 nested model).
 type Profile struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Host           string `json:"host"`
-	Port           int    `json:"port"`
-	User           string `json:"user"`
-	Password       string `json:"password"`
-	Mode           string `json:"mode"`
-	SNIHost        string `json:"sni_host"`
-	ProxyHost      string `json:"proxy_host"`
-	ProxyPort      int    `json:"proxy_port"`
-	PayloadEnabled bool   `json:"payload_enabled"`
-	Payload        string `json:"payload"`
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Selected  bool           `json:"selected,omitempty"`
+	SSH       ProfileSSH     `json:"ssh"`
+	Transport ProfileTransport `json:"transport"`
+}
+
+type ProfileSSH struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	AuthType string `json:"auth_type,omitempty"`
+}
+
+type ProfileTransport struct {
+	Mode      string           `json:"mode"`
+	HTTPProxy ProfileHTTPProxy `json:"http_proxy,omitempty"`
+	TLS       ProfileTLS       `json:"tls,omitempty"`
+	Payload   ProfilePayload   `json:"payload,omitempty"`
+}
+
+type ProfileHTTPProxy struct {
+	Host string `json:"host,omitempty"`
+	Port int    `json:"port,omitempty"`
+}
+
+type ProfileTLS struct {
+	ServerName string `json:"server_name,omitempty"`
+}
+
+type ProfilePayload struct {
+	Enabled  bool   `json:"enabled,omitempty"`
+	Template string `json:"template,omitempty"`
+}
+
+type ProfilesFile struct {
+	SelectedID string    `json:"selected_id"`
+	Profiles   []Profile `json:"profiles"`
 }
 
 func buildHTTPMux(
@@ -836,20 +794,106 @@ func buildHTTPMux(
 		env(w, true, map[string]string{"status": "ok", "version": version}, "")
 	})
 
+	// ── GET /api/v1/status (v1.0.1 contract) ──────────────────────────────────
+
 	mux.HandleFunc("/api/v1/status", func(w http.ResponseWriter, r *http.Request) {
 		cfg := atomicCfg.Get()
-		snap := st.snapshot()
+		st.mu.RLock()
+		connected := st.connected
+		standbyVal := st.standby
+		lastError := st.lastError
+		lastEvent := st.lastEvent
+		tunnelUptime := int64(0)
+		if st.connected && !st.tunnelStart.IsZero() {
+			tunnelUptime = int64(time.Since(st.tunnelStart).Seconds())
+		}
+		totalUptime := int64(time.Since(st.startedAt).Seconds())
+		poolSz := st.poolSize
+		poolH := st.poolHealthy
+		activeC := st.activeConns
+		cpuP := st.cpuPct
+		memR := st.memRSS
+		sshM := st.sshMode
+		st.mu.RUnlock()
+
+		state := "STOPPED"
+		if connected {
+			state = "CONNECTED"
+		} else if standbyVal {
+			state = "PAUSED_NO_NETWORK"
+		} else if lastEvent == "connecting" || lastEvent == "reconnecting" || lastEvent == "connect_failed" || lastEvent == "resuming" {
+			state = "CONNECTING"
+		}
+
+		running := connected || lastEvent == "reconnecting" || standbyVal || lastEvent == "connecting"
+		sourceIP := getSourceIP()
+		sysMemPct := getSystemMemPct()
+		memMB := int(memR / 1024 / 1024)
+
+		dnsMode := cfg.DNSMode
+		if dnsMode == "" {
+			dnsMode = "device"
+		}
+		quicVal := cfg.QUIC
+		if quicVal == "" {
+			quicVal = "disable"
+		}
+		dnsServers := []string{}
+		if cfg.DNSServers != "" {
+			for _, s := range strings.Split(cfg.DNSServers, ",") {
+				s = strings.TrimSpace(s)
+				if s != "" {
+					dnsServers = append(dnsServers, s)
+				}
+			}
+		}
+
+		runtimeData := map[string]interface{}{
+			"connected": connected, "ssh_authenticated": connected, "running": running,
+			"state": state, "last_error": lastError, "last_event": lastEvent, "version": version,
+			"tunnel_uptime_seconds": tunnelUptime, "uptime_seconds": totalUptime,
+			"pool_size": poolSz, "pool_healthy": poolH, "pool_streams": activeC,
+			"pool_max_streams": poolSz * 8, "cpu_percent": cpuP,
+			"memory_rss_bytes": memR, "memory_rss_mb": memMB,
+			"system_mem_used_percent": sysMemPct, "source_ip": sourceIP,
+			"interface": "", "gateway": "", "network_online": sourceIP != "",
+			"selected_mode": sshM, "transport_chain": sshM, "payload_enabled": cfg.PayloadEnabled,
+			"resolver_method": "android_dnsx", "resolved_ips": []string{}, "dns_mode": dnsMode,
+			"socks_running": connected, "socks_addr": fmt.Sprintf("127.0.0.1:%d", cfg.SocksPort),
+			"transparent_running": connected, "transparent_addr": fmt.Sprintf("0.0.0.0:%d", cfg.RedirPort),
+			"hotspot_enabled": cfg.HotspotSharing,
+		}
+
+		configData := map[string]interface{}{
+			"dns": map[string]interface{}{"mode": dnsMode, "servers": dnsServers},
+			"hotspot": map[string]interface{}{"enabled": cfg.HotspotSharing, "tcp": cfg.HotspotSharing},
+			"quic": quicVal, "ipv6": cfg.IPv6, "channel_pool_size": cfg.ChannelPoolSize,
+			"network_mode": "redirect", "socks_port": cfg.SocksPort, "redir_port": cfg.RedirPort,
+		}
+
+		paths := map[string]string{
+			"work_dir": workDir, "config_path": workDir + "/settings.ini",
+			"run_dir": workDir + "/run", "webroot": workDir + "/webroot",
+		}
+
+		env(w, true, map[string]interface{}{"runtime": runtimeData, "config": configData, "paths": paths}, "")
+	})
+
+	// ── GET /api/v1/diagnostics ───────────────────────────────────────────────
+
+	mux.HandleFunc("/api/v1/diagnostics", func(w http.ResponseWriter, r *http.Request) {
+		st.mu.RLock()
+		ps := st.poolSize
+		ph := st.poolHealthy
+		ac := st.activeConns
+		st.mu.RUnlock()
+		srcIP := getSourceIP()
 		env(w, true, map[string]interface{}{
-			"runtime": snap,
-			"config": map[string]interface{}{
-				"network_mode": cfg.NetworkMode,
-				"ssh_mode":     cfg.SSHMode,
-				"socks_port":   cfg.SocksPort,
-				"redir_port":   cfg.RedirPort,
-				"tproxy_port":  cfg.TProxyPort,
-				"quic":         cfg.QUIC,
-				"channel_pool": cfg.ChannelPool,
+			"pool": map[string]interface{}{
+				"healthy": ph, "size": ps, "streams": ac, "max_streams": ps * 8,
+				"capacity_hint": fmt.Sprintf("%d/%d healthy, %d active streams", ph, ps, ac),
 			},
+			"source_ip": srcIP,
 		}, "")
 	})
 
@@ -862,7 +906,6 @@ func buildHTTPMux(
 			Action string `json:"action"`
 		}
 		json.NewDecoder(r.Body).Decode(&req)
-		// Schedule 300ms later so HTTP response returns before daemon restarts
 		go func() {
 			time.Sleep(300 * time.Millisecond)
 			handleControl(req.Action, workDir)
@@ -892,39 +935,100 @@ func buildHTTPMux(
 		}
 	})
 
-	// Config read/patch endpoint
+	// ── POST /api/v1/config (flexible body) ───────────────────────────────────
+
 	mux.HandleFunc("/api/v1/config", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			cfg := atomicCfg.Get()
 			env(w, true, cfg, "")
 		case http.MethodPost:
-			var patch map[string]string
-			if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+			var body map[string]json.RawMessage
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				env(w, false, nil, "invalid JSON body")
 				return
 			}
-			if err := patchSettingsINI(cfgPath, patch); err != nil {
-				env(w, false, nil, err.Error())
-				return
+			patch := map[string]string{}
+			doRestart := false
+
+			if raw, ok := body["dns"]; ok {
+				var dns struct {
+					Mode    string   `json:"mode"`
+					Servers []string `json:"servers"`
+				}
+				json.Unmarshal(raw, &dns)
+				if dns.Mode != "" {
+					patch["dns_mode"] = dns.Mode
+				}
+				if len(dns.Servers) > 0 {
+					patch["dns_servers"] = strings.Join(dns.Servers, ",")
+				}
+			}
+			if raw, ok := body["hotspot"]; ok {
+				var hs struct {
+					Enabled bool `json:"enabled"`
+					TCP     bool `json:"tcp"`
+				}
+				json.Unmarshal(raw, &hs)
+				patch["hotspot_sharing"] = strconv.FormatBool(hs.Enabled || hs.TCP)
+			}
+			if raw, ok := body["quic"]; ok {
+				var q string
+				if json.Unmarshal(raw, &q) == nil && q != "" {
+					patch["quic"] = q
+				}
+			}
+			if raw, ok := body["ipv6"]; ok {
+				var bVal bool
+				if json.Unmarshal(raw, &bVal) == nil {
+					patch["ipv6"] = strconv.FormatBool(bVal)
+				} else {
+					var sVal string
+					if json.Unmarshal(raw, &sVal) == nil {
+						patch["ipv6"] = sVal
+					}
+				}
+			}
+			if raw, ok := body["channel_pool_size"]; ok {
+				var n int
+				if json.Unmarshal(raw, &n) == nil && n >= 1 && n <= 8 {
+					patch["channel_pool_size"] = strconv.Itoa(n)
+				}
+			}
+			if raw, ok := body["restart"]; ok {
+				var rb bool
+				json.Unmarshal(raw, &rb)
+				doRestart = rb
+			}
+
+			if len(patch) > 0 {
+				if err := patchSettingsINI(cfgPath, patch); err != nil {
+					env(w, false, nil, err.Error())
+					return
+				}
 			}
 			syscall.Kill(syscall.Getpid(), syscall.SIGHUP)
+			if doRestart {
+				go func() {
+					time.Sleep(300 * time.Millisecond)
+					handleControl("restart", workDir)
+				}()
+			}
 			env(w, true, map[string]string{"status": "updated"}, "")
 		default:
 			w.WriteHeader(405)
 		}
 	})
 
-	// Public IP as seen through the tunnel
+	// ── GET /api/v1/network/public-ip ─────────────────────────────────────────
+
 	mux.HandleFunc("/api/v1/network/public-ip", func(w http.ResponseWriter, r *http.Request) {
 		ip, country := st.wanInfo()
-		if ip == "" {
-			env(w, false, nil, "resolving")
-			return
+		tunnelData := map[string]interface{}{
+			"ok": ip != "", "ip": ip, "country": country,
+			"city": "", "region": "", "isp": "", "asn": "", "cached": true,
 		}
-		env(w, true, map[string]interface{}{
-			"tunnel": map[string]string{"ip": ip, "country": country},
-		}, "")
+		env(w, true, map[string]interface{}{"tunnel": tunnelData}, "")
 	})
 
 	// Latency ping endpoint
@@ -940,10 +1044,10 @@ func buildHTTPMux(
 		}
 
 		measureTCP := func(addr string) int {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
+			ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel2()
 			start := time.Now()
-			conn, err := c.DialTCP(ctx, "tcp", addr)
+			conn, err := c.DialTCP(ctx2, "tcp", addr)
 			if err != nil {
 				return -1
 			}
@@ -966,37 +1070,16 @@ func buildHTTPMux(
 		}, "")
 	})
 
-	// ── VPN Chain endpoints ───────────────────────────────────────────────────
+	// ── VPN Chain (shell out to vpnchain.sh) ──────────────────────────────────
 
-	mux.HandleFunc("/api/v1/vpnchain/status", func(w http.ResponseWriter, r *http.Request) {
-		st.mu.RLock()
-		data := map[string]string{
-			"state":    st.vpnChainState,
-			"exit_ip":  st.vpnChainExitIP,
-			"location": st.vpnChainLocation,
-		}
-		st.mu.RUnlock()
-		env(w, true, data, "")
-	})
+	vpnchainScript := workDir + "/vpnchain/vpnchain.sh"
 
-	mux.HandleFunc("/api/v1/vpnchain/locations", func(w http.ResponseWriter, r *http.Request) {
-		configDir := workDir + "/vpnchain/configs/"
-		entries, err := os.ReadDir(configDir)
-		if err != nil {
-			env(w, true, []string{}, "")
-			return
-		}
-		var locations []string
-		for _, e := range entries {
-			if !e.IsDir() && strings.HasSuffix(e.Name(), ".ovpn") {
-				locations = append(locations, strings.TrimSuffix(e.Name(), ".ovpn"))
-			}
-		}
-		if locations == nil {
-			locations = []string{}
-		}
-		env(w, true, locations, "")
-	})
+	vpnchainRun := func(args ...string) (string, error) {
+		cmdArgs := append([]string{vpnchainScript}, args...)
+		cmd := exec.Command("/system/bin/sh", cmdArgs...)
+		out, err := cmd.CombinedOutput()
+		return strings.TrimSpace(string(out)), err
+	}
 
 	mux.HandleFunc("/api/v1/vpnchain/start", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -1005,8 +1088,6 @@ func buildHTTPMux(
 		}
 		var req struct {
 			Location string `json:"location"`
-			Username string `json:"username"`
-			Password string `json:"password"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			env(w, false, nil, "invalid JSON body")
@@ -1016,18 +1097,12 @@ func buildHTTPMux(
 			env(w, false, nil, "location is required")
 			return
 		}
-		// Write auth file
-		authPath := workDir + "/vpnchain/auth.txt"
-		os.MkdirAll(filepath.Dir(authPath), 0700)
-		os.WriteFile(authPath, []byte(req.Username+"\n"+req.Password+"\n"), 0600)
-		// Start OpenVPN
-		script := workDir + "/scripts/ovpn.service"
-		cmd := exec.Command("/system/bin/sh", script, "start", req.Location)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			env(w, false, nil, fmt.Sprintf("start failed: %v: %s", err, out))
+		out, err := vpnchainRun("start", req.Location)
+		if err != nil {
+			env(w, false, nil, fmt.Sprintf("start failed: %s", out))
 			return
 		}
-		env(w, true, map[string]string{"status": "started", "location": req.Location}, "")
+		env(w, true, map[string]string{"status": "started", "output": out}, "")
 	})
 
 	mux.HandleFunc("/api/v1/vpnchain/stop", func(w http.ResponseWriter, r *http.Request) {
@@ -1035,13 +1110,12 @@ func buildHTTPMux(
 			w.WriteHeader(405)
 			return
 		}
-		script := workDir + "/scripts/ovpn.service"
-		cmd := exec.Command("/system/bin/sh", script, "stop")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			env(w, false, nil, fmt.Sprintf("stop failed: %v: %s", err, out))
+		out, err := vpnchainRun("stop")
+		if err != nil {
+			env(w, false, nil, fmt.Sprintf("stop failed: %s", out))
 			return
 		}
-		env(w, true, map[string]string{"status": "stopped"}, "")
+		env(w, true, map[string]string{"status": "stopped", "output": out}, "")
 	})
 
 	mux.HandleFunc("/api/v1/vpnchain/switch", func(w http.ResponseWriter, r *http.Request) {
@@ -1051,8 +1125,6 @@ func buildHTTPMux(
 		}
 		var req struct {
 			Location string `json:"location"`
-			Username string `json:"username"`
-			Password string `json:"password"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			env(w, false, nil, "invalid JSON body")
@@ -1062,45 +1134,61 @@ func buildHTTPMux(
 			env(w, false, nil, "location is required")
 			return
 		}
-		script := workDir + "/scripts/ovpn.service"
-		// Stop first
-		exec.Command("/system/bin/sh", script, "stop").Run()
-		time.Sleep(500 * time.Millisecond)
-		// Write auth and start
-		authPath := workDir + "/vpnchain/auth.txt"
-		os.MkdirAll(filepath.Dir(authPath), 0700)
-		os.WriteFile(authPath, []byte(req.Username+"\n"+req.Password+"\n"), 0600)
-		cmd := exec.Command("/system/bin/sh", script, "start", req.Location)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			env(w, false, nil, fmt.Sprintf("start failed: %v: %s", err, out))
+		out, err := vpnchainRun("switch", req.Location)
+		if err != nil {
+			env(w, false, nil, fmt.Sprintf("switch failed: %s", out))
 			return
 		}
-		env(w, true, map[string]string{"status": "switched", "location": req.Location}, "")
+		env(w, true, map[string]string{"status": "switched", "output": out}, "")
+	})
+
+	mux.HandleFunc("/api/v1/vpnchain/status", func(w http.ResponseWriter, r *http.Request) {
+		out, err := vpnchainRun("status")
+		if err != nil {
+			env(w, true, map[string]interface{}{"running": false, "location": "", "ip": ""}, "")
+			return
+		}
+		var statusData map[string]interface{}
+		if json.Unmarshal([]byte(out), &statusData) != nil {
+			env(w, true, map[string]interface{}{"running": false, "location": "", "ip": ""}, "")
+			return
+		}
+		env(w, true, statusData, "")
+	})
+
+	mux.HandleFunc("/api/v1/vpnchain/locations", func(w http.ResponseWriter, r *http.Request) {
+		out, _ := vpnchainRun("locations")
+		var locations []string
+		if out != "" {
+			for _, line := range strings.Split(out, "\n") {
+				line = strings.TrimSpace(line)
+				if line != "" {
+					locations = append(locations, line)
+				}
+			}
+		}
+		if locations == nil {
+			locations = []string{}
+		}
+		env(w, true, locations, "")
 	})
 
 	mux.HandleFunc("/api/v1/vpnchain/log", func(w http.ResponseWriter, r *http.Request) {
-		lines := 100
-		if q := r.URL.Query().Get("lines"); q != "" {
-			if n, err := strconv.Atoi(q); err == nil && n > 0 {
-				lines = n
-			}
-		}
-		logPath := workDir + "/run/openvpn.log"
-		content := tailFile(logPath, lines)
-		env(w, true, map[string]interface{}{"lines": content}, "")
+		logPath := workDir + "/vpnchain/run/vpnchain.log"
+		lines := tailFile(logPath, 400)
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Write([]byte(strings.Join(lines, "\n")))
 	})
 
-	// ── Logs endpoints ────────────────────────────────────────────────────────
+	// ── Logs (plain text) ─────────────────────────────────────────────────────
 
 	logTypeMap := map[string]string{
 		"core":    "run/sshcustom.log",
-		"boot":    "run/boot.log",
-		"tool":    "run/tool.log",
-		"openvpn": "run/openvpn.log",
+		"control": "run/boot.log",
+		"action":  "run/tool.log",
 	}
 
 	mux.HandleFunc("/api/v1/logs/", func(w http.ResponseWriter, r *http.Request) {
-		// Parse: /api/v1/logs/{type} or /api/v1/logs/{type}/clear
 		path := strings.TrimPrefix(r.URL.Path, "/api/v1/logs/")
 		parts := strings.SplitN(path, "/", 2)
 		logType := parts[0]
@@ -1119,125 +1207,142 @@ func buildHTTPMux(
 				return
 			}
 			os.Truncate(logPath, 0)
-			env(w, true, map[string]string{"status": "cleared"}, "")
+			env(w, true, nil, "")
 			return
 		}
 
-		// GET log content
-		lines := 200
-		if q := r.URL.Query().Get("lines"); q != "" {
-			if n, err := strconv.Atoi(q); err == nil && n > 0 {
-				lines = n
-			}
-		}
-		content := tailFile(logPath, lines)
-		env(w, true, map[string]interface{}{"lines": content}, "")
+		// Return plain text tail
+		lines := tailFile(logPath, 400)
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Write([]byte(strings.Join(lines, "\n")))
 	})
 
-	// ── Profiles CRUD ─────────────────────────────────────────────────────────
+	// ── Profiles (v1.0.1 nested model) ────────────────────────────────────────
 
 	profilesPath := workDir + "/profiles.json"
 
-	mux.HandleFunc("/api/v1/profiles/", func(w http.ResponseWriter, r *http.Request) {
-		// Parse: /api/v1/profiles/{id} or /api/v1/profiles/{id}/activate
-		path := strings.TrimPrefix(r.URL.Path, "/api/v1/profiles/")
-		if path == "" {
-			// This shouldn't match (the bare /api/v1/profiles handler covers it)
-			w.WriteHeader(404)
+	mux.HandleFunc("/api/v1/profiles", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			pf := loadProfilesFile(profilesPath)
+			env(w, true, map[string]interface{}{
+				"selected_id": pf.SelectedID,
+				"profiles":    pf.Profiles,
+			}, "")
 			return
 		}
-		parts := strings.SplitN(path, "/", 2)
-		id := parts[0]
-		isActivate := len(parts) == 2 && parts[1] == "activate"
-
-		if isActivate {
-			if r.Method != http.MethodPost {
-				w.WriteHeader(405)
-				return
-			}
-			profiles := loadProfiles(profilesPath)
-			var target *Profile
-			for i := range profiles {
-				if profiles[i].ID == id {
-					target = &profiles[i]
-					break
-				}
-			}
-			if target == nil {
-				env(w, false, nil, "profile not found")
-				return
-			}
-			// Write profile fields to settings.ini
-			patch := map[string]string{
-				"ssh_host":        target.Host,
-				"ssh_port":        strconv.Itoa(target.Port),
-				"ssh_user":        target.User,
-				"ssh_password":    target.Password,
-				"ssh_mode":        target.Mode,
-				"ssh_sni_host":    target.SNIHost,
-				"http_proxy_host": target.ProxyHost,
-				"http_proxy_port": strconv.Itoa(target.ProxyPort),
-				"payload_enabled": strconv.FormatBool(target.PayloadEnabled),
-				"payload":         target.Payload,
-			}
-			if err := patchSettingsINI(cfgPath, patch); err != nil {
-				env(w, false, nil, err.Error())
-				return
-			}
-			syscall.Kill(syscall.Getpid(), syscall.SIGHUP)
-			env(w, true, map[string]string{"status": "activated", "profile": target.Name}, "")
-			return
-		}
-
-		// DELETE /api/v1/profiles/{id}
-		if r.Method == http.MethodDelete {
-			profiles := loadProfiles(profilesPath)
-			var filtered []Profile
-			for _, p := range profiles {
-				if p.ID != id {
-					filtered = append(filtered, p)
-				}
-			}
-			saveProfiles(profilesPath, filtered)
-			env(w, true, map[string]string{"status": "deleted"}, "")
-			return
-		}
-
 		w.WriteHeader(405)
 	})
 
-	mux.HandleFunc("/api/v1/profiles", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			profiles := loadProfiles(profilesPath)
-			env(w, true, profiles, "")
-		case http.MethodPost:
-			var p Profile
-			if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-				env(w, false, nil, "invalid JSON body")
-				return
-			}
-			profiles := loadProfiles(profilesPath)
-			if p.ID == "" {
-				p.ID = generateID()
-			}
-			// Upsert
-			found := false
-			for i := range profiles {
-				if profiles[i].ID == p.ID {
-					profiles[i] = p
-					found = true
-					break
-				}
-			}
-			if !found {
-				profiles = append(profiles, p)
-			}
-			saveProfiles(profilesPath, profiles)
-			env(w, true, p, "")
-		default:
+	mux.HandleFunc("/api/v1/profile/save", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
 			w.WriteHeader(405)
+			return
 		}
+		var req struct {
+			ID        string           `json:"id"`
+			Name      string           `json:"name"`
+			Select    bool             `json:"select"`
+			Restart   bool             `json:"restart"`
+			SSH       ProfileSSH       `json:"ssh"`
+			Transport ProfileTransport `json:"transport"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			env(w, false, nil, "invalid JSON body")
+			return
+		}
+		pf := loadProfilesFile(profilesPath)
+		if req.ID == "" {
+			req.ID = generateID()
+		}
+		p := Profile{ID: req.ID, Name: req.Name, SSH: req.SSH, Transport: req.Transport}
+		found := false
+		for i := range pf.Profiles {
+			if pf.Profiles[i].ID == req.ID {
+				pf.Profiles[i] = p
+				found = true
+				break
+			}
+		}
+		if !found {
+			pf.Profiles = append(pf.Profiles, p)
+		}
+		if req.Select {
+			pf.SelectedID = req.ID
+			applyProfileToSettings(cfgPath, &p)
+			syscall.Kill(syscall.Getpid(), syscall.SIGHUP)
+		}
+		saveProfilesFile(profilesPath, pf)
+		doRestart := req.Restart
+		if doRestart {
+			go func() {
+				time.Sleep(300 * time.Millisecond)
+				handleControl("restart", workDir)
+			}()
+		}
+		env(w, true, map[string]interface{}{"selected_id": pf.SelectedID, "restart": doRestart}, "")
+	})
+
+	mux.HandleFunc("/api/v1/profile/select", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(405)
+			return
+		}
+		var req struct {
+			SelectedID string `json:"selected_id"`
+			Restart    bool   `json:"restart"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			env(w, false, nil, "invalid JSON body")
+			return
+		}
+		pf := loadProfilesFile(profilesPath)
+		pf.SelectedID = req.SelectedID
+		var target *Profile
+		for i := range pf.Profiles {
+			if pf.Profiles[i].ID == req.SelectedID {
+				target = &pf.Profiles[i]
+				break
+			}
+		}
+		if target != nil {
+			applyProfileToSettings(cfgPath, target)
+			syscall.Kill(syscall.Getpid(), syscall.SIGHUP)
+		}
+		saveProfilesFile(profilesPath, pf)
+		if req.Restart {
+			go func() {
+				time.Sleep(300 * time.Millisecond)
+				handleControl("restart", workDir)
+			}()
+		}
+		env(w, true, map[string]interface{}{"selected_id": pf.SelectedID, "restart": req.Restart}, "")
+	})
+
+	mux.HandleFunc("/api/v1/profile/delete", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(405)
+			return
+		}
+		var req struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			env(w, false, nil, "invalid JSON body")
+			return
+		}
+		pf := loadProfilesFile(profilesPath)
+		var filtered []Profile
+		for _, p := range pf.Profiles {
+			if p.ID != req.ID {
+				filtered = append(filtered, p)
+			}
+		}
+		pf.Profiles = filtered
+		if pf.SelectedID == req.ID {
+			pf.SelectedID = ""
+		}
+		saveProfilesFile(profilesPath, pf)
+		env(w, true, map[string]interface{}{"deleted": req.ID}, "")
 	})
 
 	// ── WebUI static file serving ─────────────────────────────────────────────
@@ -1321,31 +1426,97 @@ func patchSettingsINI(path string, patch map[string]string) error {
 	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
 }
 
-// loadProfiles reads the profiles JSON array from disk.
-func loadProfiles(path string) []Profile {
+// loadProfilesFile reads the profiles JSON file (v1.0.1 format).
+func loadProfilesFile(path string) ProfilesFile {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return []Profile{}
+		return ProfilesFile{Profiles: []Profile{}}
 	}
-	var profiles []Profile
-	if err := json.Unmarshal(data, &profiles); err != nil {
-		return []Profile{}
+	var pf ProfilesFile
+	if err := json.Unmarshal(data, &pf); err != nil {
+		// Try legacy array format
+		var profiles []Profile
+		if json.Unmarshal(data, &profiles) == nil {
+			return ProfilesFile{Profiles: profiles}
+		}
+		return ProfilesFile{Profiles: []Profile{}}
 	}
-	return profiles
+	if pf.Profiles == nil {
+		pf.Profiles = []Profile{}
+	}
+	return pf
 }
 
-// saveProfiles writes the profiles JSON array to disk.
-func saveProfiles(path string, profiles []Profile) {
-	if profiles == nil {
-		profiles = []Profile{}
+// saveProfilesFile writes the profiles JSON file.
+func saveProfilesFile(path string, pf ProfilesFile) {
+	if pf.Profiles == nil {
+		pf.Profiles = []Profile{}
 	}
-	data, _ := json.MarshalIndent(profiles, "", "  ")
+	data, _ := json.MarshalIndent(pf, "", "  ")
 	os.WriteFile(path, data, 0644)
 }
 
-// generateID produces a simple unique ID based on timestamp and random suffix.
+// applyProfileToSettings writes profile fields to settings.ini.
+func applyProfileToSettings(cfgPath string, p *Profile) {
+	// Map transport mode
+	sshMode := p.Transport.Mode
+	switch sshMode {
+	case "direct":
+		sshMode = "direct"
+	case "tls_sni":
+		sshMode = "sni"
+	case "http_proxy":
+		sshMode = "sni_http_proxy"
+	}
+	patch := map[string]string{
+		"ssh_host":        p.SSH.Host,
+		"ssh_port":        strconv.Itoa(p.SSH.Port),
+		"ssh_user":        p.SSH.Username,
+		"ssh_password":    p.SSH.Password,
+		"ssh_mode":        sshMode,
+		"ssh_sni_host":    p.Transport.TLS.ServerName,
+		"http_proxy_host": p.Transport.HTTPProxy.Host,
+		"http_proxy_port": strconv.Itoa(p.Transport.HTTPProxy.Port),
+		"payload_enabled": strconv.FormatBool(p.Transport.Payload.Enabled),
+		"payload":         p.Transport.Payload.Template,
+	}
+	patchSettingsINI(cfgPath, patch)
+}
+
+// generateID produces a simple unique ID based on timestamp.
 func generateID() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+// getSourceIP returns the local source IP by dialing UDP to 8.8.8.8:80.
+func getSourceIP() string {
+	conn, err := net.DialTimeout("udp", "8.8.8.8:80", 2*time.Second)
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	return localAddr.IP.String()
+}
+
+// getSystemMemPct reads /proc/meminfo and returns (Total-Available)/Total*100.
+func getSystemMemPct() float64 {
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return 0
+	}
+	var total, avail uint64
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "MemTotal:") {
+			fmt.Sscanf(strings.TrimPrefix(line, "MemTotal:"), "%d", &total)
+		} else if strings.HasPrefix(line, "MemAvailable:") {
+			fmt.Sscanf(strings.TrimPrefix(line, "MemAvailable:"), "%d", &avail)
+		}
+	}
+	if total == 0 {
+		return 0
+	}
+	return float64(total-avail) / float64(total) * 100.0
 }
 
 // ── Metrics ───────────────────────────────────────────────────────────────────

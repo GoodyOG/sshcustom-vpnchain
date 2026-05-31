@@ -9,6 +9,8 @@ module/bin/sshcustomd
 module/bin/tun2proxy
 module/bin/openvpn
 module/bin/tun2socks
+module/vpnchain/bin/openvpn
+module/vpnchain/bin/tun2socks
 third_party/tun2proxy/tun2proxy
 
 # Go
