@@ -580,7 +580,7 @@ case "${1:-}" in
     settings put global captive_portal_server localhost >/dev/null 2>&1 || true
     settings put global captive_portal_http_url "http://localhost/generate_204" >/dev/null 2>&1 || true
     settings put global captive_portal_https_url "http://localhost/generate_204" >/dev/null 2>&1 || true
-    ndc resolver clearnetdns >/dev/null 2>&1 || true
+    ndc resolver clearnetdns 2>/dev/null || true
 
     log Info "iptables: mode=${network_mode} dns=${dns_hijack_mode} quic=${quic} ipv6=${ipv6}"
 

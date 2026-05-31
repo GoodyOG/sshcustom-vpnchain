@@ -623,7 +623,10 @@ func runScriptTimeout(path string, timeout time.Duration, args ...string) {
 func handleControl(action, workDir string) error {
 	script := workDir + "/scripts/ssh.service"
 	switch action {
-	case "start", "stop", "restart", "start-idle":
+	case "start", "restart", "start-idle":
+		runScriptTimeout(script, 30*time.Second, action)
+	case "stop":
+		updateModuleProp("stopped", "")
 		runScriptTimeout(script, 30*time.Second, action)
 	case "reload":
 		// SIGHUP to self handled in signal loop
@@ -937,11 +940,13 @@ func updateModuleProp(status, networkMode string) {
 	var desc string
 	switch status {
 	case "running":
-		desc = "[ \\U0001F7E2 ] SSHCustom running | mode=" + networkMode
+		desc = "[ \xf0\x9f\x9f\xa2 ] SSHCustom-VPNChain running | mode=" + networkMode
 	case "reconnecting":
-		desc = "[ \\U0001F7E1 ] SSHCustom reconnecting..."
-	default: // stopped
-		desc = "[ \\U0001F534 ] SSHCustom stopped"
+		desc = "[ \xf0\x9f\x9f\xa1 ] SSHCustom-VPNChain reconnecting..."
+	case "stopped":
+		desc = "[ \xf0\x9f\x94\xb4 ] SSHCustom-VPNChain stopped"
+	default:
+		desc = "[ \xf0\x9f\x92\xa4 ] SSHCustom-VPNChain idle"
 	}
 	cmd := exec.Command("/system/bin/sh", "-c",
 		fmt.Sprintf(`sed -i 's|^description=.*|description=%s|' '%s'`, desc, propPath))

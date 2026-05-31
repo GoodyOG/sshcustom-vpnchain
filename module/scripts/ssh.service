@@ -9,23 +9,8 @@ scripts_dir="${0%/*}"
 
 BIN="${bin_dir}/sshcustomd"
 SETTINGS="/data/adb/sshcustom/settings.ini"
-PROPFILE="${module_prop:-/data/adb/modules/sshcustom-vpnchain/module.prop}"
 IPTABLES="${scripts_dir}/ssh.iptables"
 TOOL="${scripts_dir}/ssh.tool"
-
-# ── set_description ───────────────────────────────────────────────────────────
-set_description() {
-  local status="$1"
-  local desc
-  case "${status}" in
-    running) desc="[ 🟢 ] SSHCustom-VPNChain running | mode=${network_mode}" ;;
-    stopped) desc="[ 🔴 ] SSHCustom-VPNChain stopped" ;;
-    error)   desc="[ ⚠️ ] SSHCustom-VPNChain error — check log" ;;
-    *)       desc="[ 💤 ] SSHCustom-VPNChain idle" ;;
-  esac
-  [ -f "${PROPFILE}" ] && \
-    sed -i "s|^description=.*|description=${desc}|" "${PROPFILE}" 2>/dev/null || true
-}
 
 # ── PID helpers ───────────────────────────────────────────────────────────────
 bin_alive() {
@@ -50,7 +35,6 @@ check_bin() {
   if [ ! -x "${BIN}" ]; then
     log Error "service: binary not found or not executable: ${BIN}"
     log Error "service: re-flash the module ZIP to install binaries"
-    set_description error
     return 1
   fi
   local ver
@@ -154,7 +138,6 @@ start_service() {
 
   # Start daemon first
   if ! start_daemon; then
-    set_description error
     return 1
   fi
 
@@ -167,7 +150,6 @@ start_service() {
   # traffic is redirected to a proxy port before the tunnel is up, and prevents
   # stale rules from black-holing traffic if the connection never succeeds.
 
-  set_description running
   log Info "service: started successfully"
   return 0
 }
@@ -199,7 +181,6 @@ stop_service() {
   # Restore speed settings
   sh "${TOOL}" speed_restore >> "${box_log}" 2>&1 || true
 
-  set_description stopped
   log Info "service: stopped — device in clean state"
   return 0
 }
@@ -229,7 +210,6 @@ case "${1:-}" in
     log Info "service: starting daemon in idle mode (WebUI only)..."
     mkdir -p "${box_run}" "${box_run_state}" >/dev/null 2>&1 || true
     start_daemon --idle
-    set_description idle
     ;;
   stop)         stop_service ;;
   restart)

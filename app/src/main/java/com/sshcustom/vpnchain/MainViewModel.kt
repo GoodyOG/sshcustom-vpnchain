@@ -374,7 +374,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val safeCfg = cfg.replace("'", "'\\''")
                 rootBinder?.startVpnChain(cfg)
-                    ?: Shell.cmd("sh /data/adb/sshcustom/scripts/ovpn.service start '$safeCfg'").exec()
+                    ?: Shell.cmd("sh /data/adb/sshcustom/scripts/ovpn.service start '$safeCfg' &").exec()
             } catch (_: Exception) {}
         }
         _vpnBusy.value = false
@@ -410,7 +410,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         _chainExitIp.value = "—"
                     }
                 }
-                delay(4_000)
+                delay(2_000)
             }
         }
     }
