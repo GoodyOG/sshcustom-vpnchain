@@ -13,26 +13,30 @@ import (
 
 // StatusSnapshot is the payload returned for "status" requests.
 type StatusSnapshot struct {
-	Type             string  `json:"type"`
-	Connected        bool    `json:"connected"`
-	UptimeSeconds    int64   `json:"uptime_seconds"`
-	SSHMode          string  `json:"ssh_mode"`
-	NetworkMode      string  `json:"network_mode"`
-	BytesSent        int64   `json:"bytes_sent"`
-	BytesRecv        int64   `json:"bytes_recv"`
-	ChannelPoolSize  int     `json:"channel_pool_size"`
-	ChannelPoolAvail int     `json:"channel_pool_available"`
-	ActiveConns      int     `json:"active_connections"`
-	Version          string  `json:"version"`
-	MemRSSMB         float64 `json:"mem_rss_mb"`
-	CPUPercent       float64 `json:"cpu_percent"`
-	UpKbps           float64 `json:"up_kbps"`
-	DownKbps         float64 `json:"down_kbps"`
-	LastError        string  `json:"last_error,omitempty"`
-	Standby          bool    `json:"standby"`
-	VpnChainState    string  `json:"vpn_chain_state"`
-	VpnChainExitIP   string  `json:"vpn_chain_exit_ip,omitempty"`
-	VpnChainLocation string  `json:"vpn_chain_location,omitempty"`
+	Type                string  `json:"type"`
+	Connected           bool    `json:"connected"`
+	UptimeSeconds       int64   `json:"uptime_seconds"`
+	SSHMode             string  `json:"ssh_mode"`
+	NetworkMode         string  `json:"network_mode"`
+	BytesSent           int64   `json:"bytes_sent"`
+	BytesRecv           int64   `json:"bytes_recv"`
+	ChannelPoolSize     int     `json:"channel_pool_size"`
+	ChannelPoolAvail    int     `json:"channel_pool_available"`
+	ActiveConns         int     `json:"active_connections"`
+	Version             string  `json:"version"`
+	MemRSSMB            float64 `json:"mem_rss_mb"`
+	CPUPercent          float64 `json:"cpu_percent"`
+	UpKbps              float64 `json:"up_kbps"`
+	DownKbps            float64 `json:"down_kbps"`
+	LastError           string  `json:"last_error,omitempty"`
+	Standby             bool    `json:"standby"`
+	PoolSize            int     `json:"pool_size"`
+	PoolHealthy         int     `json:"pool_healthy"`
+	VpnChainState       string  `json:"vpn_chain_state"`
+	VpnChainExitIP      string  `json:"vpn_chain_exit_ip,omitempty"`
+	VpnChainLocation    string  `json:"vpn_chain_location,omitempty"`
+	LatencyGoogleMs     int     `json:"latency_google_ms"`
+	LatencyCloudflareMs int     `json:"latency_cloudflare_ms"`
 }
 
 // ControlRequest is a request from the Android app.

@@ -7,6 +7,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
@@ -18,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -30,8 +32,9 @@ import (
 
 	"github.com/GoodyOG/SSHCustom_Magisk/internal/api"
 	"github.com/GoodyOG/SSHCustom_Magisk/internal/config"
-	issh "github.com/GoodyOG/SSHCustom_Magisk/internal/ssh"
 	"github.com/GoodyOG/SSHCustom_Magisk/internal/proxy"
+	issh "github.com/GoodyOG/SSHCustom_Magisk/internal/ssh"
+	"github.com/GoodyOG/SSHCustom_Magisk/internal/webui"
 )
 
 var version = "2.0.0"
@@ -125,6 +128,10 @@ type State struct {
 	vpnChainState    string
 	vpnChainExitIP   string
 	vpnChainLocation string
+
+	// Latency measurements
+	latencyGoogle     int
+	latencyCloudflare int
 }
 
 func (s *State) set(fn func(*State)) {
@@ -148,23 +155,27 @@ func (s *State) snapshot() api.StatusSnapshot {
 		uptime = int64(time.Since(s.tunnelStart).Seconds())
 	}
 	return api.StatusSnapshot{
-		Connected:        s.connected,
-		UptimeSeconds:    uptime,
-		SSHMode:          s.sshMode,
-		NetworkMode:      s.netMode,
-		ActiveConns:      s.activeConns,
-		Version:          s.version,
-		MemRSSMB:         float64(s.memRSS) / 1024 / 1024,
-		CPUPercent:       s.cpuPct,
-		UpKbps:           s.upBps / 1024,
-		DownKbps:         s.downBps / 1024,
-		LastError:        s.lastError,
-		ChannelPoolSize:  s.poolSize,
-		ChannelPoolAvail: s.poolHealthy,
-		Standby:          s.standby,
-		VpnChainState:    s.vpnChainState,
-		VpnChainExitIP:   s.vpnChainExitIP,
-		VpnChainLocation: s.vpnChainLocation,
+		Connected:           s.connected,
+		UptimeSeconds:       uptime,
+		SSHMode:             s.sshMode,
+		NetworkMode:         s.netMode,
+		ActiveConns:         s.activeConns,
+		Version:             s.version,
+		MemRSSMB:            float64(s.memRSS) / 1024 / 1024,
+		CPUPercent:          s.cpuPct,
+		UpKbps:              s.upBps / 1024,
+		DownKbps:            s.downBps / 1024,
+		LastError:           s.lastError,
+		ChannelPoolSize:     s.poolSize,
+		ChannelPoolAvail:    s.poolHealthy,
+		Standby:             s.standby,
+		PoolSize:            s.poolSize,
+		PoolHealthy:         s.poolHealthy,
+		VpnChainState:       s.vpnChainState,
+		VpnChainExitIP:      s.vpnChainExitIP,
+		VpnChainLocation:    s.vpnChainLocation,
+		LatencyGoogleMs:     s.latencyGoogle,
+		LatencyCloudflareMs: s.latencyCloudflare,
 	}
 }
 
@@ -224,7 +235,7 @@ func runCmd() {
 	mux := buildHTTPMux(atomicCfg, *workDir, *cfgPath, st, &sshClient)
 	httpSrv := &http.Server{
 		Addr:         "127.0.0.1:9190",
-		Handler:      mux,
+		Handler:      corsMiddleware(mux),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 60 * time.Second, // SSE streams need a longer write timeout
 		IdleTimeout:  120 * time.Second,
@@ -772,6 +783,36 @@ func handleControl(action, workDir string) error {
 
 // ── HTTP API ──────────────────────────────────────────────────────────────────
 
+// corsMiddleware wraps an http.Handler adding CORS headers to every response.
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(204)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Profile represents a saved SSH connection profile.
+type Profile struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Host           string `json:"host"`
+	Port           int    `json:"port"`
+	User           string `json:"user"`
+	Password       string `json:"password"`
+	Mode           string `json:"mode"`
+	SNIHost        string `json:"sni_host"`
+	ProxyHost      string `json:"proxy_host"`
+	ProxyPort      int    `json:"proxy_port"`
+	PayloadEnabled bool   `json:"payload_enabled"`
+	Payload        string `json:"payload"`
+}
+
 func buildHTTPMux(
 	atomicCfg *config.AtomicConfig,
 	workDir, cfgPath string,
@@ -851,15 +892,30 @@ func buildHTTPMux(
 		}
 	})
 
-	// Config read endpoint
+	// Config read/patch endpoint
 	mux.HandleFunc("/api/v1/config", func(w http.ResponseWriter, r *http.Request) {
-		cfg := atomicCfg.Get()
-		env(w, true, cfg, "")
+		switch r.Method {
+		case http.MethodGet:
+			cfg := atomicCfg.Get()
+			env(w, true, cfg, "")
+		case http.MethodPost:
+			var patch map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+				env(w, false, nil, "invalid JSON body")
+				return
+			}
+			if err := patchSettingsINI(cfgPath, patch); err != nil {
+				env(w, false, nil, err.Error())
+				return
+			}
+			syscall.Kill(syscall.Getpid(), syscall.SIGHUP)
+			env(w, true, map[string]string{"status": "updated"}, "")
+		default:
+			w.WriteHeader(405)
+		}
 	})
 
-	// Public IP as seen through the tunnel (used by the app's WAN card). Served
-	// from the daemon's cache (refreshed on connect) so the app's short HTTP
-	// timeout isn't blocked by a live through-tunnel lookup.
+	// Public IP as seen through the tunnel
 	mux.HandleFunc("/api/v1/network/public-ip", func(w http.ResponseWriter, r *http.Request) {
 		ip, country := st.wanInfo()
 		if ip == "" {
@@ -871,17 +927,425 @@ func buildHTTPMux(
 		}, "")
 	})
 
-	// Serve on-disk WebUI at root (no embedded — companion app is the primary UI)
+	// Latency ping endpoint
+	mux.HandleFunc("/api/v1/network/ping", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(405)
+			return
+		}
+		c := clientPtr.Load()
+		if c == nil {
+			env(w, false, nil, "no active tunnel connection")
+			return
+		}
+
+		measureTCP := func(addr string) int {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			start := time.Now()
+			conn, err := c.DialTCP(ctx, "tcp", addr)
+			if err != nil {
+				return -1
+			}
+			elapsed := int(time.Since(start).Milliseconds())
+			conn.Close()
+			return elapsed
+		}
+
+		googleMs := measureTCP("google.com:443")
+		cloudflareMs := measureTCP("1.1.1.1:443")
+
+		st.set(func(s *State) {
+			s.latencyGoogle = googleMs
+			s.latencyCloudflare = cloudflareMs
+		})
+
+		env(w, true, map[string]int{
+			"google_ms":     googleMs,
+			"cloudflare_ms": cloudflareMs,
+		}, "")
+	})
+
+	// ── VPN Chain endpoints ───────────────────────────────────────────────────
+
+	mux.HandleFunc("/api/v1/vpnchain/status", func(w http.ResponseWriter, r *http.Request) {
+		st.mu.RLock()
+		data := map[string]string{
+			"state":    st.vpnChainState,
+			"exit_ip":  st.vpnChainExitIP,
+			"location": st.vpnChainLocation,
+		}
+		st.mu.RUnlock()
+		env(w, true, data, "")
+	})
+
+	mux.HandleFunc("/api/v1/vpnchain/locations", func(w http.ResponseWriter, r *http.Request) {
+		configDir := workDir + "/vpnchain/configs/"
+		entries, err := os.ReadDir(configDir)
+		if err != nil {
+			env(w, true, []string{}, "")
+			return
+		}
+		var locations []string
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".ovpn") {
+				locations = append(locations, strings.TrimSuffix(e.Name(), ".ovpn"))
+			}
+		}
+		if locations == nil {
+			locations = []string{}
+		}
+		env(w, true, locations, "")
+	})
+
+	mux.HandleFunc("/api/v1/vpnchain/start", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(405)
+			return
+		}
+		var req struct {
+			Location string `json:"location"`
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			env(w, false, nil, "invalid JSON body")
+			return
+		}
+		if req.Location == "" {
+			env(w, false, nil, "location is required")
+			return
+		}
+		// Write auth file
+		authPath := workDir + "/vpnchain/auth.txt"
+		os.MkdirAll(filepath.Dir(authPath), 0700)
+		os.WriteFile(authPath, []byte(req.Username+"\n"+req.Password+"\n"), 0600)
+		// Start OpenVPN
+		script := workDir + "/scripts/ovpn.service"
+		cmd := exec.Command("/system/bin/sh", script, "start", req.Location)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			env(w, false, nil, fmt.Sprintf("start failed: %v: %s", err, out))
+			return
+		}
+		env(w, true, map[string]string{"status": "started", "location": req.Location}, "")
+	})
+
+	mux.HandleFunc("/api/v1/vpnchain/stop", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(405)
+			return
+		}
+		script := workDir + "/scripts/ovpn.service"
+		cmd := exec.Command("/system/bin/sh", script, "stop")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			env(w, false, nil, fmt.Sprintf("stop failed: %v: %s", err, out))
+			return
+		}
+		env(w, true, map[string]string{"status": "stopped"}, "")
+	})
+
+	mux.HandleFunc("/api/v1/vpnchain/switch", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(405)
+			return
+		}
+		var req struct {
+			Location string `json:"location"`
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			env(w, false, nil, "invalid JSON body")
+			return
+		}
+		if req.Location == "" {
+			env(w, false, nil, "location is required")
+			return
+		}
+		script := workDir + "/scripts/ovpn.service"
+		// Stop first
+		exec.Command("/system/bin/sh", script, "stop").Run()
+		time.Sleep(500 * time.Millisecond)
+		// Write auth and start
+		authPath := workDir + "/vpnchain/auth.txt"
+		os.MkdirAll(filepath.Dir(authPath), 0700)
+		os.WriteFile(authPath, []byte(req.Username+"\n"+req.Password+"\n"), 0600)
+		cmd := exec.Command("/system/bin/sh", script, "start", req.Location)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			env(w, false, nil, fmt.Sprintf("start failed: %v: %s", err, out))
+			return
+		}
+		env(w, true, map[string]string{"status": "switched", "location": req.Location}, "")
+	})
+
+	mux.HandleFunc("/api/v1/vpnchain/log", func(w http.ResponseWriter, r *http.Request) {
+		lines := 100
+		if q := r.URL.Query().Get("lines"); q != "" {
+			if n, err := strconv.Atoi(q); err == nil && n > 0 {
+				lines = n
+			}
+		}
+		logPath := workDir + "/run/openvpn.log"
+		content := tailFile(logPath, lines)
+		env(w, true, map[string]interface{}{"lines": content}, "")
+	})
+
+	// ── Logs endpoints ────────────────────────────────────────────────────────
+
+	logTypeMap := map[string]string{
+		"core":    "run/sshcustom.log",
+		"boot":    "run/boot.log",
+		"tool":    "run/tool.log",
+		"openvpn": "run/openvpn.log",
+	}
+
+	mux.HandleFunc("/api/v1/logs/", func(w http.ResponseWriter, r *http.Request) {
+		// Parse: /api/v1/logs/{type} or /api/v1/logs/{type}/clear
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/logs/")
+		parts := strings.SplitN(path, "/", 2)
+		logType := parts[0]
+		isClear := len(parts) == 2 && parts[1] == "clear"
+
+		relPath, ok := logTypeMap[logType]
+		if !ok {
+			env(w, false, nil, "unknown log type: "+logType)
+			return
+		}
+		logPath := workDir + "/" + relPath
+
+		if isClear {
+			if r.Method != http.MethodPost {
+				w.WriteHeader(405)
+				return
+			}
+			os.Truncate(logPath, 0)
+			env(w, true, map[string]string{"status": "cleared"}, "")
+			return
+		}
+
+		// GET log content
+		lines := 200
+		if q := r.URL.Query().Get("lines"); q != "" {
+			if n, err := strconv.Atoi(q); err == nil && n > 0 {
+				lines = n
+			}
+		}
+		content := tailFile(logPath, lines)
+		env(w, true, map[string]interface{}{"lines": content}, "")
+	})
+
+	// ── Profiles CRUD ─────────────────────────────────────────────────────────
+
+	profilesPath := workDir + "/profiles.json"
+
+	mux.HandleFunc("/api/v1/profiles/", func(w http.ResponseWriter, r *http.Request) {
+		// Parse: /api/v1/profiles/{id} or /api/v1/profiles/{id}/activate
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/profiles/")
+		if path == "" {
+			// This shouldn't match (the bare /api/v1/profiles handler covers it)
+			w.WriteHeader(404)
+			return
+		}
+		parts := strings.SplitN(path, "/", 2)
+		id := parts[0]
+		isActivate := len(parts) == 2 && parts[1] == "activate"
+
+		if isActivate {
+			if r.Method != http.MethodPost {
+				w.WriteHeader(405)
+				return
+			}
+			profiles := loadProfiles(profilesPath)
+			var target *Profile
+			for i := range profiles {
+				if profiles[i].ID == id {
+					target = &profiles[i]
+					break
+				}
+			}
+			if target == nil {
+				env(w, false, nil, "profile not found")
+				return
+			}
+			// Write profile fields to settings.ini
+			patch := map[string]string{
+				"ssh_host":        target.Host,
+				"ssh_port":        strconv.Itoa(target.Port),
+				"ssh_user":        target.User,
+				"ssh_password":    target.Password,
+				"ssh_mode":        target.Mode,
+				"ssh_sni_host":    target.SNIHost,
+				"http_proxy_host": target.ProxyHost,
+				"http_proxy_port": strconv.Itoa(target.ProxyPort),
+				"payload_enabled": strconv.FormatBool(target.PayloadEnabled),
+				"payload":         target.Payload,
+			}
+			if err := patchSettingsINI(cfgPath, patch); err != nil {
+				env(w, false, nil, err.Error())
+				return
+			}
+			syscall.Kill(syscall.Getpid(), syscall.SIGHUP)
+			env(w, true, map[string]string{"status": "activated", "profile": target.Name}, "")
+			return
+		}
+
+		// DELETE /api/v1/profiles/{id}
+		if r.Method == http.MethodDelete {
+			profiles := loadProfiles(profilesPath)
+			var filtered []Profile
+			for _, p := range profiles {
+				if p.ID != id {
+					filtered = append(filtered, p)
+				}
+			}
+			saveProfiles(profilesPath, filtered)
+			env(w, true, map[string]string{"status": "deleted"}, "")
+			return
+		}
+
+		w.WriteHeader(405)
+	})
+
+	mux.HandleFunc("/api/v1/profiles", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			profiles := loadProfiles(profilesPath)
+			env(w, true, profiles, "")
+		case http.MethodPost:
+			var p Profile
+			if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+				env(w, false, nil, "invalid JSON body")
+				return
+			}
+			profiles := loadProfiles(profilesPath)
+			if p.ID == "" {
+				p.ID = generateID()
+			}
+			// Upsert
+			found := false
+			for i := range profiles {
+				if profiles[i].ID == p.ID {
+					profiles[i] = p
+					found = true
+					break
+				}
+			}
+			if !found {
+				profiles = append(profiles, p)
+			}
+			saveProfiles(profilesPath, profiles)
+			env(w, true, p, "")
+		default:
+			w.WriteHeader(405)
+		}
+	})
+
+	// ── WebUI static file serving ─────────────────────────────────────────────
+
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		webrootIndex := workDir + "/webroot/index.html"
+		webrootDir := workDir + "/webroot/"
+		// Serve static files from webroot directory
+		if r.URL.Path != "/" && r.URL.Path != "/index.html" {
+			filePath := webrootDir + strings.TrimPrefix(r.URL.Path, "/")
+			if _, err := os.Stat(filePath); err == nil {
+				http.ServeFile(w, r, filePath)
+				return
+			}
+		}
+		// For "/" or "/index.html", serve webroot/index.html if it exists
+		webrootIndex := webrootDir + "index.html"
 		if _, err := os.Stat(webrootIndex); err == nil {
 			http.ServeFile(w, r, webrootIndex)
 			return
 		}
-		http.Error(w, "WebUI not installed", 404)
+		// Fallback to embedded index
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(webui.IndexHTML)
 	})
 
 	return mux
+}
+
+// tailFile reads the last N lines from a file.
+func tailFile(path string, n int) []string {
+	f, err := os.Open(path)
+	if err != nil {
+		return []string{}
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	var lines []string
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return lines
+}
+
+// patchSettingsINI reads settings.ini, updates matching key= lines, writes back.
+func patchSettingsINI(path string, patch map[string]string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read settings: %w", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	used := make(map[string]bool)
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		eqIdx := strings.IndexByte(trimmed, '=')
+		if eqIdx < 0 {
+			continue
+		}
+		key := strings.TrimSpace(trimmed[:eqIdx])
+		if val, ok := patch[key]; ok {
+			lines[i] = key + "=" + val
+			used[key] = true
+		}
+	}
+
+	// Append any keys that weren't found
+	for k, v := range patch {
+		if !used[k] {
+			lines = append(lines, k+"="+v)
+		}
+	}
+
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
+}
+
+// loadProfiles reads the profiles JSON array from disk.
+func loadProfiles(path string) []Profile {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return []Profile{}
+	}
+	var profiles []Profile
+	if err := json.Unmarshal(data, &profiles); err != nil {
+		return []Profile{}
+	}
+	return profiles
+}
+
+// saveProfiles writes the profiles JSON array to disk.
+func saveProfiles(path string, profiles []Profile) {
+	if profiles == nil {
+		profiles = []Profile{}
+	}
+	data, _ := json.MarshalIndent(profiles, "", "  ")
+	os.WriteFile(path, data, 0644)
+}
+
+// generateID produces a simple unique ID based on timestamp and random suffix.
+func generateID() string {
+	return fmt.Sprintf("%d", time.Now().UnixNano())
 }
 
 // ── Metrics ───────────────────────────────────────────────────────────────────
