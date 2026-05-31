@@ -77,6 +77,8 @@ _install_script() {
 _install_script ssh.service  || abort "Failed to install ssh.service"
 _install_script ssh.iptables || abort "Failed to install ssh.iptables"
 _install_script ssh.tool     || abort "Failed to install ssh.tool"
+_install_script ovpn.service || ui_print "  WARN: ovpn.service not installed (VPN Chain)"
+_install_script vpnchain.iptables || ui_print "  WARN: vpnchain.iptables not installed"
 
 # ── Install settings.ini (preserve existing user config) ─────────────────────
 if [ ! -f "${WORK_DIR}/settings.ini" ]; then
