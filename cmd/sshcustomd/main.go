@@ -658,23 +658,6 @@ func buildHTTPMux(
 		env(w, true, map[string]string{"status": "ok", "version": version}, "")
 	})
 
-	mux.HandleFunc("/api/v1/status", func(w http.ResponseWriter, r *http.Request) {
-		cfg := atomicCfg.Get()
-		snap := st.snapshot()
-		env(w, true, map[string]interface{}{
-			"runtime": snap,
-			"config": map[string]interface{}{
-				"network_mode": cfg.NetworkMode,
-				"ssh_mode":     cfg.SSHMode,
-				"socks_port":   cfg.SocksPort,
-				"redir_port":   cfg.RedirPort,
-				"tproxy_port":  cfg.TProxyPort,
-				"quic":         cfg.QUIC,
-				"channel_pool": cfg.ChannelPool,
-			},
-		}, "")
-	})
-
 	mux.HandleFunc("/api/v1/control", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(405)
@@ -712,26 +695,6 @@ func buildHTTPMux(
 		default:
 			w.WriteHeader(405)
 		}
-	})
-
-	// Config read endpoint
-	mux.HandleFunc("/api/v1/config", func(w http.ResponseWriter, r *http.Request) {
-		cfg := atomicCfg.Get()
-		env(w, true, cfg, "")
-	})
-
-	// Public IP as seen through the tunnel (used by the app's WAN card). Served
-	// from the daemon's cache (refreshed on connect) so the app's short HTTP
-	// timeout isn't blocked by a live through-tunnel lookup.
-	mux.HandleFunc("/api/v1/network/public-ip", func(w http.ResponseWriter, r *http.Request) {
-		ip, country := st.wanInfo()
-		if ip == "" {
-			env(w, false, nil, "resolving")
-			return
-		}
-		env(w, true, map[string]interface{}{
-			"tunnel": map[string]string{"ip": ip, "country": country},
-		}, "")
 	})
 
 	// Register all extended endpoints (profiles, vpnchain, logs, latency, SSE,
