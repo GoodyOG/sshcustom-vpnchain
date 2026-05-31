@@ -1,4 +1,4 @@
-// Package ssh provides SSH transport modes and channel pool management.
+// Package ssh provides SSH transport modes for carrier-bypass tunneling.
 package ssh
 
 import (
@@ -6,13 +6,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -47,12 +45,9 @@ type ConnectConfig struct {
 	KeepAliveMax      int           // max missed keepalives before disconnect; 0 = 3
 }
 
-// Client wraps an active SSH client connection plus a channel pool.
+// Client wraps an active SSH client connection.
 type Client struct {
 	sshConn *xssh.Client
-	poolMu  sync.Mutex
-	pool    []net.Conn // pre-warmed direct TCP connections via SSH
-	poolSz  int
 	cfg     ConnectConfig
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -409,72 +404,7 @@ func (c *prefixConn) Read(p []byte) (int, error) {
 	return c.Conn.Read(p)
 }
 
-// fillPool pre-warms direct SSH-tunnelled TCP connections to a dummy address
-// so the goroutines and SSH channel state are ready. Real connections use DialTCP
-// which opens fresh channels per destination — the pool here primes the SSH
-// multiplexer to avoid first-connection negotiation overhead.
-func (c *Client) fillPool() {
-	// We warm the pool by opening direct-tcpip channels with a loopback probe.
-	// These are cheap to open and test the SSH channel round-trip.
-	// We keep them as pre-opened net.Conn and return them from the pool.
-	for {
-		select {
-		case <-c.ctx.Done():
-			return
-		default:
-		}
 
-		c.poolMu.Lock()
-		size := len(c.pool)
-		c.poolMu.Unlock()
-
-		if size >= c.poolSz {
-			time.Sleep(200 * time.Millisecond)
-			continue
-		}
-
-		// Open a direct-tcpip channel with proper extra data per RFC 4254 §7.2
-		// Destination: 127.0.0.1:7 (discard port — only used to warm channel)
-		extraData := encodeDirect("127.0.0.1", 7, "127.0.0.1", 0)
-		ch, reqs, err := c.sshConn.OpenChannel("direct-tcpip", extraData)
-		if err != nil {
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-		go xssh.DiscardRequests(reqs)
-		conn := &channelConn{ch}
-
-		c.poolMu.Lock()
-		if len(c.pool) < c.poolSz {
-			c.pool = append(c.pool, conn)
-		} else {
-			conn.Close()
-		}
-		c.poolMu.Unlock()
-	}
-}
-
-// encodeDirect encodes the extra-data for a direct-tcpip channel per RFC 4254 §7.2.
-func encodeDirect(dstHost string, dstPort uint32, srcHost string, srcPort uint32) []byte {
-	// string dstHost, uint32 dstPort, string srcHost, uint32 srcPort
-	encStr := func(s string) []byte {
-		b := make([]byte, 4+len(s))
-		binary.BigEndian.PutUint32(b, uint32(len(s)))
-		copy(b[4:], s)
-		return b
-	}
-	encU32 := func(v uint32) []byte {
-		b := make([]byte, 4)
-		binary.BigEndian.PutUint32(b, v)
-		return b
-	}
-	var out []byte
-	out = append(out, encStr(dstHost)...)
-	out = append(out, encU32(dstPort)...)
-	out = append(out, encStr(srcHost)...)
-	out = append(out, encU32(srcPort)...)
-	return out
-}
 
 // DialTCP opens a direct SSH tunnel to the given destination.
 // Uses sshConn.DialContext which correctly sets up direct-tcpip with RFC 4254 data.
@@ -482,23 +412,10 @@ func (c *Client) DialTCP(ctx context.Context, network, addr string) (net.Conn, e
 	return c.sshConn.DialContext(ctx, network, addr)
 }
 
-// Close shuts down the SSH client and drains the pool.
+// Close shuts down the SSH client.
 func (c *Client) Close() {
 	c.cancel()
 	c.sshConn.Close()
-	c.poolMu.Lock()
-	for _, conn := range c.pool {
-		conn.Close()
-	}
-	c.pool = nil
-	c.poolMu.Unlock()
-}
-
-// PoolStats returns (capacity, current size) of the warm channel pool.
-func (c *Client) PoolStats() (int, int) {
-	c.poolMu.Lock()
-	defer c.poolMu.Unlock()
-	return c.poolSz, len(c.pool)
 }
 
 // Wait blocks until the SSH connection is closed (from either side).
@@ -506,21 +423,3 @@ func (c *Client) Wait() error {
 	return c.sshConn.Wait()
 }
 
-// channelConn adapts xssh.Channel to net.Conn.
-type channelConn struct{ xssh.Channel }
-
-func (c *channelConn) LocalAddr() net.Addr              { return sshAddr("local") }
-func (c *channelConn) RemoteAddr() net.Addr             { return sshAddr("remote") }
-func (c *channelConn) SetDeadline(t time.Time) error      { return nil }
-func (c *channelConn) SetReadDeadline(t time.Time) error  { return nil }
-func (c *channelConn) SetWriteDeadline(t time.Time) error { return nil }
-
-// CloseWrite signals EOF to the remote side of the channel.
-func (c *channelConn) CloseWrite() error {
-	return c.Channel.CloseWrite()
-}
-
-type sshAddr string
-
-func (a sshAddr) Network() string { return "ssh" }
-func (a sshAddr) String() string  { return string(a) }
