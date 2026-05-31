@@ -576,6 +576,7 @@ case "${1:-}" in
     # HTTP Injector / box / HTTP Custom do under the hood.
     settings put global captive_portal_mode 0 >/dev/null 2>&1 || true
     settings put global captive_portal_detection_enabled 0 >/dev/null 2>&1 || true
+    settings put global captive_portal_use_https 0 >/dev/null 2>&1 || true
 
     log Info "iptables: mode=${network_mode} dns=${dns_hijack_mode} quic=${quic} ipv6=${ipv6}"
 
@@ -635,9 +636,12 @@ case "${1:-}" in
     runtime_load 2>/dev/null || true
     enable_ipv6
 
-    # Restore captive portal detection
-    settings put global captive_portal_mode 1 >/dev/null 2>&1 || true
-    settings put global captive_portal_detection_enabled 1 >/dev/null 2>&1 || true
+    # Restore captive portal detection — but NOT when transitioning to VPN Chain
+    # (the marker is present and the tunnel is still active via OpenVPN).
+    if [ ! -f "${box_run}/vpnchain.active" ]; then
+      settings put global captive_portal_mode 1 >/dev/null 2>&1 || true
+      settings put global captive_portal_detection_enabled 1 >/dev/null 2>&1 || true
+    fi
     probe_user_group
     log Warning "iptables: disabling — cleaning all rules"
 

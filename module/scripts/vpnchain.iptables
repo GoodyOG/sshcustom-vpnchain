@@ -1,27 +1,24 @@
 #!/system/bin/sh
-# vpnchain.iptables — VPN Chain routing.
+# vpnchain.iptables — route app traffic through the OpenVPN tun (tun1).
 #
-# When the VPN Chain is active, OpenVPN (started by ovpn.service) becomes the
-# device default route via its redirect-gateway, so all app traffic exits
-# through Windscribe. The ONLY thing that must NOT enter the OpenVPN tun is the
-# SSH daemon's own uplink to the bug host (otherwise it loops). The SSH daemon
-# runs as root (uid 0), so we mark its traffic and route it via a side table
-# that points at the real carrier link.
+# Android uses per-network policy routing (NOT the main table) for the default
+# route, so we add a HIGH-priority ip rule (low pref number, evaluated before
+# Android's per-network rules) that sends APP traffic (uid 10000-99999) to a
+# table whose default is tun1. System/root traffic (uid 0-9999, including the
+# SSH daemon and OpenVPN's own SOCKS uplink) is left on Android's normal routing
+# so SSH->bug-host keeps working and there is no loop. We never touch Android's
+# default routing, so there is nothing to "restore" and no network-unreachable
+# state after stopping.
 #
-# On enable we SAVE the current carrier default route so that on disable we can
-# RESTORE it — preventing "network unreachable" after stopping VPN Chain.
-#
-# Usage: vpnchain.iptables {enable|disable}
+# Usage: vpnchain.iptables {enable|disable|force-disable}
 
 scripts_dir="${0%/*}"
 . /data/adb/sshcustom/settings.ini
 
-VPN_MARK="0x9040"
-VPN_TABLE="9040"
-VPN_PREF="9040"
-SSH_UID="0" # SSH daemon runs as root
-
-CARRIER_ROUTE_FILE="/data/adb/sshcustom/run/state/carrier_route.env"
+OVPN_TUN="tun1"
+VPN_TABLE="9041"
+VPN_PREF="9041"
+APP_UIDS="10000-99999"
 
 _build_major="$(getprop ro.build.version.release 2>/dev/null | cut -d. -f1)"
 if [ "${_build_major:-0}" -ge 11 ] 2>/dev/null; then
@@ -30,89 +27,49 @@ else
   IPV="iptables"
 fi
 
-intranet="127.0.0.0/8 10.0.0.0/8 100.64.0.0/10 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 240.0.0.0/4"
-
-real_default() {
-  # The real (carrier) default route, excluding the OpenVPN tun device.
-  ip route show table main default 2>/dev/null | grep -v "tun" | head -1
-}
-
 enable_chain() {
-  # Save the current carrier default route BEFORE adding the side table.
-  # This is the canonical record we restore on disable.
-  mkdir -p "$(dirname "${CARRIER_ROUTE_FILE}")" 2>/dev/null || true
-  local rd
-  rd="$(ip route show table main default 2>/dev/null | grep -v 'tun' | head -1)"
-  if [ -n "${rd}" ]; then
-    printf '%s\n' "${rd}" > "${CARRIER_ROUTE_FILE}" 2>/dev/null || true
-    # Side table with the real default so the SSH daemon's bug-host traffic
-    # bypasses the OpenVPN tun.
-    # shellcheck disable=SC2086
-    ip route replace table "${VPN_TABLE}" ${rd} >/dev/null 2>&1 || true
-  else
-    log Warning "vpnchain: no real default route found — bypass may be incomplete"
-  fi
+  # Default route via the OpenVPN tun in our own routing table.
+  ip route replace default dev "${OVPN_TUN}" table "${VPN_TABLE}" 2>/dev/null || \
+    ip route add default dev "${OVPN_TUN}" table "${VPN_TABLE}" 2>/dev/null || true
 
-  ip rule show pref "${VPN_PREF}" 2>/dev/null | grep -q "${VPN_TABLE}" || \
-    ip rule add fwmark "${VPN_MARK}" table "${VPN_TABLE}" pref "${VPN_PREF}" >/dev/null 2>&1 || true
+  # App traffic (uid 10000+) -> tun table. Higher priority than Android's
+  # per-network rules. System/root keep Android's normal routing (carrier).
+  ip rule del pref "${VPN_PREF}" 2>/dev/null || true
+  ip rule add pref "${VPN_PREF}" uidrange "${APP_UIDS}" lookup "${VPN_TABLE}" 2>/dev/null || true
 
-  ${IPV} -t mangle -N SSHC_VPNCHAIN >/dev/null 2>&1 || true
-  ${IPV} -t mangle -F SSHC_VPNCHAIN >/dev/null 2>&1 || true
-  ${IPV} -t mangle -A SSHC_VPNCHAIN -o lo -j RETURN >/dev/null 2>&1 || true
-  for sn in ${intranet}; do
-    ${IPV} -t mangle -A SSHC_VPNCHAIN -d "${sn}" -j RETURN >/dev/null 2>&1 || true
-  done
-  # Mark the SSH daemon's (root) uplink so it bypasses the OpenVPN tun.
-  ${IPV} -t mangle -A SSHC_VPNCHAIN -m owner --uid-owner "${SSH_UID}" -j MARK --set-xmark "${VPN_MARK}" >/dev/null 2>&1 || true
-  ${IPV} -t mangle -C OUTPUT -j SSHC_VPNCHAIN >/dev/null 2>&1 || \
-    ${IPV} -t mangle -A OUTPUT -j SSHC_VPNCHAIN >/dev/null 2>&1 || true
+  # Force app DNS through the tunnel (carrier/private DNS IPs are unreachable
+  # via the VPN, so pin to 8.8.8.8 which resolves through Windscribe).
+  ${IPV} -t nat -N SSHC_VPNDNS 2>/dev/null || true
+  ${IPV} -t nat -F SSHC_VPNDNS 2>/dev/null || true
+  ${IPV} -t nat -A SSHC_VPNDNS -m owner --uid-owner ${APP_UIDS} -p udp --dport 53 -j DNAT --to-destination 8.8.8.8:53 2>/dev/null || true
+  ${IPV} -t nat -A SSHC_VPNDNS -m owner --uid-owner ${APP_UIDS} -p tcp --dport 53 -j DNAT --to-destination 8.8.8.8:53 2>/dev/null || true
+  ${IPV} -t nat -C OUTPUT -j SSHC_VPNDNS 2>/dev/null || \
+    ${IPV} -t nat -A OUTPUT -j SSHC_VPNDNS 2>/dev/null || true
+
+  # Keep captive portal detection disabled while the chain is active.
+  settings put global captive_portal_mode 0 >/dev/null 2>&1 || true
+  settings put global captive_portal_detection_enabled 0 >/dev/null 2>&1 || true
 
   sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
-  log Info "vpnchain: routing applied (bypass uid=${SSH_UID} via table ${VPN_TABLE}, tun=tun1)"
+  log Info "vpnchain: app traffic (uid ${APP_UIDS}) routed via ${OVPN_TUN}"
   return 0
 }
 
 disable_chain() {
-  # Remove iptables rules first
-  ${IPV} -t mangle -D OUTPUT -j SSHC_VPNCHAIN >/dev/null 2>&1 || true
-  ${IPV} -t mangle -F SSHC_VPNCHAIN >/dev/null 2>&1 || true
-  ${IPV} -t mangle -X SSHC_VPNCHAIN >/dev/null 2>&1 || true
-  ip rule del pref "${VPN_PREF}" >/dev/null 2>&1 || true
-  ip route flush table "${VPN_TABLE}" >/dev/null 2>&1 || true
-
-  # Force-restore the carrier default route from the saved file.
-  # ip route replace overrides any stale tun1 default; if we still can't
-  # reach 1.1.1.1 afterwards, force-add it (replace is a no-op if the route
-  # already exists, add fails if it does — so we only fall back).
-  if [ -f "${CARRIER_ROUTE_FILE}" ]; then
-    local saved
-    saved="$(cat "${CARRIER_ROUTE_FILE}" 2>/dev/null)"
-    if [ -n "${saved}" ]; then
-      # shellcheck disable=SC2086
-      ip route replace ${saved} >/dev/null 2>&1 || true
-      if ! ip route get 1.1.1.1 >/dev/null 2>&1; then
-        # shellcheck disable=SC2086
-        ip route add ${saved} >/dev/null 2>&1 || true
-      fi
-      log Info "vpnchain: carrier route restored: ${saved}"
-    fi
-    rm -f "${CARRIER_ROUTE_FILE}" 2>/dev/null || true
-  fi
-
-  log Info "vpnchain: routing removed"
+  ip rule del pref "${VPN_PREF}" 2>/dev/null || true
+  ip route flush table "${VPN_TABLE}" 2>/dev/null || true
+  ${IPV} -t nat -D OUTPUT -j SSHC_VPNDNS 2>/dev/null || true
+  ${IPV} -t nat -F SSHC_VPNDNS 2>/dev/null || true
+  ${IPV} -t nat -X SSHC_VPNDNS 2>/dev/null || true
+  log Info "vpnchain: tun routing removed (Android default routing untouched)"
   return 0
 }
 
-# force_disable_chain — aggressive cleanup for the Stop button. Kills any
-# stray OpenVPN, removes tun1 unconditionally, then runs the normal disable
-# (which restores the carrier route).
 force_disable_chain() {
   killall openvpn 2>/dev/null || true
-  ip link set tun1 down 2>/dev/null || true
-  ip tuntap del tun1 mode tun 2>/dev/null || true
-  ip link del tun1 2>/dev/null || true
+  ip link set "${OVPN_TUN}" down 2>/dev/null || true
+  ip link del "${OVPN_TUN}" 2>/dev/null || true
   disable_chain
-  log Info "vpnchain: force-disable complete (tun1 removed, carrier route restored)"
   return 0
 }
 
@@ -122,5 +79,4 @@ case "${1:-}" in
   force-disable) force_disable_chain ;;
   *) printf 'Usage: %s {enable|disable|force-disable}\n' "$0" >&2; exit 1 ;;
 esac
-
 exit 0
