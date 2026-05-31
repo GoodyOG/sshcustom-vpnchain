@@ -56,7 +56,14 @@ start_ovpn() {
   sh "${SSH_IPT}" disable >> "${box_log}" 2>&1 || true
 
   local auth_arg=""
-  if [ -f "${AUTH_FILE}" ] && [ "$(head -1 "${AUTH_FILE}" 2>/dev/null)" != "username" ]; then
+  if [ -f "${AUTH_FILE}" ] && [ "$(wc -l < "${AUTH_FILE}" 2>/dev/null)" -ge 2 ]; then
+    auth_arg="--auth-user-pass ${AUTH_FILE}"
+  else
+    # No valid auth file — create a placeholder so OpenVPN doesn't prompt
+    # (it will fail with AUTH_FAILED, which we catch below).
+    log Warning "vpnchain: auth.txt missing or empty — OpenVPN may fail auth"
+    printf 'nouser\nnopass\n' > "${AUTH_FILE}" 2>/dev/null
+    chmod 600 "${AUTH_FILE}" 2>/dev/null
     auth_arg="--auth-user-pass ${AUTH_FILE}"
   fi
 
