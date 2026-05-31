@@ -1,0 +1,10 @@
+SSHCustom_Magisk
+Copyright 2024-2026 GoodyOG
+
+Licensed under the Apache License, Version 2.0.
+
+Third-party components:
+
+1. golang.org/x/crypto — BSD 3-Clause (The Go Authors)
+   Vendored in third_party/ with local modifications.
+   See third_party/PATCHES.md for details.

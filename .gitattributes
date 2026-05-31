@@ -1,22 +1,17 @@
-# Normalize line endings
-* text=auto eol=lf
+* text=auto
 
-# Shell scripts must always be LF
 *.sh text eol=lf
-*.service text eol=lf
-module/META-INF/com/google/android/update-binary text eol=lf
-module/META-INF/com/google/android/updater-script text eol=lf
-
-# Go source
+build.sh text eol=lf
+scripts/*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
 *.go text eol=lf
+*.md text eol=lf
+*.html text eol=lf
+*.prop text eol=lf
+src/module/META-INF/com/google/android/update-binary text eol=lf
+src/module/META-INF/com/google/android/updater-script text eol=lf
 
-# Kotlin source
-*.kt text eol=lf
-*.kts text eol=lf
-
-# Binaries
-*.zip binary
-*.apk binary
-*.aab binary
-module/bin/* binary
-third_party/**/* binary
+src/module/bin/arm64/sshcustomd binary
+src/module/bin/arm/sshcustomd binary

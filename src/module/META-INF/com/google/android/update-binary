@@ -1,0 +1,11 @@
+#!/sbin/sh
+SKIPUNZIP=1
+unzip -o "$ZIPFILE" -d "$MODPATH" >&2
+set_perm_recursive "$MODPATH" root root 0755 0644
+set_perm "$MODPATH/bin/arm64/sshcustomd" root root 0755
+set_perm "$MODPATH/scripts/sshcustom.sh" root root 0755
+set_perm "$MODPATH/scripts/net_clean.sh" root root 0755
+set_perm "$MODPATH/scripts/sshcustom_watchdog.sh" root root 0755
+set_perm "$MODPATH/action.sh" root root 0755
+set_perm "$MODPATH/service.sh" root root 0755
+set_perm "$MODPATH/customize.sh" root root 0755

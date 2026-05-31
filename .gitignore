@@ -1,40 +1,25 @@
 # Build outputs
 dist/
-*.zip
-*.apk
-*.aab
-
-# Binaries (added by CI)
-module/bin/sshcustomd
-module/bin/tun2proxy
-module/bin/openvpn
-module/bin/tun2socks
-third_party/tun2proxy/tun2proxy
 
 # Go
-daemon/vendor/
-daemon/*.test
-*.out
-
-# Android / Gradle
-app/.gradle/
-app/build/
-app/local.properties
-*.keystore
-*.jks
-app/release/
-
-# Credentials — NEVER commit real credentials
-module/vpnchain/auth.txt
-
-# Runtime data — not part of source
-module/vpnchain/configs/*.ovpn
+*.test
+*.prof
+sshcustomd-host
 
 # IDE
 .idea/
+.vscode/
 *.iml
+
+# OS
 .DS_Store
-*.swp
-*.swo
-*~
-.kiro/skills/
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Backups
+*.bak
+*.tmp
