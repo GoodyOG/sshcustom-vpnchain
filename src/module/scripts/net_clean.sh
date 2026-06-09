@@ -127,6 +127,9 @@ clean_tproxy_routing() {
 }
 
 log "clean start"
+# Primary: use the iptables script for thorough cleanup
+[ -x "$(dirname "$0")/ssh.iptables" ] && sh "$(dirname "$0")/ssh.iptables" disable 2>/dev/null
+# Belt-and-suspenders: direct cleanup of any remaining rules
 clean_v4
 clean_v6
 clean_quic

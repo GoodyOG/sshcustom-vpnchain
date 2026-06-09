@@ -1168,7 +1168,7 @@ func run(args []string) {
 					log.Printf("tunnel panic recovered: %v", r)
 				}
 			}()
-			tunnelLoop(tunnelCtx, getConfig, *sp, state, &sshClient)
+			tunnelLoop(tunnelCtx, getConfig, *sp, state, &sshClient, *workDir)
 
 		if explicitStop.Load() || ctx.Err() != nil {
 			tunnelRunning.Store(false)

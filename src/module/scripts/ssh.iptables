@@ -1,0 +1,207 @@
+#!/system/bin/sh
+# ssh.iptables — SSHCustom v2.7.0 traffic interception
+# Sources /data/adb/sshcustom/run/iptables.env for config
+# Usage: ssh.iptables {enable|disable}
+
+IPT="/system/bin/iptables -w 100"
+IP6T="/system/bin/ip6tables -w 100"
+
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') [iptables] $*" >> "${run_dir:-/data/adb/sshcustom/run}/iptables.log"; }
+
+cleanup() {
+  log "cleanup start"
+  for ch in SSHC_TCP SSHC_TCP_OUTPUT SSHC_UDP SSHC_DNS SSHC_DROP6; do
+    $IPT -t mangle -D PREROUTING -p tcp -j "$ch" 2>/dev/null
+    $IPT -t mangle -D PREROUTING -j "$ch" 2>/dev/null
+    $IPT -t mangle -D OUTPUT -p tcp -j "$ch" 2>/dev/null
+    $IPT -t mangle -D OUTPUT -j "$ch" 2>/dev/null
+    $IPT -t nat -D OUTPUT -p tcp -j "$ch" 2>/dev/null
+    $IPT -t nat -D PREROUTING -p tcp -j "$ch" 2>/dev/null
+    $IPT -t nat -D OUTPUT -p udp --dport 53 -j "$ch" 2>/dev/null
+    for IF in $IFACES; do
+      $IPT -t mangle -D PREROUTING -i "$IF" -p tcp -j "$ch" 2>/dev/null
+      $IPT -t nat -D PREROUTING -i "$IF" -p tcp -j "$ch" 2>/dev/null
+    done
+  done
+  for ch in SSHC_TCP SSHC_TCP_OUTPUT SSHC_UDP SSHC_DNS; do
+    for tbl in mangle nat; do
+      $IPT -t "$tbl" -F "$ch" 2>/dev/null
+      $IPT -t "$tbl" -X "$ch" 2>/dev/null
+    done
+  done
+  # IPv6
+  $IP6T -t filter -D OUTPUT -j SSHC_DROP6 2>/dev/null
+  $IP6T -t filter -D FORWARD -j SSHC_DROP6 2>/dev/null
+  $IP6T -t filter -F SSHC_DROP6 2>/dev/null
+  $IP6T -t filter -X SSHC_DROP6 2>/dev/null
+  # QUIC
+  for P in 80 443; do
+    for i in 1 2 3 4; do
+      $IPT -t filter -D OUTPUT -p udp --dport "$P" -j DROP 2>/dev/null || break
+    done
+  done
+  # Policy routing
+  ip rule del fwmark 0x1/0x1 table 100 2>/dev/null
+  ip route del local 0.0.0.0/0 dev lo table 100 2>/dev/null
+  # Restore IPv6
+  sysctl -w net.ipv6.conf.all.disable_ipv6=0 2>/dev/null
+  sysctl -w net.ipv6.conf.default.disable_ipv6=0 2>/dev/null
+  # Restore captive portal
+  settings put global captive_portal_mode 1 2>/dev/null
+  log "cleanup complete"
+}
+
+enable_tcp_redirect() {
+  # REDIRECT (nat) fallback for kernels without TPROXY
+  $IPT -t nat -N SSHC_TCP 2>/dev/null
+  $IPT -t nat -F SSHC_TCP
+  $IPT -t nat -A SSHC_TCP -d 0.0.0.0/8 -j RETURN
+  $IPT -t nat -A SSHC_TCP -d 10.0.0.0/8 -j RETURN
+  $IPT -t nat -A SSHC_TCP -d 100.64.0.0/10 -j RETURN
+  $IPT -t nat -A SSHC_TCP -d 127.0.0.0/8 -j RETURN
+  $IPT -t nat -A SSHC_TCP -d 169.254.0.0/16 -j RETURN
+  $IPT -t nat -A SSHC_TCP -d 172.16.0.0/12 -j RETURN
+  $IPT -t nat -A SSHC_TCP -d 192.168.0.0/16 -j RETURN
+  $IPT -t nat -A SSHC_TCP -d 224.0.0.0/4 -j RETURN
+  $IPT -t nat -A SSHC_TCP -d 240.0.0.0/4 -j RETURN
+  [ -n "$BYPASS_IP" ] && $IPT -t nat -A SSHC_TCP -d "$BYPASS_IP" -j RETURN
+  $IPT -t nat -A SSHC_TCP -p tcp --dport "$TCP_PORT" -j RETURN
+  $IPT -t nat -A SSHC_TCP -p tcp --dport "$API_PORT" -j RETURN
+  $IPT -t nat -A SSHC_TCP -p tcp --dport "$SOCKS_PORT" -j RETURN
+  $IPT -t nat -A SSHC_TCP -p tcp -j REDIRECT --to-ports "$TCP_PORT"
+
+  $IPT -t nat -N SSHC_TCP_OUTPUT 2>/dev/null
+  $IPT -t nat -F SSHC_TCP_OUTPUT
+  $IPT -t nat -A SSHC_TCP_OUTPUT -m owner --uid-owner 0 -j RETURN
+  $IPT -t nat -A SSHC_TCP_OUTPUT -d 0.0.0.0/8 -j RETURN
+  $IPT -t nat -A SSHC_TCP_OUTPUT -d 10.0.0.0/8 -j RETURN
+  $IPT -t nat -A SSHC_TCP_OUTPUT -d 127.0.0.0/8 -j RETURN
+  $IPT -t nat -A SSHC_TCP_OUTPUT -d 192.168.0.0/16 -j RETURN
+  $IPT -t nat -A SSHC_TCP_OUTPUT -d 224.0.0.0/4 -j RETURN
+  [ -n "$BYPASS_IP" ] && $IPT -t nat -A SSHC_TCP_OUTPUT -d "$BYPASS_IP" -j RETURN
+  $IPT -t nat -A SSHC_TCP_OUTPUT -p tcp --dport "$TCP_PORT" -j RETURN
+  $IPT -t nat -A SSHC_TCP_OUTPUT -p tcp -j REDIRECT --to-ports "$TCP_PORT"
+
+  $IPT -t nat -I OUTPUT 1 -p tcp -j SSHC_TCP_OUTPUT
+  $IPT -t nat -I PREROUTING 1 -p tcp -j SSHC_TCP
+  log "TCP mode: REDIRECT (nat)"
+}
+
+enable_tcp_tproxy() {
+  # TPROXY (mangle) — requires IP_TRANSPARENT on listener socket
+  ip rule add fwmark 0x1/0x1 table 100 pref 100 2>/dev/null
+  ip route add local 0.0.0.0/0 dev lo table 100 2>/dev/null
+  echo 1 > /proc/sys/net/ipv4/conf/lo/route_localnet 2>/dev/null
+  echo 1 > /proc/sys/net/ipv4/conf/all/route_localnet 2>/dev/null
+
+  $IPT -t mangle -N SSHC_TCP 2>/dev/null
+  $IPT -t mangle -F SSHC_TCP
+  $IPT -t mangle -A SSHC_TCP -d 0.0.0.0/8 -j RETURN
+  $IPT -t mangle -A SSHC_TCP -d 10.0.0.0/8 -j RETURN
+  $IPT -t mangle -A SSHC_TCP -d 100.64.0.0/10 -j RETURN
+  $IPT -t mangle -A SSHC_TCP -d 127.0.0.0/8 -j RETURN
+  $IPT -t mangle -A SSHC_TCP -d 169.254.0.0/16 -j RETURN
+  $IPT -t mangle -A SSHC_TCP -d 172.16.0.0/12 -j RETURN
+  $IPT -t mangle -A SSHC_TCP -d 192.168.0.0/16 -j RETURN
+  $IPT -t mangle -A SSHC_TCP -d 224.0.0.0/4 -j RETURN
+  $IPT -t mangle -A SSHC_TCP -d 240.0.0.0/4 -j RETURN
+  [ -n "$BYPASS_IP" ] && $IPT -t mangle -A SSHC_TCP -d "$BYPASS_IP" -j RETURN
+  $IPT -t mangle -A SSHC_TCP -p tcp --dport "$TCP_PORT" -j RETURN
+  $IPT -t mangle -A SSHC_TCP -p tcp --dport "$API_PORT" -j RETURN
+  $IPT -t mangle -A SSHC_TCP -p tcp --dport "$SOCKS_PORT" -j RETURN
+  $IPT -t mangle -A SSHC_TCP -p tcp --dport "$DNS_PORT" -j RETURN
+  $IPT -t mangle -A SSHC_TCP -p tcp -j TPROXY --on-port "$TCP_PORT" --tproxy-mark 0x1/0x1
+  $IPT -t mangle -I PREROUTING 1 -p tcp -j SSHC_TCP
+
+  $IPT -t mangle -N SSHC_TCP_OUTPUT 2>/dev/null
+  $IPT -t mangle -F SSHC_TCP_OUTPUT
+  $IPT -t mangle -A SSHC_TCP_OUTPUT -m owner --uid-owner 0 -j RETURN
+  $IPT -t mangle -A SSHC_TCP_OUTPUT -d 0.0.0.0/8 -j RETURN
+  $IPT -t mangle -A SSHC_TCP_OUTPUT -d 10.0.0.0/8 -j RETURN
+  $IPT -t mangle -A SSHC_TCP_OUTPUT -d 127.0.0.0/8 -j RETURN
+  $IPT -t mangle -A SSHC_TCP_OUTPUT -d 192.168.0.0/16 -j RETURN
+  $IPT -t mangle -A SSHC_TCP_OUTPUT -d 224.0.0.0/4 -j RETURN
+  [ -n "$BYPASS_IP" ] && $IPT -t mangle -A SSHC_TCP_OUTPUT -d "$BYPASS_IP" -j RETURN
+  $IPT -t mangle -A SSHC_TCP_OUTPUT -p tcp --dport "$TCP_PORT" -j RETURN
+  $IPT -t mangle -A SSHC_TCP_OUTPUT -p tcp --dport "$API_PORT" -j RETURN
+  $IPT -t mangle -A SSHC_TCP_OUTPUT -p tcp -j MARK --set-mark 0x1/0x1
+  $IPT -t mangle -I OUTPUT 1 -p tcp -j SSHC_TCP_OUTPUT
+
+  # Hotspot
+  if [ "${HOTSPOT:-false}" = "true" ]; then
+    for IF in $IFACES; do
+      [ -n "$IF" ] && $IPT -t mangle -I PREROUTING 1 -i "$IF" -p tcp -j SSHC_TCP
+    done
+    sysctl -w net.ipv4.ip_forward=1 2>/dev/null
+    $IPT -I FORWARD -j ACCEPT 2>/dev/null
+  fi
+  log "TCP mode: TPROXY (mangle)"
+}
+
+enable_conf() {
+  # Source config from daemon-written env file
+  [ -f "${run_dir}/iptables.env" ] && . "${run_dir}/iptables.env"
+
+  TCP_PORT="${TCP_PORT:-10810}"
+  UDP_PORT="${UDP_PORT:-10811}"
+  DNS_PORT="${DNS_PORT:-5353}"
+  API_PORT="${API_PORT:-9190}"
+  SOCKS_PORT="${SOCKS_PORT:-1080}"
+  IFACES="${IFACES:-wlan+ swlan+ ap+ rndis+ ncm+ bt-pan+}"
+
+  # Clean existing rules first (belt-and-suspenders)
+  cleanup
+
+  # Probe: does kernel support TPROXY target?
+  $IPT -t mangle -N SSHC_TPROBE 2>/dev/null
+  if $IPT -t mangle -A SSHC_TPROBE -j TPROXY --on-port 65535 --tproxy-mark 0x1/0x1 2>/dev/null; then
+    $IPT -t mangle -F SSHC_TPROBE 2>/dev/null
+    $IPT -t mangle -X SSHC_TPROBE 2>/dev/null
+    enable_tcp_tproxy
+  else
+    $IPT -t mangle -F SSHC_TPROBE 2>/dev/null
+    $IPT -t mangle -X SSHC_TPROBE 2>/dev/null
+    log "TPROXY not supported by kernel, falling back to REDIRECT"
+    enable_tcp_redirect
+  fi
+
+  # DNS: DNAT UDP:53 to 127.0.0.1:5353
+  $IPT -t nat -N SSHC_DNS 2>/dev/null
+  $IPT -t nat -F SSHC_DNS
+  $IPT -t nat -A SSHC_DNS -m owner --uid-owner 0 -j RETURN
+  $IPT -t nat -A SSHC_DNS -p udp --dport 53 -j DNAT --to-destination "127.0.0.1:${DNS_PORT}"
+  $IPT -t nat -D OUTPUT -p udp --dport 53 -j SSHC_DNS 2>/dev/null
+  $IPT -t nat -I OUTPUT 1 -p udp --dport 53 -j SSHC_DNS
+
+  # QUIC: block UDP 80/443 → force TCP fallback
+  for P in 80 443; do
+    $IPT -t filter -C OUTPUT -p udp --dport "$P" -j DROP 2>/dev/null || \
+    $IPT -t filter -A OUTPUT -p udp --dport "$P" -j DROP 2>/dev/null
+  done
+
+  # IPv6: disable system-wide to prevent leaks
+  sysctl -w net.ipv6.conf.all.disable_ipv6=1 2>/dev/null
+  $IP6T -t filter -N SSHC_DROP6 2>/dev/null
+  $IP6T -t filter -F SSHC_DROP6 2>/dev/null
+  $IP6T -t filter -A SSHC_DROP6 -o lo -j RETURN
+  $IP6T -t filter -A SSHC_DROP6 -j DROP 2>/dev/null
+  $IP6T -t filter -D OUTPUT -j SSHC_DROP6 2>/dev/null
+  $IP6T -t filter -I OUTPUT 1 -j SSHC_DROP6
+
+  # Captive portal: use daemon's local HTTP server
+  settings put global captive_portal_mode 0 2>/dev/null
+  settings put global captive_portal_server 127.0.0.1 2>/dev/null
+  settings put global captive_portal_http_url "http://127.0.0.1:${API_PORT}/generate_204" 2>/dev/null
+
+  # TCP tuning
+  sysctl -w net.core.rmem_max=67108864 2>/dev/null
+  sysctl -w net.core.wmem_max=67108864 2>/dev/null
+
+  log "enable complete"
+}
+
+case "$1" in
+  enable) enable_conf ;;
+  disable) cleanup ;;
+  *) echo "Usage: $0 {enable|disable}"; exit 1 ;;
+esac

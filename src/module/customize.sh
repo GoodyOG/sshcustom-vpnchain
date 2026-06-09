@@ -32,6 +32,7 @@ cp -af "$BIN_SRC" "$BIN_DIR/sshcustomd"
 cp -af "$MODPATH/scripts/sshcustom.sh" "$WORK_DIR/sshcustom.sh"
 cp -af "$MODPATH/scripts/sshcustom_watchdog.sh" "$WORK_DIR/sshcustom_watchdog.sh"
 cp -af "$MODPATH/scripts/net_clean.sh" "$WORK_DIR/net_clean.sh"
+cp -af "$MODPATH/scripts/ssh.iptables" "$WORK_DIR/ssh.iptables"
 
 # Always refresh module runtime config so new performance/network keys are applied.
 cp -af "$MODPATH/config/config.json" "$WORK_DIR/config.json"
@@ -43,7 +44,7 @@ fi
 
 [ -d "$MODPATH/webroot" ] && cp -af "$MODPATH/webroot" "$WORK_DIR/webroot"
 
-chmod 0755 "$BIN_DIR/sshcustomd" "$WORK_DIR/sshcustom.sh" "$WORK_DIR/sshcustom_watchdog.sh" "$WORK_DIR/net_clean.sh"
+chmod 0755 "$BIN_DIR/sshcustomd" "$WORK_DIR/sshcustom.sh" "$WORK_DIR/sshcustom_watchdog.sh" "$WORK_DIR/net_clean.sh" "$WORK_DIR/ssh.iptables"
 chmod 0644 "$WORK_DIR/config.json"
 chmod 0600 "$WORK_DIR/profiles.json"
 chmod 0755 "$WORK_DIR" "$BIN_DIR" "$RUN_DIR"

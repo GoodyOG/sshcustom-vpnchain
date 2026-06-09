@@ -19,6 +19,9 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -118,7 +121,7 @@ func (c *tunClient) Wait() error { return c.ssh.Wait() }
 
 // tunnelLoop is the connection manager: connect → bring listeners + iptables
 // up once → wait for the client to die → reconnect (keeping routing up).
-func tunnelLoop(ctx context.Context, getCfg func() Config, sp Profile, st *State, clientPtr *atomic.Pointer[tunClient]) {
+func tunnelLoop(ctx context.Context, getCfg func() Config, sp Profile, st *State, clientPtr *atomic.Pointer[tunClient], workDir string) {
 	const (
 		baseDelay = 1 * time.Second
 		maxDelay  = 30 * time.Second
@@ -128,32 +131,20 @@ func tunnelLoop(ctx context.Context, getCfg func() Config, sp Profile, st *State
 	var (
 		listenerCancel context.CancelFunc
 		iptablesUp     bool
-		iptablesUDPUp  bool
 	)
 	teardown := func() {
 		if listenerCancel != nil {
 			listenerCancel()
 			listenerCancel = nil
 		}
-		// If ctx was cancelled (explicit stop or daemon shutdown),
-		// net_clean.sh handles the iptables cleanup. Skipping here
-		// prevents a race where an old goroutine's deferred teardown
-		// destroys the iptables rules of a freshly started tunnel.
 		if ctx.Err() != nil {
 			clientPtr.Store(nil)
 			return
 		}
 		if iptablesUp {
-			if err := cleanupTransparentRules(getCfg()); err != nil {
-				log.Printf("[tunnel] iptables cleanup failed: %v", err)
-			}
+			iptablesScript := filepath.Join(workDir, "ssh.iptables")
+			exec.Command("/system/bin/sh", iptablesScript, "disable").Run()
 			iptablesUp = false
-		}
-		if iptablesUDPUp {
-			if err := cleanupTransparentUDPRules(getCfg()); err != nil {
-				log.Printf("[tunnel] udp iptables cleanup failed: %v", err)
-			}
-			iptablesUDPUp = false
 		}
 		clientPtr.Store(nil)
 	}
@@ -253,11 +244,27 @@ func tunnelLoop(ctx context.Context, getCfg func() Config, sp Profile, st *State
 			startListeners(lctx, cfg, curClient, st)
 			time.Sleep(150 * time.Millisecond)
 			if cfg.TransparentProxy.Enabled {
-				if err := applyTransparentRules(cfg, res.ResolvedIPs); err != nil {
-					log.Printf("[tunnel] iptables apply failed: %v", err)
+				// Write config for shell script
+				envPath := filepath.Join(workDir, "run", "iptables.env")
+				env := fmt.Sprintf("run_dir=%s\nTCP_PORT=%d\nUDP_PORT=%d\nDNS_PORT=%d\nAPI_PORT=%d\nSOCKS_PORT=%d\nBYPASS_IP=%s\nHOTSPOT=%v\n",
+					filepath.Join(workDir, "run"),
+					secondsDefault(cfg.TransparentProxy.TCPPort, 10810),
+					secondsDefault(cfg.TransparentProxy.UDPPort, 10811),
+					5353,
+					cfg.API.Port,
+					cfg.LocalProxy.SocksPort,
+					strings.Join(res.ResolvedIPs, ","),
+					cfg.Hotspot.Enabled && cfg.Hotspot.TCP)
+				os.WriteFile(envPath, []byte(env), 0644)
+
+				iptablesScript := filepath.Join(workDir, "ssh.iptables")
+				cmd := exec.Command("/system/bin/sh", iptablesScript, "enable")
+				out, err := cmd.CombinedOutput()
+				if err != nil {
+					log.Printf("[tunnel] iptables script failed: %v — %s", err, strings.TrimSpace(string(out)))
 					st.set(func() {
 						st.TransparentApplied = false
-						st.LastError = "iptables apply failed: " + err.Error()
+						st.LastError = "iptables failed: " + err.Error()
 					})
 				} else {
 					iptablesUp = true
@@ -265,13 +272,6 @@ func tunnelLoop(ctx context.Context, getCfg func() Config, sp Profile, st *State
 						st.TransparentApplied = true
 						st.HotspotRunning = cfg.Hotspot.Enabled && cfg.Hotspot.TCP
 					})
-				}
-			}
-			if cfg.UDPProxy.Enabled {
-				if err := applyTransparentUDPRules(cfg); err != nil {
-					log.Printf("[tunnel] udp iptables apply failed: %v", err)
-				} else {
-					iptablesUDPUp = true
 				}
 			}
 		}
@@ -552,14 +552,22 @@ func handleSOCKSClient(ctx context.Context, c net.Conn, cfg Config, curClient fu
 
 func serveTransparent(ctx context.Context, cfg Config, curClient func() *tunClient, st *State) {
 	addr := transparentAddr(cfg)
+	// Dual-mode: try TPROXY first (IP_TRANSPARENT), fall back to plain TCP
+	// for REDIRECT-based interception (no IP_TRANSPARENT needed).
 	ln, err := listenTransparentTCP(ctx, addr)
+	mode := "TPROXY"
 	if err != nil {
-		log.Printf("[transparent] listen %s: %v", addr, err)
-		st.set(func() { st.TransparentRunning = false; st.LastError = "transparent listen failed: " + err.Error() })
-		return
+		log.Printf("[transparent] TPROXY listener failed: %v — falling back to REDIRECT mode", err)
+		mode = "REDIRECT"
+		ln, err = net.Listen("tcp", addr)
+		if err != nil {
+			log.Printf("[transparent] listen %s: %v", addr, err)
+			st.set(func() { st.TransparentRunning = false; st.LastError = "transparent listen failed: " + err.Error() })
+			return
+		}
 	}
 	st.set(func() { st.TransparentRunning = true; st.TransparentAddr = addr })
-	log.Printf("[transparent] listening on %s", addr)
+	log.Printf("[transparent] listening on %s (%s mode)", addr, mode)
 	go func() { <-ctx.Done(); _ = ln.Close() }()
 	for {
 		c, err := ln.Accept()
@@ -586,8 +594,12 @@ func handleTransparentClient(ctx context.Context, c net.Conn, cfg Config, curCli
 	}
 	target, err := tproxyDst(tcp)
 	if err != nil {
-		log.Printf("[transparent] dropped: tproxy dst failed: %v", err)
-		return
+		// TPROXY failed — try REDIRECT (SO_ORIGINAL_DST)
+		target, err = originalDst(tcp)
+		if err != nil {
+			log.Printf("[transparent] dropped: dst failed: %v", err)
+			return
+		}
 	}
 	if isLocalOrBlockedTarget(target, cfg) {
 		log.Printf("[transparent] dropped: local/blocked target %s", target)
