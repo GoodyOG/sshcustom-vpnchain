@@ -29,7 +29,6 @@ import (
 
 	"github.com/GoodyOG/SSHCustom_Magisk/internal/apiv1"
 	"github.com/GoodyOG/SSHCustom_Magisk/internal/dnsx"
-	"github.com/GoodyOG/SSHCustom_Magisk/internal/iptables"
 	"github.com/GoodyOG/SSHCustom_Magisk/internal/metrics"
 	"github.com/GoodyOG/SSHCustom_Magisk/internal/version"
 	"github.com/GoodyOG/SSHCustom_Magisk/internal/webui"
@@ -576,7 +575,7 @@ func run(args []string) {
 		UDPGWPort:          cfg.UDPProxy.UDPGWPort,
 		DNSMode:            cfg.DNS.Mode,
 		DNSServers:         append([]string(nil), cfg.DNS.Servers...),
-		Note:               "v2.7.0: TPROXY/UDP support, fast reconnect (5-16s detection), KSU fix, dead code removal, atomic module.prop writes.",
+		Note:               "v3.0.0: VPN Chain — Windscribe OpenVPN over SSH SOCKS5. TPROXY TCP+UDP, fast reconnect, KSU fix.",
 	}
 
 	log.Printf("SSHCustom daemon %s starting (idle=%v)", Version, *idleMode)
@@ -1000,6 +999,119 @@ func run(args []string) {
 			}
 		}
 	})
+
+	// --- VPN Chain API endpoints ---
+	vpnchainScript := filepath.Join(*workDir, "vpnchain", "vpnchain.sh")
+	vpnchainRun := func(args ...string) (string, error) {
+		cmd := exec.Command("/system/bin/sh", append([]string{vpnchainScript}, args...)...)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		if err != nil {
+			errMsg := strings.TrimSpace(stderr.String())
+			if errMsg == "" {
+				errMsg = strings.TrimSpace(stdout.String())
+			}
+			if errMsg == "" {
+				errMsg = err.Error()
+			}
+			return "", errors.New(errMsg)
+		}
+		return strings.TrimSpace(stdout.String()), nil
+	}
+
+	mux.HandleFunc("/api/v1/vpnchain/start", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeV1Error(w, http.StatusMethodNotAllowed, errors.New("POST required"))
+			return
+		}
+		var req struct{ Location string `json:"location"` }
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeV1Error(w, http.StatusBadRequest, err)
+			return
+		}
+		if req.Location == "" {
+			writeV1Error(w, http.StatusBadRequest, errors.New("location is required"))
+			return
+		}
+		out, err := vpnchainRun("start", req.Location)
+		if err != nil {
+			writeV1Error(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeV1OK(w, map[string]any{"result": out})
+	})
+
+	mux.HandleFunc("/api/v1/vpnchain/stop", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeV1Error(w, http.StatusMethodNotAllowed, errors.New("POST required"))
+			return
+		}
+		out, err := vpnchainRun("stop")
+		if err != nil {
+			writeV1Error(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeV1OK(w, map[string]any{"result": out})
+	})
+
+	mux.HandleFunc("/api/v1/vpnchain/switch", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeV1Error(w, http.StatusMethodNotAllowed, errors.New("POST required"))
+			return
+		}
+		var req struct{ Location string `json:"location"` }
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeV1Error(w, http.StatusBadRequest, err)
+			return
+		}
+		if req.Location == "" {
+			writeV1Error(w, http.StatusBadRequest, errors.New("location is required"))
+			return
+		}
+		out, err := vpnchainRun("switch", req.Location)
+		if err != nil {
+			writeV1Error(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeV1OK(w, map[string]any{"result": out})
+	})
+
+	mux.HandleFunc("/api/v1/vpnchain/status", func(w http.ResponseWriter, r *http.Request) {
+		out, err := vpnchainRun("status")
+		if err != nil {
+			writeV1OK(w, map[string]any{"running": false, "location": "", "ip": ""})
+			return
+		}
+		var status map[string]any
+		if err := json.Unmarshal([]byte(out), &status); err != nil {
+			writeV1OK(w, map[string]any{"running": false, "location": "", "ip": ""})
+			return
+		}
+		writeV1OK(w, status)
+	})
+
+	mux.HandleFunc("/api/v1/vpnchain/locations", func(w http.ResponseWriter, r *http.Request) {
+		out, err := vpnchainRun("locations")
+		if err != nil {
+			writeV1OK(w, []string{})
+			return
+		}
+		locations := []string{}
+		for _, line := range strings.Split(out, "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				locations = append(locations, line)
+			}
+		}
+		writeV1OK(w, locations)
+	})
+
+	mux.HandleFunc("/api/v1/vpnchain/log", func(w http.ResponseWriter, r *http.Request) {
+		serveLog(w, filepath.Join(*workDir, "vpnchain", "run", "vpnchain.log"))
+	})
+
 	// Autostart marker. service.sh reads /data/adb/sshcustom/run/autostart at
 	// boot; the daemon owns the toggle so the WebUI Settings tab can flip it
 	// without users editing files. Body: {"enabled": true|false}.
@@ -1079,7 +1191,7 @@ func run(args []string) {
 	// --- Tunnel lifecycle management ---
 	// The daemon stays alive always; tunnel start/stop/restart is controlled
 	// via the API or autostart. module.prop is updated to reflect tunnel state.
-	modulePropPath := "/data/adb/modules/sshcustom/module.prop"
+	modulePropPath := "/data/adb/modules/sshcustom_vpnchain/module.prop"
 	updateModuleProp := func(status string) {
 		var desc string
 		switch status {
@@ -2066,38 +2178,6 @@ func isLocalOrBlockedTarget(target string, cfg Config) bool {
 	return ip.IsLoopback() || ip.IsUnspecified() || ip.IsMulticast()
 }
 
-// iptablesCfgFromConfig builds an iptables.Config from the daemon Config.
-// Centralizing the conversion keeps the package boundary clean and means
-// schema changes only touch this one helper.
-func iptablesCfgFromConfig(cfg Config) iptables.Config {
-	return iptables.Config{
-		ChainsPrefix:   cfg.TransparentProxy.ChainsPrefix,
-		TCPPort:        cfg.TransparentProxy.TCPPort,
-		UDPPort:        cfg.TransparentProxy.UDPPort,
-		APIPort:        cfg.API.Port,
-		SocksPort:      cfg.LocalProxy.SocksPort,
-		DNSForwardPort: dnsForwardPort,
-		Hotspot:        cfg.Hotspot.Enabled && cfg.Hotspot.TCP,
-		HotspotIfaces:  cfg.Hotspot.Interfaces,
-	}
-}
-
-func applyTransparentRules(cfg Config, bypassIPs []string) error {
-	return iptables.Apply(iptablesCfgFromConfig(cfg), dnsx.SanitizeIPv4List(bypassIPs))
-}
-
-func cleanupTransparentRules(cfg Config) error {
-	return iptables.Cleanup(iptablesCfgFromConfig(cfg))
-}
-
-func applyTransparentUDPRules(cfg Config) error {
-	return iptables.ApplyUDP(iptablesCfgFromConfig(cfg))
-}
-
-func cleanupTransparentUDPRules(cfg Config) error {
-	return iptables.CleanupUDP(iptablesCfgFromConfig(cfg))
-}
-
 type SaveProfileRequest struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -2175,12 +2255,6 @@ func applyConfigPatch(cfg Config, req apiv1.ConfigPatchRequest) (Config, []strin
 		}
 	}
 	return next, changed, restartRequired, nil
-}
-
-func sanitizeProfiles(pf ProfilesFile) ProfilesFile {
-	// Keep profile data visible in the local-only dashboard.
-	// The API is bound to 127.0.0.1 by config, so this is device-local.
-	return pf
 }
 
 func saveProfiles(path string, pf ProfilesFile) error {

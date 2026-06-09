@@ -1,6 +1,6 @@
 {
-  "version": "v2.7.0",
-  "versionCode": 27000,
-  "zipUrl": "https://github.com/GoodyOG/SSHCustom-Magisk/releases/download/v2.7.0/SSHCustom-Magisk-v2.7.0.zip",
-  "changelog": "https://raw.githubusercontent.com/GoodyOG/SSHCustom-Magisk/main/CHANGELOG.md"
+  "version": "v3.0.0",
+  "versionCode": 30000,
+  "zipUrl": "https://github.com/GoodyOG/sshcustom-vpnchain/releases/download/v3.0.0/SSHCustom-VPNChain-v3.0.0.zip",
+  "changelog": "https://raw.githubusercontent.com/GoodyOG/sshcustom-vpnchain/main/CHANGELOG.md"
 }

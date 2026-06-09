@@ -11,7 +11,7 @@ ENABLED_FILE="$RUN_DIR/enabled"
 PAUSED_FILE="$RUN_DIR/network_paused"
 CONTROL_LOG="$RUN_DIR/control.log"
 CORE_LOG="$RUN_DIR/core.log"
-MODULE_PROP="/data/adb/modules/sshcustom/module.prop"
+MODULE_PROP="/data/adb/modules/sshcustom_vpnchain/module.prop"
 API_URL="http://127.0.0.1:9190/api/v1/health"
 
 mkdir -p "$RUN_DIR"

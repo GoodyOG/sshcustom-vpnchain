@@ -1,7 +1,7 @@
-id=sshcustom
-name=SSHCustom-Magisk
-version=v2.7.0
-versionCode=27000
+id=sshcustom_vpnchain
+name=SSHCustom-VPNChain
+version=v3.0.0
+versionCode=30000
 author=GoodyOG
-description=SSH tunnel transparent proxy (TCP+UDP) for Android. TPROXY + BadVPN UDPGW, SOCKS5, DNS-through-tunnel, QUIC block, IPv6 disable, captive portal bypass, hotspot sharing. Dashboard at http://127.0.0.1:9190
-updateJson=https://raw.githubusercontent.com/GoodyOG/SSHCustom-Magisk/main/update.json
+description=SSH tunnel + Windscribe VPN chain routing for Android. TPROXY TCP+UDP, SOCKS5 proxy, DNS-through-tunnel, hotspot sharing. Dashboard at http://127.0.0.1:9190
+updateJson=https://raw.githubusercontent.com/GoodyOG/sshcustom-vpnchain/main/update.json

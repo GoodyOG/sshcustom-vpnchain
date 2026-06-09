@@ -44,10 +44,31 @@ fi
 
 [ -d "$MODPATH/webroot" ] && cp -af "$MODPATH/webroot" "$WORK_DIR/webroot"
 
+# VPN Chain setup
+VPNCHAIN_DIR="$WORK_DIR/vpnchain"
+VPNCHAIN_CONFIGS="$VPNCHAIN_DIR/configs"
+VPNCHAIN_RUN="$VPNCHAIN_DIR/run"
+mkdir -p "$VPNCHAIN_DIR" "$VPNCHAIN_CONFIGS" "$VPNCHAIN_RUN"
+
+cp -af "$MODPATH/vpnchain/vpnchain.sh" "$VPNCHAIN_DIR/vpnchain.sh"
+if [ ! -f "$VPNCHAIN_DIR/auth.txt" ]; then
+  cp -af "$MODPATH/vpnchain/auth.txt" "$VPNCHAIN_DIR/auth.txt"
+fi
+if [ -f "$MODPATH/vpnchain/bin/tun2socks" ]; then
+  cp -af "$MODPATH/vpnchain/bin/tun2socks" "$BIN_DIR/tun2socks"
+fi
+if [ -f "$MODPATH/vpnchain/bin/openvpn" ]; then
+  cp -af "$MODPATH/vpnchain/bin/openvpn" "$BIN_DIR/openvpn"
+fi
+
 chmod 0755 "$BIN_DIR/sshcustomd" "$WORK_DIR/sshcustom.sh" "$WORK_DIR/sshcustom_watchdog.sh" "$WORK_DIR/net_clean.sh" "$WORK_DIR/ssh.iptables"
+[ -f "$BIN_DIR/tun2socks" ] && chmod 0755 "$BIN_DIR/tun2socks"
+[ -f "$BIN_DIR/openvpn" ] && chmod 0755 "$BIN_DIR/openvpn"
+chmod 0755 "$VPNCHAIN_DIR/vpnchain.sh"
+chmod 0600 "$VPNCHAIN_DIR/auth.txt"
 chmod 0644 "$WORK_DIR/config.json"
 chmod 0600 "$WORK_DIR/profiles.json"
-chmod 0755 "$WORK_DIR" "$BIN_DIR" "$RUN_DIR"
+chmod 0755 "$WORK_DIR" "$BIN_DIR" "$RUN_DIR" "$VPNCHAIN_DIR" "$VPNCHAIN_CONFIGS" "$VPNCHAIN_RUN"
 
 "$BIN_DIR/sshcustomd" validate -c "$WORK_DIR/config.json" -p "$WORK_DIR/profiles.json" >/dev/null 2>&1 || ui_print "Warning: config/profile validation failed. Open the dashboard and edit your profile."
 
