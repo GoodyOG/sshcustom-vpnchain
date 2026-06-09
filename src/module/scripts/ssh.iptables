@@ -138,6 +138,17 @@ enable_tcp_tproxy() {
   log "TCP mode: TPROXY (mangle)"
 }
 
+enable_udp_tproxy() {
+  UDP_PORT="${UDP_PORT:-10811}"
+  $IPT -t mangle -N SSHC_UDP 2>/dev/null
+  $IPT -t mangle -F SSHC_UDP
+  $IPT -t mangle -A SSHC_UDP -p udp --dport 53 -j RETURN
+  $IPT -t mangle -A SSHC_UDP -p udp --dport "$UDP_PORT" -j RETURN
+  $IPT -t mangle -A SSHC_UDP -p udp -j TPROXY --on-port "$UDP_PORT" --tproxy-mark 0x1/0x1
+  $IPT -t mangle -I PREROUTING 1 -j SSHC_UDP
+  log "UDP mode: TPROXY (mangle)"
+}
+
 enable_conf() {
   # Source config from daemon-written env file
   [ -f "${run_dir}/iptables.env" ] && . "${run_dir}/iptables.env"
@@ -158,6 +169,7 @@ enable_conf() {
     $IPT -t mangle -F SSHC_TPROBE 2>/dev/null
     $IPT -t mangle -X SSHC_TPROBE 2>/dev/null
     enable_tcp_tproxy
+    enable_udp_tproxy
   else
     $IPT -t mangle -F SSHC_TPROBE 2>/dev/null
     $IPT -t mangle -X SSHC_TPROBE 2>/dev/null
