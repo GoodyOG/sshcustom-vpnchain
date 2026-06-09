@@ -141,12 +141,18 @@ enable_tcp_tproxy() {
 enable_udp_tproxy() {
   UDP_PORT="${UDP_PORT:-10811}"
   $IPT -t mangle -N SSHC_UDP 2>/dev/null
-  $IPT -t mangle -F SSHC_UDP
-  $IPT -t mangle -A SSHC_UDP -p udp --dport 53 -j RETURN
-  $IPT -t mangle -A SSHC_UDP -p udp --dport "$UDP_PORT" -j RETURN
-  $IPT -t mangle -A SSHC_UDP -p udp -j TPROXY --on-port "$UDP_PORT" --tproxy-mark 0x1/0x1
-  $IPT -t mangle -I PREROUTING 1 -j SSHC_UDP
-  log "UDP mode: TPROXY (mangle)"
+  if $IPT -t mangle -A SSHC_UDP -j TPROXY --on-port "$UDP_PORT" --tproxy-mark 0x1/0x1 2>/dev/null; then
+    $IPT -t mangle -F SSHC_UDP
+    $IPT -t mangle -A SSHC_UDP -p udp --dport 53 -j RETURN
+    $IPT -t mangle -A SSHC_UDP -p udp --dport "$UDP_PORT" -j RETURN
+    $IPT -t mangle -A SSHC_UDP -p udp -j TPROXY --on-port "$UDP_PORT" --tproxy-mark 0x1/0x1
+    $IPT -t mangle -I PREROUTING 1 -j SSHC_UDP
+    log "UDP mode: TPROXY (mangle)"
+  else
+    $IPT -t mangle -F SSHC_UDP 2>/dev/null
+    $IPT -t mangle -X SSHC_UDP 2>/dev/null
+    log "UDP TPROXY not available — UDP proxying disabled"
+  fi
 }
 
 enable_conf() {
@@ -169,13 +175,13 @@ enable_conf() {
     $IPT -t mangle -F SSHC_TPROBE 2>/dev/null
     $IPT -t mangle -X SSHC_TPROBE 2>/dev/null
     enable_tcp_tproxy
-    enable_udp_tproxy
   else
     $IPT -t mangle -F SSHC_TPROBE 2>/dev/null
     $IPT -t mangle -X SSHC_TPROBE 2>/dev/null
     log "TPROXY not supported by kernel, falling back to REDIRECT"
     enable_tcp_redirect
   fi
+  enable_udp_tproxy
 
   # DNS: DNAT UDP:53 to 127.0.0.1:5353
   $IPT -t nat -N SSHC_DNS 2>/dev/null
