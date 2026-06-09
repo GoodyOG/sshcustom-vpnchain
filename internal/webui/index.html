@@ -589,7 +589,7 @@
           <div class="list-item">
             <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
             <div class="list-item-content">
-              <div class="toggle-text">Redirect</div>
+              <div class="toggle-text">TPROXY</div>
               <span class="supporting-text" id="portRedirect">--</span>
             </div>
           </div>
@@ -713,8 +713,16 @@
         <div class="field-full" id="payloadFields">
           <p class="field-label">Payload Template</p>
           <textarea class="textarea" id="pfPayload"></textarea>
+          </div>
+          <div class="list-item">
+            <div class="li-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div>
+            <div class="list-item-content">
+              <div class="toggle-text">UDPGW Port</div>
+              <span class="supporting-text">BadVPN UDP gateway port on your server.</span>
+            </div>
+            <input class="field" id="portUdgw" inputmode="numeric" style="width:90px">
+          </div>
         </div>
-      </div>
       <div class="button-row" style="grid-template-columns:1fr 1fr 1fr">
         <button class="md3-tonal" onclick="saveProfile(false,false)">Save</button>
         <button class="md3-filled" onclick="saveProfile(true,true)">Save &amp; Restart</button>
@@ -1015,6 +1023,7 @@
       $('portApi').textContent = (api.host || '127.0.0.1') + ':' + (api.port || 9190);
       $('portSocks').textContent = (lp.socks_host || '127.0.0.1') + ':' + (lp.socks_port || 1080);
       $('portRedirect').textContent = String(tp.tcp_port || 10810);
+      $('portUdgw').value = String(tp.udpgw_port || 7300);
       const hotspot = cfg.hotspot || {};
       $('hotspotSwitch').classList.toggle('on', !!(hotspot.enabled && hotspot.tcp));
     }
@@ -1040,7 +1049,8 @@
     async function saveNetwork() {
       try {
         const enabled = $('hotspotSwitch').classList.contains('on');
-        await postV1('/config', { hotspot: { enabled, tcp: enabled, dns: false }, restart: true }, 12000);
+        const udpgwPort = parseInt($('portUdgw').value, 10) || 7300;
+        await postV1('/config', { transparent_proxy: { udpgw_port: udpgwPort }, hotspot: { enabled, tcp: enabled, dns: false }, restart: true }, 12000);
         toast('Settings saved. Restarting tunnel...');
         showRestarting();
         setTimeout(loadStatus, 3000);

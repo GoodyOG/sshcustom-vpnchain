@@ -72,9 +72,10 @@ type Config struct {
 		SocksPort    int    `json:"socks_port"`
 	} `json:"local_proxy"`
 	TransparentProxy struct {
-		Enabled      bool `json:"enabled"`
-		TCPPort      int  `json:"tcp_port"`
-		UDPPort      int  `json:"udp_port"`
+		Enabled      bool   `json:"enabled"`
+		TCPPort      int    `json:"tcp_port"`
+		UDPPort      int    `json:"udp_port"`
+		UDPGWPort    int    `json:"udpgw_port"`
 		ChainsPrefix string `json:"chains_prefix"`
 	} `json:"transparent_proxy"`
 	UDPProxy struct {
