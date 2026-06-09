@@ -2060,7 +2060,7 @@ func isLocalOrBlockedTarget(target string, cfg Config) bool {
 		return false
 	}
 	port, _ := strconv.Atoi(p)
-	if port == cfg.API.Port || port == cfg.LocalProxy.SocksPort || port == cfg.TransparentProxy.TCPPort {
+	if port == cfg.API.Port || port == cfg.LocalProxy.SocksPort {
 		return true
 	}
 	return ip.IsLoopback() || ip.IsUnspecified() || ip.IsMulticast()
