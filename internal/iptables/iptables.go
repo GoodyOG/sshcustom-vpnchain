@@ -306,8 +306,22 @@ func cleanupRules(cfg Config) {
 		}
 	}
 
-	// Phase 1: Detach mangle table hooks (v2.7+ TPROXY chains)
+	// Phase 1: Detach mangle table hooks (v2.7+ TPROXY chains).
+	// Must remove both general and interface-specific hooks.
+	// Without interface cleanup, hotspot hooks accumulate on restart
+	// (25+ zombie hooks observed) and push the general hook down,
+	// causing locally-generated traffic to never reach TPROXY.
 	_ = ipt("-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "-j", prefix+"_TCP").Run()
+	ifaces := cfg.HotspotIfaces
+	if len(ifaces) == 0 {
+		ifaces = DefaultHotspotIfaces
+	}
+	for _, iface := range ifaces {
+		if strings.TrimSpace(iface) == "" {
+			continue
+		}
+		_ = ipt("-t", "mangle", "-D", "PREROUTING", "-i", iface, "-p", "tcp", "-j", prefix+"_TCP").Run()
+	}
 	_ = ipt("-t", "mangle", "-D", "OUTPUT", "-p", "tcp", "-j", prefix+"_TCP_OUTPUT").Run()
 
 	// Phase 2: Flush and delete ALL chains in ALL tables

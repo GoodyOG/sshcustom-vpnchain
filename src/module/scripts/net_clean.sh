@@ -106,8 +106,13 @@ clean_udp_tproxy() {
 }
 
 clean_tcp_tproxy() {
-  # Clean up mangle table TPROXY rules for TCP proxy
+  # Clean up mangle table TPROXY rules for TCP proxy.
+  # Must remove both general and interface-specific hooks to prevent
+  # zombie hook accumulation on repeated restarts.
   run $IPT -t mangle -D PREROUTING -p tcp -j SSHC_TCP
+  for IF in $IFACES; do
+    run $IPT -t mangle -D PREROUTING -i "$IF" -p tcp -j SSHC_TCP
+  done
   run $IPT -t mangle -D OUTPUT -p tcp -j SSHC_TCP_OUTPUT
   run $IPT -t mangle -F SSHC_TCP
   run $IPT -t mangle -X SSHC_TCP
