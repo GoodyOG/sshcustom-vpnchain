@@ -89,6 +89,12 @@ func tproxyDst(conn *net.TCPConn) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("unexpected addr type: %T", addr)
 	}
+	// TPROXY preserves the original destination, which is never loopback.
+	// A loopback address means REDIRECT rewrote the destination — reject
+	// here so the caller falls through to originalDst (SO_ORIGINAL_DST).
+	if tcpAddr.IP.IsLoopback() {
+		return "", errors.New("loopback — REDIRECT mode, use SO_ORIGINAL_DST")
+	}
 	return net.JoinHostPort(tcpAddr.IP.String(), fmt.Sprintf("%d", tcpAddr.Port)), nil
 }
 
