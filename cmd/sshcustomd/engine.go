@@ -429,17 +429,27 @@ func isStreamRetryable(err error) bool {
 // (underlying TCP/TLS connection) is dead — not just a single stream failure.
 // When this happens, the tunClient should be marked dead immediately to trigger
 // reconnection without waiting for the keepalive goroutine.
+//
+// IMPORTANT: We do NOT match on "timeout" or "connection timed out" alone.
+// SSH channel rejections from the server (ssh: rejected: connect failed
+// (Connection timed out)) contain these substrings but the SSH transport is
+// still healthy — only the target was unreachable from the VPS. Those are
+// stream-level errors, not transport deaths.
+//
+// "read tcp" is the unambiguous signal: it only appears in Go net.TCPConn.Read
+// failures, which means the underlying TCP connection to the SSH server died.
 func isTransportDeath(err error) bool {
 	if err == nil {
 		return false
 	}
 	s := err.Error()
+	// Unambiguous transport-level error: Go's TCP read failed on the SSH connection
+	if strings.Contains(s, "read tcp") {
+		return true
+	}
+	// SSH protocol errors: the SSH session itself is corrupted or closed
 	return strings.Contains(s, "EOF") ||
 		strings.Contains(s, "eof") ||
-		strings.Contains(s, "timeout") ||
-		strings.Contains(s, "i/o timeout") ||
-		strings.Contains(s, "connection timed out") ||
-		strings.Contains(s, "Connection timed out") ||
 		strings.Contains(s, "reset") ||
 		strings.Contains(s, "broken pipe") ||
 		strings.Contains(s, "use of closed network connection") ||
@@ -447,8 +457,7 @@ func isTransportDeath(err error) bool {
 		strings.Contains(s, "bad record mac") ||
 		strings.Contains(s, "error decoding message") ||
 		strings.Contains(s, "packet too large") ||
-		strings.Contains(s, "invalid packet length") ||
-		strings.Contains(s, "ssh client is dead")
+		strings.Contains(s, "invalid packet length")
 }
 
 // startListeners brings up SOCKS5 + transparent (REDIRECT) + DNS forwarder,
