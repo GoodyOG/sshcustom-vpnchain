@@ -135,6 +135,14 @@ func tunnelLoop(ctx context.Context, getCfg func() Config, sp Profile, st *State
 			listenerCancel()
 			listenerCancel = nil
 		}
+		// If ctx was cancelled (explicit stop or daemon shutdown),
+		// net_clean.sh handles the iptables cleanup. Skipping here
+		// prevents a race where an old goroutine's deferred teardown
+		// destroys the iptables rules of a freshly started tunnel.
+		if ctx.Err() != nil {
+			clientPtr.Store(nil)
+			return
+		}
 		if iptablesUp {
 			if err := cleanupTransparentRules(getCfg()); err != nil {
 				log.Printf("[tunnel] iptables cleanup failed: %v", err)
