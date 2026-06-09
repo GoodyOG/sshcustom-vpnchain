@@ -1239,6 +1239,10 @@ func run(args []string) {
 		if tunnelRunning.Load() {
 			return
 		}
+		netClean := filepath.Join(*workDir, "net_clean.sh")
+		if _, err := os.Stat(netClean); err == nil {
+			exec.Command("/system/bin/sh", netClean).Run()
+		}
 		// Re-read profiles in case they changed
 		profileMu.Lock()
 		latest, err := loadProfiles(*profPath)

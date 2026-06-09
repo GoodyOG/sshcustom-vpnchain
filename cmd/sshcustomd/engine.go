@@ -450,8 +450,6 @@ func isTransportDeath(err error) bool {
 	// SSH protocol errors: the SSH session itself is corrupted or closed
 	return strings.Contains(s, "EOF") ||
 		strings.Contains(s, "eof") ||
-		strings.Contains(s, "reset") ||
-		strings.Contains(s, "broken pipe") ||
 		strings.Contains(s, "use of closed network connection") ||
 		strings.Contains(s, "unexpected packet") ||
 		strings.Contains(s, "bad record mac") ||

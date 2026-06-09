@@ -140,8 +140,17 @@ enable_tcp_tproxy() {
 
 enable_udp_tproxy() {
   UDP_PORT="${UDP_PORT:-10811}"
+  # Probe: try legacy iptables, fall back to nftables wrapper
   $IPT -t mangle -N SSHC_UDP 2>/dev/null
   if $IPT -t mangle -A SSHC_UDP -j TPROXY --on-port "$UDP_PORT" --tproxy-mark 0x1/0x1 2>/dev/null; then
+    true
+  elif [ -x /system/bin/iptables-wrapper-1.0 ]; then
+    log "UDP retrying with nftables wrapper"
+    IPT="/system/bin/iptables-wrapper-1.0 -w 100"
+    $IPT -t mangle -N SSHC_UDP 2>/dev/null
+    $IPT -t mangle -A SSHC_UDP -j TPROXY --on-port "$UDP_PORT" --tproxy-mark 0x1/0x1 2>/dev/null
+  fi
+  if $IPT -t mangle -C SSHC_UDP -j TPROXY --on-port "$UDP_PORT" --tproxy-mark 0x1/0x1 2>/dev/null; then
     $IPT -t mangle -F SSHC_UDP
     $IPT -t mangle -A SSHC_UDP -p udp --dport 53 -j RETURN
     $IPT -t mangle -A SSHC_UDP -p udp --dport "$UDP_PORT" -j RETURN
