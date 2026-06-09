@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -274,6 +275,17 @@ func tunnelLoop(ctx context.Context, getCfg func() Config, sp Profile, st *State
 					})
 				}
 			}
+			udpPort := strconv.Itoa(secondsDefault(cfg.TransparentProxy.UDPPort, 10811))
+			exec.Command("iptables", "-w", "100", "-t", "mangle", "-N", "SSHC_UDP").Run()
+			exec.Command("iptables", "-w", "100", "-t", "mangle", "-F", "SSHC_UDP").Run()
+			exec.Command("iptables", "-w", "100", "-t", "mangle",
+				"-A", "SSHC_UDP", "-p", "udp", "--dport", "53", "-j", "RETURN").Run()
+			exec.Command("iptables", "-w", "100", "-t", "mangle",
+				"-A", "SSHC_UDP", "-p", "udp", "--dport", udpPort, "-j", "RETURN").Run()
+			exec.Command("iptables", "-w", "100", "-t", "mangle",
+				"-A", "SSHC_UDP", "-p", "udp", "-j", "TPROXY", "--on-port", udpPort, "--tproxy-mark", "0x1/0x1").Run()
+			exec.Command("iptables", "-w", "100", "-t", "mangle",
+				"-I", "PREROUTING", "1", "-j", "SSHC_UDP").Run()
 		}
 
 		// Wait for this client to die, refreshing live stats meanwhile.
